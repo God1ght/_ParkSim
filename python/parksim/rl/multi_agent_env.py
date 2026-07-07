@@ -55,11 +55,14 @@ class ParkSimParallelParkingEnv(ParallelEnv):
         return self._name_dict(observations), self._name_dict(infos)
 
     def step(self, actions: Dict[str, np.ndarray]):
-        id_actions = {
-            self._agent_id(agent): action
-            for agent, action in actions.items()
-            if agent in self.agents and action is not None
-        }
+        id_actions = {}
+        for agent, action in actions.items():
+            if agent not in self.agents or action is None:
+                continue
+            action_array = np.asarray(action, dtype=np.float32).reshape(-1)
+            if action_array.shape[0] != 2:
+                continue
+            id_actions[self._agent_id(agent)] = action_array
         observations, rewards, terminations, truncations, infos = self.core.step(id_actions)
         named_obs = self._name_dict(observations)
         named_rewards = self._name_dict(rewards)
