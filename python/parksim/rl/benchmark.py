@@ -28,6 +28,10 @@ def benchmark_headless(num_envs: int, steps: int, num_agents: int):
     }
 
 
+def benchmark_multi_agent(num_envs: int, steps: int, num_agents: int):
+    return benchmark_headless(num_envs=num_envs, steps=steps, num_agents=max(num_agents, 2))
+
+
 def main():
     parser = argparse.ArgumentParser(description="Benchmark ParkSim headless RL throughput.")
     parser.add_argument("--num-envs", type=int, default=1)

@@ -4,6 +4,7 @@ from parksim.rl.actions import ActionMapper
 from parksim.rl.agents import RLPolicyAgent
 from parksim.rl.core import ParkSimCoreEnv, ParkSimCoreConfig
 from parksim.rl.gym_env import ParkSimParkingEnv, make_vec_env
+from parksim.rl.multi_agent_env import ParkSimParallelParkingEnv
 from parksim.rl.observations import ObservationBuilder
 from parksim.rl.policy import (
     CallablePolicyAdapter,
@@ -24,6 +25,7 @@ __all__ = [
     "ParkSimCoreConfig",
     "ParkSimCoreEnv",
     "ParkSimParkingEnv",
+    "ParkSimParallelParkingEnv",
     "ParkSimScenario",
     "ParkSimScenarioLoader",
     "PolicyAdapter",

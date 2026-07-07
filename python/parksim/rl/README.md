@@ -8,7 +8,8 @@ evaluation and visualization.
 - `ParkSimCoreEnv` runs pure Python reset/step without ROS, GUI, subprocesses,
   topics, or services.
 - `ParkSimParkingEnv` wraps the core as a single-agent Gymnasium environment.
-- `ParkSimParallelParkingEnv` is added on the multi-agent branch.
+- `ParkSimParallelParkingEnv` wraps the same core as a PettingZoo ParallelEnv
+  for multi-agent training.
 - Use `PARKSIM_DATA_ROOT` to point at private ParkSim prior files when real DLP
   scenarios are needed. Private pickle/data/model files are intentionally not
   tracked by Git.
