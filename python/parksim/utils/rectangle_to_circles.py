@@ -1,10 +1,7 @@
 import numpy as np
 
-import matplotlib.pyplot as plt
-
 from parksim.pytypes import VehicleState
 from parksim.vehicle_types import VehicleBody
-from parksim.obstacle_types import RectangleObstacle
 
 def v2c(state: VehicleState, vehicle_body: VehicleBody):
     """
@@ -32,6 +29,9 @@ def v2c(state: VehicleState, vehicle_body: VehicleBody):
 
 
 def main():
+    import matplotlib.pyplot as plt
+    from parksim.obstacle_types import RectangleObstacle
+
     state = VehicleState()
     state.x.x = 1
     state.x.y = 2

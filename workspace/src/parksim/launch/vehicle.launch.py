@@ -23,6 +23,8 @@ def generate_launch_description():
         DeclareLaunchArgument('vehicle_id', default_value='0'),
         DeclareLaunchArgument('spot_index', default_value='3'),
         DeclareLaunchArgument('use_existing', default_value='0'),
+        DeclareLaunchArgument('agent_type', default_value='rule_based'),
+        DeclareLaunchArgument('rl_policy_path', default_value=''),
 
         Node(
             package='parksim',
@@ -33,6 +35,8 @@ def generate_launch_description():
                 'vehicle_id': LaunchConfiguration('vehicle_id'),
                 'spot_index': LaunchConfiguration('spot_index'),
                 'use_existing': LaunchConfiguration('use_existing'),
+                'agent_type': LaunchConfiguration('agent_type'),
+                'rl_policy_path': LaunchConfiguration('rl_policy_path'),
             }],
             output='screen',
             emulate_tty=True

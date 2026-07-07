@@ -4,7 +4,6 @@ import array
 import numpy as np
 import pdb
 import copy
-import matplotlib.pyplot as plt
 
 #DEFAULT_VEHICLE_TYPE = 'barc'
 
@@ -424,5 +423,4 @@ class VehiclePrediction(PythonMsg):
         self.v_y =  (np.multiply(self.v_long, np.sin(self.psi)) + np.multiply(self.v_tran, np.cos(self.psi))).tolist()
         self.a_x =  (np.multiply(self.a_long, np.cos(self.psi)) - np.multiply(self.a_tran, np.sin(self.psi))).tolist()
         self.a_y =  (np.multiply(self.a_long, np.sin(self.psi)) + np.multiply(self.a_tran, np.cos(self.psi))).tolist()
-
 

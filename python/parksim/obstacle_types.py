@@ -1,7 +1,6 @@
 import numpy as np
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from matplotlib.patches import Polygon, Circle
 
 from parksim.pytypes import PythonMsg
 
@@ -42,6 +41,8 @@ class CircleObstacle(BaseObstacle):
     
     
     def plot_pyplot(self, ax):
+        from matplotlib.patches import Circle
+
         p = Circle((self.xc, self.yc), radius = self.r, color = 'red')
         ax.add_patch(p)
         return
@@ -96,6 +97,8 @@ class BasePolytopeObstacle(BaseObstacle):
         
 
     def plot_pyplot(self, ax):
+        from matplotlib.patches import Polygon
+
         p = Polygon(self.xy, color = 'red')
         ax.add_patch(p)
         return

@@ -43,6 +43,10 @@ class VehicleNodeParams(NodeParamTemplate):
         self.use_existing_agents = False
         self.agents_data_path = parksim_path('python', 'parksim', 'priorFiles', 'agents_data_0012.pickle')
 
+        self.agent_type = 'rule_based'
+        self.rl_policy_path = ''
+        self.rl_max_steps = 1000
+
         self.write_log = True
         self.log_path = parksim_path('vehicle_log')
 
@@ -103,19 +107,34 @@ class VehicleNode(MPClabNode):
 
         vehicle_config = VehicleConfig()
 
-        controller_params = StanleyParams(dt=self.timer_period)
-        controller = StanleyController(control_params=controller_params, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
-        motion_predictor = StanleyController(control_params=controller_params, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
+        agent_type = str(self.agent_type).lower()
+        if agent_type == 'rl_policy':
+            from parksim.rl.agents import RLPolicyAgent
 
-        self.vehicle = RuleBasedStanleyVehicle(
-            vehicle_id=self.vehicle_id,
-            vehicle_body=vehicle_body,
-            vehicle_config=vehicle_config,
-            controller=controller,
-            motion_predictor=motion_predictor,
-            inst_centric_generator=None,
-            intent_predictor=None
+            policy_path = self.rl_policy_path or os.environ.get('PARKSIM_POLICY_PATH', '')
+            self.vehicle = RLPolicyAgent(
+                vehicle_id=self.vehicle_id,
+                vehicle_body=vehicle_body,
+                vehicle_config=vehicle_config,
+                policy_path=policy_path,
+                max_steps=int(self.rl_max_steps),
             )
+        elif agent_type == 'rule_based':
+            controller_params = StanleyParams(dt=self.timer_period)
+            controller = StanleyController(control_params=controller_params, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
+            motion_predictor = StanleyController(control_params=controller_params, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
+
+            self.vehicle = RuleBasedStanleyVehicle(
+                vehicle_id=self.vehicle_id,
+                vehicle_body=vehicle_body,
+                vehicle_config=vehicle_config,
+                controller=controller,
+                motion_predictor=motion_predictor,
+                inst_centric_generator=None,
+                intent_predictor=None
+                )
+        else:
+            raise ValueError("Unsupported agent_type '%s'. Use 'rule_based' or 'rl_policy'." % self.agent_type)
 
         self.vehicle.set_printer(self.get_logger().info)
         self.vehicle.load_parking_spaces(spots_data_path=self.spots_data_path)

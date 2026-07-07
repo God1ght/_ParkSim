@@ -12,3 +12,8 @@
     intent_model_path: "${PARKSIM_ROOT}/python/parksim/priorFiles/model/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth"
 
     offline_maneuver_path: "${PARKSIM_ROOT}/python/parksim/priorFiles/parking_maneuvers.pickle"
+
+    # RL evaluation bridge. Training remains headless; ROS only loads learned policies for evaluation.
+    agent_type: "rule_based"
+    rl_policy_path: ""
+    rl_max_steps: 1000

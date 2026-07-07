@@ -6,9 +6,7 @@ setuptools.setup(
     description='Parking Simulation',
     author='Xu Shen',
     author_email='xu_shen@berkeley.edu',
-    packages=[
-        'parksim'
-    ],
+    packages=setuptools.find_packages(),
     install_requires=[
         "pillow>=8.3.1",
         "numpy>=1.20.2",
@@ -25,7 +23,16 @@ setuptools.setup(
         "seaborn>=0.11.2",
         "pytorch_lightning",
         "einops"
-    ]
+    ],
+    extras_require={
+        "rl": [
+            "gymnasium>=0.29",
+            "pettingzoo>=1.24",
+        ],
+        "torch-policy": [
+            "torch",
+        ],
+    },
     # Dragon Lake Parking (DLP) Dataset should be built with its own source
     # Pytorch installation should follow the instructions on the website
 )
