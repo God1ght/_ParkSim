@@ -5,6 +5,7 @@ import dearpygui.dearpygui as dpg
 from dlp.dataset import Dataset
 from dlp.visualizer import Visualizer as DlpVis
 from parksim.pytypes import VehicleState
+from parksim.base_node import parksim_path
 
 from parksim.vehicle_types import VehicleBody
 from parksim.utils.get_corners import get_vehicle_corners
@@ -236,7 +237,7 @@ if __name__ == "__main__":
     ds = Dataset()
 
     home_path = str(Path.home())
-    ds.load(home_path + '/dlp-dataset/data/DJI_0012')
+    ds.load(parksim_path('python', 'parksim', 'priorFiles', 'data', 'DJI_0012'))
 
     vehicle_body = VehicleBody()
 

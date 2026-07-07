@@ -16,14 +16,18 @@ from parksim.route_planner.graph import WaypointsGraph
 from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
 
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
+from parksim.base_node import parksim_path
 
 np.random.seed(39) # ones with interesting cases: 20, 33, 44, 60
 
 # These parameters should all become ROS param for simulator and vehicle
-spots_data_path = '/ParkSim/data/spots_data.pickle'
-offline_maneuver_path = '/ParkSim/data/parking_maneuvers.pickle'
-waypoints_graph_path = '/ParkSim/data/waypoints_graph.pickle'
-intent_model_path = '/ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
+
+home_path = parksim_path('python', 'parksim', 'priorFiles')
+
+spots_data_path = home_path + '/spots_data.pickle'
+offline_maneuver_path = home_path + '/parking_maneuvers.pickle'
+waypoints_graph_path = home_path + '/waypoints_graph.pickle'
+intent_model_path = home_path + '/model/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
 entrance_coords = [14.38, 76.21]
 block_spots = [43, 44, 45]
 
@@ -49,24 +53,25 @@ class RuleBasedSimulator(object):
 
         # Save data to offline files
         # with open('waypoints_graph.pickle', 'wb') as f:
-        #     data_to_save = {'graph': self.graph, 
+        #     data_to_save = {'graph': self.graph,
         #                     'entrance_coords': entrance_coords}
         #     pickle.dump(data_to_save, f)
 
         # with open('spots_data.pickle', 'wb') as f:
-        #     data_to_save = {'parking_spaces': self.parking_spaces, 
-        #                     'overshoot_ranges': overshoot_ranges, 
+        #     data_to_save = {'parking_spaces': self.parking_spaces,
+        #                     'overshoot_ranges': overshoot_ranges,
         #                     'north_spot_idx_ranges': north_spot_idx_ranges,
         #                     'spot_y_offset': spot_y_offset}
         #     pickle.dump(data_to_save, f)
 
-        # spawn stuff
-        
-        spawn_interval_mean = 5 # Mean time for exp distribution
-        spawn_interval_min = 2 # Min time for each spawn
 
-        spawn_entering = 3 # number of vehicles to enter
-        spawn_exiting = 3 # number of vehicles to exit
+        # 运行车辆设置：进入/离开停车场的车辆
+        # 满足同一柏松分布（时间间隔）
+        spawn_interval_mean = 5 # Mean time for exp distribution
+        spawn_interval_min = 3 # Min time for each spawn
+
+        spawn_entering = 5 # number of vehicles to enter
+        spawn_exiting = 6 # number of vehicles to exit
 
         self.spawn_entering_time = sorted(np.random.exponential(spawn_interval_mean, spawn_entering))
         for i in range(spawn_entering):
@@ -151,7 +156,7 @@ class RuleBasedSimulator(object):
         vehicle.execute_next_task()
 
         self.vehicles.append(vehicle)
-    
+
 
     def run(self):
         # while not run out of time and we have not reached the last waypoint yet
@@ -164,7 +169,6 @@ class RuleBasedSimulator(object):
             # clear visualizer
             self.vis.clear_frame()
 
-            
             # spawn vehicles
             if self.spawn_entering_time and self.time > self.spawn_entering_time[0]:
                 empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
@@ -172,7 +176,7 @@ class RuleBasedSimulator(object):
                 self.add_vehicle(chosen_spot)
                 self.occupied[chosen_spot] = True
                 self.spawn_entering_time.pop(0)
-            
+
             if self.spawn_exiting_time and self.time > self.spawn_exiting_time[0]:
                 empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
                 chosen_spot = np.random.choice(empty_spots)
@@ -191,13 +195,14 @@ class RuleBasedSimulator(object):
 
             # ========== For real-time prediction only
             # add vehicle states to history
-            # current_frame_states = []
-            # for vehicle in self.vehicles:
-            #     current_state_dict = vehicle.get_state_dict()
-            #     current_frame_states.append(current_state_dict)
-            # self.history.append(current_frame_states)
-                
-            # intent_pred_results = []
+
+            current_frame_states = []
+            for vehicle in self.vehicles:
+                current_state_dict = vehicle.get_state_dict()
+                current_frame_states.append(current_state_dict)
+            self.history.append(current_frame_states)
+
+            intent_pred_results = []
             # ===========
 
             for vehicle_id in active_vehicles:
@@ -209,10 +214,10 @@ class RuleBasedSimulator(object):
 
                 vehicle.solve(time=self.time)
                 # ========== For real-time prediction only
-                # result = vehicle.predict_intent()
-                # intent_pred_results.append(result)
+                result = vehicle.predict_intent(vehicle_id, self.history)
+                intent_pred_results.append(result)
                 # ===========
-            
+
             self.loops += 1
             self.time += 0.1
 
@@ -229,31 +234,31 @@ class RuleBasedSimulator(object):
                     fill = (0, 255, 0, 255)
 
                 self.vis.draw_vehicle(state=vehicle.state, fill=fill)
-                # self.vis.draw_line(points=np.array([vehicle.x_ref, vehicle.y_ref]).T, color=(39,228,245, 193))
+                self.vis.draw_line(points=np.array([vehicle.x_ref, vehicle.y_ref]).T, color=(39,228,245, 193))
                 on_vehicle_text =  str(vehicle.vehicle_id) + ":"
                 on_vehicle_text += "N" if vehicle.priority is None else str(round(vehicle.priority, 3))
-                # self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
-                
+                self.vis.draw_text([vehicle.state.x.x - 2, vehicle.state.x.y + 2], on_vehicle_text, size=25)
+
             # ========== For real-time prediction only
-            # likelihood_radius = 15
-            # for result in intent_pred_results:
-            #     distribution = result.distribution
-            #     for i in range(len(distribution) - 1):
-            #         coords = result.all_spot_centers[i]
-            #         prob = format(distribution[i], '.2f')
-            #         self.vis.draw_circle(center=coords, radius=likelihood_radius*distribution[i], color=(255,65,255,255))
-            #         self.vis.draw_text([coords[0]-2, coords[1]], prob, 15)
+            likelihood_radius = 15
+            for result in intent_pred_results:
+                distribution = result.distribution
+                for i in range(len(distribution) - 1):
+                    coords = result.all_spot_centers[i]
+                    prob = format(distribution[i], '.2f')
+                    self.vis.draw_circle(center=coords, radius=likelihood_radius*distribution[i], color=(255,65,255,255))
+                    self.vis.draw_text([coords[0]-2, coords[1]], prob, 15)
             # ===========
-    
+
             self.vis.render()
 
 def main():
     # Load dataset
-    ds = Dataset()
 
-    home_path = str(Path.home())
-    print('Loading dataset...')
-    ds.load(home_path + '/dlp-dataset/data/DJI_0012')
+    data_path = parksim_path('python', 'parksim', 'priorFiles', 'data', 'DJI_0012')
+    ds = Dataset()
+    print('Loading dataset in %s...' % data_path)
+    ds.load(data_path)
     print("Dataset loaded.")
 
     vis = RealtimeVisualizer(ds, VehicleBody())

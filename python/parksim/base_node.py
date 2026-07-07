@@ -6,6 +6,8 @@ from rclpy.node import Node
 import numpy as np
 import array
 import yaml
+import os
+from pathlib import Path
 
 from typing import List, Dict
 
@@ -246,11 +248,66 @@ class MPClabNode(Node):
                 data.__setattr__(key, msg.__getattribute__(key))
         return
 
-def read_yaml_file(filename):
-    params = []
+def find_parksim_root(anchor=None):
+    env_root = os.environ.get('PARKSIM_ROOT')
+    if env_root:
+        return str(Path(env_root).expanduser().resolve())
+
+    candidates = []
+    if anchor is not None:
+        candidates.append(Path(anchor))
+    candidates.extend([Path(__file__), Path.cwd()])
+
+    for candidate in candidates:
+        candidate = candidate.resolve()
+        search_roots = [candidate] if candidate.is_dir() else [candidate.parent]
+        search_roots.extend(search_roots[0].parents)
+        for parent in search_roots:
+            if (parent / 'python' / 'parksim').is_dir() and (parent / 'workspace' / 'src' / 'parksim').is_dir():
+                return str(parent)
+
+    raise RuntimeError('Unable to locate ParkSim root. Set PARKSIM_ROOT to the repository root.')
+
+
+def parksim_path(*parts, root=None):
+    base = Path(root or find_parksim_root())
+    return str(base.joinpath(*parts))
+
+
+def expand_config_value(value, root=None):
+    project_root = root or find_parksim_root()
+    if isinstance(value, str):
+        priorfiles = os.path.join(project_root, 'python', 'parksim', 'priorFiles')
+        expanded = value.replace('${PARKSIM_ROOT}', project_root).replace('$PARKSIM_ROOT', project_root)
+        expanded = expanded.replace('${PARKSIM_PRIORFILES}', priorfiles).replace('$PARKSIM_PRIORFILES', priorfiles)
+        return os.path.expanduser(os.path.expandvars(expanded))
+    if isinstance(value, list):
+        return [expand_config_value(item, project_root) for item in value]
+    if isinstance(value, dict):
+        return {key: expand_config_value(item, project_root) for key, item in value.items()}
+    return value
+
+
+def load_yaml_config(filename, root=None):
+    project_root = root or find_parksim_root(filename)
     with open(filename, 'r') as f:
-        p = yaml.load(f, Loader=yaml.FullLoader)
-        # Convert to list of dicts
-        for (k, v) in p.items():
-            params.append({k : v})
-    return params
+        data = yaml.load(f, Loader=yaml.FullLoader)
+    return expand_config_value(data or {}, project_root)
+
+
+def read_yaml_file(filename, root=None):
+    data = load_yaml_config(filename, root=root)
+    return [{key: value} for key, value in data.items()]
+
+
+def read_ros_params_file(filename, node_name=None, root=None):
+    data = load_yaml_config(filename, root=root)
+    if node_name is not None and node_name in data:
+        return data[node_name].get('ros__parameters', {})
+    if '/**' in data:
+        return data['/**'].get('ros__parameters', {})
+    if len(data) == 1:
+        only_value = next(iter(data.values()))
+        if isinstance(only_value, dict) and 'ros__parameters' in only_value:
+            return only_value.get('ros__parameters', {})
+    return data

@@ -17,8 +17,11 @@ from parksim.msg import VehicleStateMsg, VehicleInfoMsg
 from parksim.srv import OccupancySrv
 from parksim.pytypes import VehicleState, NodeParamTemplate
 from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleInfo, VehicleTask
-from parksim.base_node import MPClabNode
+from parksim.base_node import MPClabNode, parksim_path
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
+
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 class VehicleNodeParams(NodeParamTemplate):
     """
@@ -32,16 +35,16 @@ class VehicleNodeParams(NodeParamTemplate):
 
         self.entrance_coords = [14.38, 76.21]
 
-        self.spots_data_path = '/ParkSim/data/spots_data.pickle'
-        self.offline_maneuver_path = '/ParkSim/data/parking_maneuvers.pickle'
-        self.waypoints_graph_path = '/ParkSim/data/waypoints_graph.pickle'
-        self.intent_model_path = '/ParkSim/data/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
+        self.spots_data_path = parksim_path('python', 'parksim', 'priorFiles', 'spots_data.pickle')
+        self.offline_maneuver_path = parksim_path('python', 'parksim', 'priorFiles', 'parking_maneuvers.pickle')
+        self.waypoints_graph_path = parksim_path('python', 'parksim', 'priorFiles', 'waypoints_graph.pickle')
+        self.intent_model_path = parksim_path('python', 'parksim', 'priorFiles', 'model', 'smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth')
 
         self.use_existing_agents = False
-        self.agents_data_path = '/ParkSim/data/agents_data.pickle'
+        self.agents_data_path = parksim_path('python', 'parksim', 'priorFiles', 'agents_data_0012.pickle')
 
         self.write_log = True
-        self.log_path = '/ParkSim/vehicle_log'
+        self.log_path = parksim_path('vehicle_log')
 
 class VehicleNode(MPClabNode):
     """
@@ -88,12 +91,16 @@ class VehicleNode(MPClabNode):
         vehicle_body = VehicleBody()
 
         if self.use_existing_agents:
-            agents = pickle.load(open(str(Path.home()) + self.agents_data_path, "rb"))
+            # agents = pickle.load(open(str(Path.home()) + self.agents_data_path, "rb"))
+
+            # Yccc7: path changed
+            agents = pickle.load(open(self.agents_data_path, "rb"))
+
             agent_dict = agents[self.vehicle_id]
 
             vehicle_body.w = agent_dict["width"]
             vehicle_body.l = agent_dict["length"]
-        
+
         vehicle_config = VehicleConfig()
 
         controller_params = StanleyParams(dt=self.timer_period)
@@ -101,15 +108,15 @@ class VehicleNode(MPClabNode):
         motion_predictor = StanleyController(control_params=controller_params, vehicle_body=vehicle_body, vehicle_config=vehicle_config)
 
         self.vehicle = RuleBasedStanleyVehicle(
-            vehicle_id=self.vehicle_id, 
-            vehicle_body=vehicle_body, 
-            vehicle_config=vehicle_config, 
+            vehicle_id=self.vehicle_id,
+            vehicle_body=vehicle_body,
+            vehicle_config=vehicle_config,
             controller=controller,
             motion_predictor=motion_predictor,
-            inst_centric_generator=None, 
+            inst_centric_generator=None,
             intent_predictor=None
             )
-        
+
         self.vehicle.set_printer(self.get_logger().info)
         self.vehicle.load_parking_spaces(spots_data_path=self.spots_data_path)
         self.vehicle.load_graph(waypoints_graph_path=self.waypoints_graph_path)
@@ -224,7 +231,7 @@ class VehicleNode(MPClabNode):
         req.vehicle_id = self.vehicle_id
         req.idx = int(idx)
         req.new_value = int(new_value)
-        
+
         future = self.occupancy_cli.call_async(req)
         future.add_done_callback(response_cb)
 
@@ -283,10 +290,10 @@ class VehicleNode(MPClabNode):
             self.get_logger().info("Vehicle %d is done. Destroying node." % self.vehicle_id)
 
             # write logs
-            log_dir_path = str(Path.home()) + self.log_path
+            log_dir_path = self.log_path
             if not os.path.exists(log_dir_path):
                 os.mkdir(log_dir_path)
-            
+
             with open(log_dir_path + "/vehicle_%d.log" % self.vehicle_id, 'a') as f:
                 f.writelines(str(self.total_non_idle_time))
                 self.vehicle.logger.clear()
@@ -302,16 +309,16 @@ class VehicleNode(MPClabNode):
 
         if self.get_ros_time() - self.start_time > self.warm_start_time:
             self.start_solving = True
-            
+
         if self.sim_is_running:
             if self.start_solving:
                 self.vehicle.solve(time=self.get_ros_time())
         elif self.write_log and len(self.vehicle.logger) > 0:
             # write logs
-            log_dir_path = str(Path.home()) + self.log_path
+            log_dir_path = self.log_path
             if not os.path.exists(log_dir_path):
                 os.mkdir(log_dir_path)
-            
+
             with open(log_dir_path + "/vehicle_%d.log" % self.vehicle_id, 'a') as f:
                 f.writelines('\n'.join(self.vehicle.logger))
                 self.vehicle.logger.clear()
@@ -332,13 +339,14 @@ def main(args=None):
 
     try:
         rclpy.spin(vehicle)
+    except KeyboardInterrupt:
+        print("Vehicle %d is terminated." % vehicle.vehicle_id)
     except InvalidHandle as e:
         print(e)
         print("Vehicle %d node is destroyed cleanly." % vehicle.vehicle_id)
-    except:
+    except Exception:
         print("Unknown exception")
     finally:
-
         rclpy.shutdown()
 
 if __name__ == "__main__":

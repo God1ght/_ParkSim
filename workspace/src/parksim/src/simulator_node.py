@@ -2,6 +2,7 @@
 import rclpy
 
 import subprocess
+import signal
 import numpy as np
 
 from pathlib import Path
@@ -18,7 +19,7 @@ from dlp.visualizer import Visualizer as DlpVisualizer
 from std_msgs.msg import Int16MultiArray, Bool, Float32
 from parksim.msg import VehicleStateMsg
 from parksim.srv import OccupancySrv
-from parksim.base_node import MPClabNode
+from parksim.base_node import MPClabNode, parksim_path
 from parksim.pytypes import VehicleState, NodeParamTemplate
 
 class SimulatorNodeParams(NodeParamTemplate):
@@ -26,7 +27,7 @@ class SimulatorNodeParams(NodeParamTemplate):
     template that stores all parameters needed for the node as well as default values
     """
     def __init__(self):
-        self.dlp_path = '/dlp-dataset/data/DJI_0012'
+        self.dlp_path = parksim_path('python', 'parksim', 'priorFiles', 'data', 'DJI_0012')
         self.timer_period = 0.1
         self.random_seed = 0
 
@@ -38,12 +39,12 @@ class SimulatorNodeParams(NodeParamTemplate):
         self.spawn_interval_mean = 5 # (s)
 
         self.spots_data_path = ''
-        self.agents_data_path = ''
+        self.agents_data_path = parksim_path('python', 'parksim', 'priorFiles', 'agents_data_0012.pickle')
 
         self.use_existing_agents = True
 
         self.write_log = True
-        self.log_path = '/ParkSim/vehicle_log'
+        self.log_path = parksim_path('vehicle_log')
 
 class SimulatorNode(MPClabNode):
     """
@@ -69,8 +70,9 @@ class SimulatorNode(MPClabNode):
 
         # Clean up the log folder if needed
         if self.write_log:
-            log_dir_path = str(Path.home()) + self.log_path
-
+            # yccc7: path changed
+            # log_dir_path = str(Path.home()) + self.log_path
+            log_dir_path = self.log_path
             if not os.path.exists(log_dir_path):
                 os.mkdir(log_dir_path)
             log_files = glob.glob(log_dir_path+'/*.log')
@@ -82,7 +84,9 @@ class SimulatorNode(MPClabNode):
         home_path = str(Path.home())
         self.get_logger().info('Loading Dataset...')
         ds = Dataset()
-        ds.load(home_path + self.dlp_path)
+        # ds.load(home_path + self.dlp_path)
+        # yccc7: path changed
+        ds.load(self.dlp_path)
         self.dlpvis = DlpVisualizer(ds)
 
         # Parking Spaces
@@ -94,6 +98,7 @@ class SimulatorNode(MPClabNode):
         self._gen_agents()
 
         # Spawning
+        # 生成智能体，生成时间服从指数分布
         self.spawn_entering_time = list(np.random.exponential(self.spawn_interval_mean, self.spawn_entering))
 
         self.spawn_exiting_time = list(np.random.exponential(self.spawn_interval_mean, self.spawn_exiting))
@@ -158,8 +163,12 @@ class SimulatorNode(MPClabNode):
         return parking_spaces, list(map(int, occupied))
 
     def _gen_agents(self):
-        home_path = str(Path.home())
-        with open(home_path + self.agents_data_path, 'rb') as f:
+        # home_path = str(Path.home())
+        # with open(home_path + self.agents_data_path, 'rb') as f:
+        #     self.agents_dict = pickle.load(f)
+
+        # yccc7: path changed
+        with open(self.agents_data_path, 'rb') as f:
             self.agents_dict = pickle.load(f)
 
     def add_vehicle(self, spot_index: int):
@@ -167,24 +176,61 @@ class SimulatorNode(MPClabNode):
         self.num_vehicles += 1
 
         self.vehicles.append(
-            subprocess.Popen(["ros2", "launch", "parksim", "vehicle.launch.py", "vehicle_id:=%d" % self.num_vehicles, "spot_index:=%d" % spot_index])
+            subprocess.Popen(
+                ["ros2", "launch", "parksim", "vehicle.launch.py", "vehicle_id:=%d" % self.num_vehicles, "spot_index:=%d" % spot_index],
+                start_new_session=True,
+            )
         )
 
         self.get_logger().info("A vehicle with id = %d is added with spot_index = %d" % (self.num_vehicles, spot_index))
-
     def add_existing_vehicle(self, vehicle_id: int):
 
         self.num_vehicles += 1
 
         self.vehicles.append(
-            subprocess.Popen(["ros2", "launch", "parksim", "vehicle.launch.py", "vehicle_id:=%d" % vehicle_id, "spot_index:=%d" % 0])
+            subprocess.Popen(
+                ["ros2", "launch", "parksim", "vehicle.launch.py", "vehicle_id:=%d" % vehicle_id, "spot_index:=%d" % 0],
+                start_new_session=True,
+            )
         )
 
         self.get_logger().info("An existing vehicle with id = %d is added" % vehicle_id)
-
     def shutdown_vehicles(self):
         for vehicle in self.vehicles:
-            vehicle.kill()
+            if vehicle.poll() is not None:
+                continue
+
+            try:
+                vehicle.send_signal(signal.SIGINT)
+            except ProcessLookupError:
+                continue
+
+        for vehicle in self.vehicles:
+            if vehicle.poll() is not None:
+                continue
+
+            try:
+                vehicle.wait(timeout=5)
+                continue
+            except subprocess.TimeoutExpired:
+                pass
+
+            try:
+                os.killpg(vehicle.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                continue
+
+            try:
+                vehicle.wait(timeout=2)
+                continue
+            except subprocess.TimeoutExpired:
+                pass
+
+            try:
+                os.killpg(vehicle.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                continue
+            vehicle.wait(timeout=2)
 
         print("Vehicle nodes are down")
 
@@ -260,12 +306,6 @@ class SimulatorNode(MPClabNode):
         occupancy_msg.data = self.occupied
         self.occupancy_pub.publish(occupancy_msg)
 
-        # Restart service if too busy
-        if not self.occupancy_cli.wait_for_service(timeout_sec=1.0):
-            self.destroy_service(self.occupancy_srv)
-            self.occupancy_srv = self.create_service(OccupancySrv, 'occupancy', self.occupancy_srv_callback)
-
-            self.get_logger().warning('Service not available, restarted.')
 
 def main(args=None):
     rclpy.init(args=args)

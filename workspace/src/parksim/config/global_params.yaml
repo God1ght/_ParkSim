@@ -1,10 +1,10 @@
-# dlp_path: '/ParkSim/data/dlp_data/sim_DJI_0000' # Starts from home directory
-dlp_path: '/dlp-dataset/data/DJI_0012'
+# Paths are resolved by launch through PARKSIM_ROOT.
+dlp_path: "${PARKSIM_ROOT}/python/parksim/priorFiles/data/DJI_0012"
 
 random_seed: 0
 
 write_log: true
-log_path: '/ParkSim/vehicle_log'
+log_path: "${PARKSIM_ROOT}/vehicle_log"
 
 use_existing_agents: true
-agents_data_path: '/ParkSim/data/agents_data.pickle'
+agents_data_path: "${PARKSIM_ROOT}/python/parksim/priorFiles/agents_data_0012.pickle"

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from dlp.dataset import Dataset
 
+import rclpy.logging
 from std_msgs.msg import Bool, Float32
 from parksim.msg import VehicleStateMsg, VehicleInfoMsg
 from parksim.pytypes import VehicleState, NodeParamTemplate
@@ -23,7 +24,7 @@ class VisualizerNodeParams(NodeParamTemplate):
     template that stores all parameters needed for the node as well as default values
     """
     def __init__(self):
-        self.dlp_path = '/dlp-dataset/data/DJI_0012'
+        self.dlp_path = None
         self.timer_period = 0.05
 
         self.use_existing_agents = False
@@ -60,7 +61,10 @@ class VisualizerNode(MPClabNode):
         # Load dataset
         ds = Dataset()
         home_path = str(Path.home())
-        ds.load(home_path + self.dlp_path)
+        # ds.load(home_path + self.dlp_path)
+
+        # Yccc7: path changed
+        ds.load(self.dlp_path)
 
         # Load Vehicle Body
         vehicle_body = VehicleBody()
@@ -143,7 +147,7 @@ class VisualizerNode(MPClabNode):
         self.update_subs()
 
         self.vis.clear_frame()
-        
+
         if self.use_existing_agents:
             scene_token = self.vis.dlpvis.dataset.list_scenes()[0]
             agent_token_list = self.vis.dlpvis.dataset.get('scene', scene_token)['agents']
@@ -188,7 +192,7 @@ class VisualizerNode(MPClabNode):
         sim_status_msg = Bool()
         sim_status_msg.data = self.vis.is_running()
         self.sim_status_pub.publish(sim_status_msg)
-        
+
 def main(args=None):
     rclpy.init(args=args)
 

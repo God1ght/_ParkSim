@@ -141,8 +141,8 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.task_profile = task_profile
 
     def load_parking_spaces(self, spots_data_path: str):
-        home_path = str(Path.home())
-        with open(home_path + spots_data_path, 'rb') as f:
+
+        with open(spots_data_path, 'rb') as f:
             data = pickle.load(f)
             self.parking_spaces = data['parking_spaces']
             self.overshoot_ranges = data['overshoot_ranges']
@@ -154,8 +154,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         waypoints_graph_path: path to WaypointGraph object pickle
         entrance_coords: The (x,y) coordinates of the entrance
         """
-        home_path = str(Path.home())
-        with open(home_path + waypoints_graph_path, 'rb') as f:
+        with open(waypoints_graph_path, 'rb') as f:
             data = pickle.load(f)
             self.graph = data['graph']
             entrance_coords = data['entrance_coords']
@@ -164,15 +163,13 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.entrance_vertex = self.graph.search(entrance_coords)
 
     def load_maneuver(self, offline_maneuver_path: str):
-        home_path = str(Path.home())
-        self.offline_maneuver = OfflineManeuver(pickle_file=home_path+offline_maneuver_path)
+        self.offline_maneuver = OfflineManeuver(pickle_file=offline_maneuver_path)
 
     def load_intent_model(self, model_path: str):
         """
         load_graph must be called before load_intent_model.
         """
-        home_path = str(Path.home())
-        self.intent_predictor.load_model(waypoints=self.graph, model_path=home_path + model_path)
+        self.intent_predictor.load_model(waypoints=self.graph, model_path=model_path)
     
     def compute_ref_path(self, graph_sol: AStarGraph, offset: float = None, spot_index: int = None):
         if not offset:

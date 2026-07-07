@@ -27,7 +27,7 @@ def plot_vehicle(ax, state, steer, vehicle_body: VehicleBody):
 
     # Body
     p = np.array([[np.cos(th), -np.sin(th)],[np.sin(th), np.cos(th)]]) @ np.array([[l/2,l/2, -l/2, -l/2, l/2],[w/2, -w/2, -w/2, w/2, w/2]])
-    
+
     ax.plot(p[0,:] + x, p[1,:] + y, 'k', linewidth = 1)
 
     # Rear wheels
@@ -46,6 +46,28 @@ def plot_vehicle(ax, state, steer, vehicle_body: VehicleBody):
 
 class OfflineVisualizer(object):
     """
+
+    OfflineVisualizer provides tools for offline visualization of vehicle simulation results.
+    Attributes:
+        sol (VehiclePrediction): The predicted vehicle trajectory and control inputs.
+        obstacles (list): List of obstacle objects to be visualized.
+        map: The map object for the environment (type unspecified).
+        vehicle_body (VehicleBody): The vehicle body model for rendering.
+        region (GeofenceRegion): The region defining the plotting boundaries.
+    Methods:
+        plot_frame(ax, k):
+            Plots the vehicle and obstacles at a specific time step k on the given matplotlib axis.
+        plot_trace(ax):
+            Plots the time series of vehicle speed, heading angle, acceleration, and steering input.
+        plot_solution(step=1, fig_path=None, show=True):
+            Plots the entire solution trajectory and vehicle states in a single figure.
+            Optionally saves the figure and controls display.
+        animate_solution(interval=40, gif_path=None, show=True):
+            Animates the vehicle trajectory and state evolution over time.
+            Optionally saves the animation as a GIF and controls display.
+        show():
+            Displays all open matplotlib figures.
+
     Visualize the results offline
     """
     def __init__(self, sol: VehiclePrediction, obstacles, map, vehicle_body: VehicleBody, region: GeofenceRegion):
@@ -61,8 +83,8 @@ class OfflineVisualizer(object):
         th = self.sol.psi[k]
         steer = self.sol.u_steer[k]
 
-        plot_vehicle(ax, [xi, xj, th], steer, self.vehicle_body)    
-    
+        plot_vehicle(ax, [xi, xj, th], steer, self.vehicle_body)
+
         # Draw obstacles
         for obstacle in self.obstacles:
             obstacle.plot_pyplot(ax)
@@ -121,18 +143,18 @@ class OfflineVisualizer(object):
             ax.set_ylabel('y')
 
             self.plot_frame(ax, k)
-        
+
         ani = FuncAnimation(fig, animate, frames=len(self.sol.t), interval=interval, repeat=True)
 
         if gif_path:
             writer = PillowWriter(fps=int(1000/interval))
             ani.save(gif_path, writer=writer)
-        
+
         if show:
             plt.show()
 
         return
-    
+
     def show(self):
         plt.show()
         return

@@ -23,7 +23,6 @@ setuptools.setup(
         "lark",
         "dearpygui",
         "seaborn>=0.11.2",
-        "ray[tune]",
         "pytorch_lightning",
         "einops"
     ]
