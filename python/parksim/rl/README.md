@@ -39,3 +39,18 @@ pip install -e ".[torch-policy]"
 
 The core headless environment itself only requires NumPy and existing ParkSim
 types.
+
+## Expert data
+
+`ExpertTrajectoryDataset` builds a common transition format for IRL:
+
+```python
+from parksim.rl.expert_data import ExpertTrajectoryDataset
+
+dataset = ExpertTrajectoryDataset(data_root="/path/to/priorFiles", num_agents=4)
+episodes = dataset.load()
+features = dataset.feature_matrix()
+```
+
+When no private data root is passed, the dataset can generate a tiny synthetic
+fixture for tests. Real DLP/ParkSim data remains local and is not tracked by Git.
