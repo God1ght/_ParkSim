@@ -29,6 +29,15 @@ def _as_bool(value):
         return value
     return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
 
+
+def _as_value(value, default):
+    if value is None:
+        return default
+    if isinstance(value, str) and value == '':
+        return default
+    return value
+
+
 class VehicleNodeParams(NodeParamTemplate):
     """
     template that stores all parameters needed for the node as well as default values
@@ -89,7 +98,10 @@ class VehicleNode(MPClabNode):
         self.declare_parameter('spot_index', 0)
         self.spot_index = self.get_parameter('spot_index').get_parameter_value().integer_value
 
+        self._load_launch_overrides()
+
         self.get_logger().info("Spot Index: " + str(self.spot_index))
+        self.get_logger().info("Agent Type: " + str(self.agent_type))
 
         # ======== Publishers, Subscribers, Services
         self.state_pub = self.create_publisher(VehicleStateMsg, 'state', 10)
@@ -233,6 +245,32 @@ class VehicleNode(MPClabNode):
         self.start_solving = False
         self.last_time = self.start_time
         self.total_non_idle_time = 0
+
+    def _get_plain_launch_parameter(self, name, default):
+        if not self.has_parameter(name):
+            self.declare_parameter(name, default)
+        return _as_value(self.get_parameter(name).value, default)
+
+    def _load_launch_overrides(self):
+        # The node is launched under /vehicle_<id>. Template parameters are
+        # declared with that namespace, while launch arguments arrive as plain
+        # node parameters. Read the plain overrides explicitly so agent_type and
+        # Qwen settings are not silently left at template defaults.
+        self.use_existing_agents = _as_bool(self._get_plain_launch_parameter('use_existing_agents', self.use_existing_agents))
+        self.use_existing_agents = _as_bool(self._get_plain_launch_parameter('use_existing', self.use_existing_agents))
+        for name in (
+            'agent_type',
+            'rl_policy_path',
+            'rl_max_steps',
+            'qwen_endpoint',
+            'qwen_model',
+            'qwen_timeout',
+            'qwen_decision_period',
+            'qwen_max_candidate_spots',
+            'qwen_periodic_replan',
+            'qwen_decision_log_path',
+        ):
+            object.__setattr__(self, name, self._get_plain_launch_parameter(name, getattr(self, name)))
 
     def sim_status_cb(self, msg: Bool):
         self.sim_is_running = msg.data

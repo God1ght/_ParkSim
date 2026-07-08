@@ -6,6 +6,7 @@
 install/
 build/
 log/
+vehicle_log/
 
 # Tensorboard Runs
 runs/
