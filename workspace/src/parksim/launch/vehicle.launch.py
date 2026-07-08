@@ -25,6 +25,11 @@ def generate_launch_description():
         DeclareLaunchArgument('use_existing', default_value='0'),
         DeclareLaunchArgument('agent_type', default_value='rule_based'),
         DeclareLaunchArgument('rl_policy_path', default_value=''),
+        DeclareLaunchArgument('qwen_endpoint', default_value=''),
+        DeclareLaunchArgument('qwen_model', default_value='Qwen2.5-VL-7B-Instruct'),
+        DeclareLaunchArgument('qwen_decision_period', default_value='3.0'),
+        DeclareLaunchArgument('qwen_max_candidate_spots', default_value='8'),
+        DeclareLaunchArgument('qwen_periodic_replan', default_value='false'),
 
         Node(
             package='parksim',
@@ -37,6 +42,11 @@ def generate_launch_description():
                 'use_existing': LaunchConfiguration('use_existing'),
                 'agent_type': LaunchConfiguration('agent_type'),
                 'rl_policy_path': LaunchConfiguration('rl_policy_path'),
+                'qwen_endpoint': LaunchConfiguration('qwen_endpoint'),
+                'qwen_model': LaunchConfiguration('qwen_model'),
+                'qwen_decision_period': LaunchConfiguration('qwen_decision_period'),
+                'qwen_max_candidate_spots': LaunchConfiguration('qwen_max_candidate_spots'),
+                'qwen_periodic_replan': LaunchConfiguration('qwen_periodic_replan'),
             }],
             output='screen',
             emulate_tty=True

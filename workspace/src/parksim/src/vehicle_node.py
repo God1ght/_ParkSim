@@ -23,6 +23,12 @@ from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
+
+def _as_bool(value):
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
 class VehicleNodeParams(NodeParamTemplate):
     """
     template that stores all parameters needed for the node as well as default values
@@ -46,6 +52,14 @@ class VehicleNodeParams(NodeParamTemplate):
         self.agent_type = 'rule_based'
         self.rl_policy_path = ''
         self.rl_max_steps = 1000
+
+        self.qwen_endpoint = ''
+        self.qwen_model = 'Qwen2.5-VL-7B-Instruct'
+        self.qwen_timeout = 15.0
+        self.qwen_decision_period = 3.0
+        self.qwen_max_candidate_spots = 8
+        self.qwen_periodic_replan = False
+        self.qwen_decision_log_path = parksim_path('vehicle_log', 'qwen_vla_decisions.jsonl')
 
         self.write_log = True
         self.log_path = parksim_path('vehicle_log')
@@ -108,7 +122,24 @@ class VehicleNode(MPClabNode):
         vehicle_config = VehicleConfig()
 
         agent_type = str(self.agent_type).lower()
-        if agent_type == 'rl_policy':
+        if agent_type == 'qwen_vla':
+            from parksim.vla.agent import QwenVLAVehicle
+
+            self.vehicle = QwenVLAVehicle(
+                vehicle_id=self.vehicle_id,
+                vehicle_body=vehicle_body,
+                vehicle_config=vehicle_config,
+                qwen_endpoint=str(self.qwen_endpoint),
+                qwen_model=str(self.qwen_model),
+                qwen_timeout=float(self.qwen_timeout),
+                decision_period=float(self.qwen_decision_period),
+                max_candidate_spots=int(self.qwen_max_candidate_spots),
+                entrance_coords=np.array(self.entrance_coords),
+                fallback_spot_index=self.spot_index if self.spot_index > 0 else None,
+                periodic_replan=_as_bool(self.qwen_periodic_replan),
+                decision_log_path=str(self.qwen_decision_log_path),
+            )
+        elif agent_type == 'rl_policy':
             from parksim.rl.agents import RLPolicyAgent
 
             policy_path = self.rl_policy_path or os.environ.get('PARKSIM_POLICY_PATH', '')
@@ -134,7 +165,7 @@ class VehicleNode(MPClabNode):
                 intent_predictor=None
                 )
         else:
-            raise ValueError("Unsupported agent_type '%s'. Use 'rule_based' or 'rl_policy'." % self.agent_type)
+            raise ValueError("Unsupported agent_type '%s'. Use 'rule_based', 'rl_policy', or 'qwen_vla'." % self.agent_type)
 
         self.vehicle.set_printer(self.get_logger().info)
         self.vehicle.load_parking_spaces(spots_data_path=self.spots_data_path)
@@ -146,10 +177,13 @@ class VehicleNode(MPClabNode):
 
         if not self.use_existing_agents:
             if self.spot_index > 0:
-                cruise_task = VehicleTask(
-                    name="CRUISE", v_cruise=5, target_spot_index=self.spot_index)
-                park_task = VehicleTask(name="PARK")
-                task_profile = [cruise_task, park_task]
+                if agent_type == 'qwen_vla':
+                    task_profile = []
+                else:
+                    cruise_task = VehicleTask(
+                        name="CRUISE", v_cruise=5, target_spot_index=self.spot_index)
+                    park_task = VehicleTask(name="PARK", target_spot_index=self.spot_index)
+                    task_profile = [cruise_task, park_task]
 
                 state = VehicleState()
                 state.x.x = self.entrance_coords[0] - vehicle_config.offset

@@ -17,3 +17,12 @@
     agent_type: "rule_based"
     rl_policy_path: ""
     rl_max_steps: 1000
+
+    # Qwen-VLA high-level policy. Empty endpoint uses deterministic fallback for smoke tests.
+    qwen_endpoint: ""
+    qwen_model: "Qwen2.5-VL-7B-Instruct"
+    qwen_timeout: 15.0
+    qwen_decision_period: 3.0
+    qwen_max_candidate_spots: 8
+    qwen_periodic_replan: false
+    qwen_decision_log_path: "${PARKSIM_ROOT}/vehicle_log/qwen_vla_decisions.jsonl"

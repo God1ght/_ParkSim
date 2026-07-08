@@ -42,6 +42,13 @@ class SimulatorNodeParams(NodeParamTemplate):
         self.agents_data_path = parksim_path('python', 'parksim', 'priorFiles', 'agents_data_0012.pickle')
 
         self.use_existing_agents = True
+        self.background_mode = 'replay'  # replay, rule_random, or mixed
+
+        self.spawn_qwen_ego = False
+        self.qwen_ego_spawn_time = 0.5
+        self.qwen_ego_spot_index = 1
+        self.qwen_endpoint = ''
+        self.qwen_model = 'Qwen2.5-VL-7B-Instruct'
 
         self.write_log = True
         self.log_path = parksim_path('vehicle_log')
@@ -115,6 +122,7 @@ class SimulatorNode(MPClabNode):
 
         self.vehicles = []
         self.num_vehicles = 0
+        self.qwen_ego_spawned = False
 
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
 
@@ -171,18 +179,27 @@ class SimulatorNode(MPClabNode):
         with open(self.agents_data_path, 'rb') as f:
             self.agents_dict = pickle.load(f)
 
-    def add_vehicle(self, spot_index: int):
+    def add_vehicle(self, spot_index: int, agent_type: str = 'rule_based'):
 
         self.num_vehicles += 1
 
+        command = [
+            "ros2", "launch", "parksim", "vehicle.launch.py",
+            "vehicle_id:=%d" % self.num_vehicles,
+            "spot_index:=%d" % spot_index,
+            "agent_type:=%s" % agent_type,
+        ]
+        if agent_type == 'qwen_vla':
+            command.extend([
+                "qwen_endpoint:=%s" % self.qwen_endpoint,
+                "qwen_model:=%s" % self.qwen_model,
+            ])
+
         self.vehicles.append(
-            subprocess.Popen(
-                ["ros2", "launch", "parksim", "vehicle.launch.py", "vehicle_id:=%d" % self.num_vehicles, "spot_index:=%d" % spot_index],
-                start_new_session=True,
-            )
+            subprocess.Popen(command, start_new_session=True)
         )
 
-        self.get_logger().info("A vehicle with id = %d is added with spot_index = %d" % (self.num_vehicles, spot_index))
+        self.get_logger().info("A %s vehicle with id = %d is added with spot_index = %d" % (agent_type, self.num_vehicles, spot_index))
     def add_existing_vehicle(self, vehicle_id: int):
 
         self.num_vehicles += 1
@@ -261,10 +278,11 @@ class SimulatorNode(MPClabNode):
         current_time = self.get_ros_time()
 
         if self.spawn_exiting_time and current_time - self.last_exit_time > self.spawn_exiting_time[0]:
-            empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
-            chosen_spot = np.random.choice(empty_spots)
+            departable_spots = [i for i in range(1, len(self.occupied)) if self.occupied[i] and i not in self.blocked_spots]
+            if not departable_spots:
+                return
+            chosen_spot = int(np.random.choice(departable_spots))
             self.add_vehicle(-1 * chosen_spot)
-            self.occupied[chosen_spot] = True
             self.spawn_exiting_time.pop(0)
 
             self.last_exit_time = current_time
@@ -281,11 +299,20 @@ class SimulatorNode(MPClabNode):
         for added in added_vehicles:
             del self.agents_dict[added]
 
+    def try_spawn_qwen_ego(self):
+        current_time = self.get_ros_time() - self.start_time
+        if self.spawn_qwen_ego and not self.qwen_ego_spawned and current_time >= self.qwen_ego_spawn_time:
+            self.add_vehicle(int(self.qwen_ego_spot_index), agent_type='qwen_vla')
+            self.qwen_ego_spawned = True
+
     def timer_callback(self):
 
         if self.sim_is_running:
-            if not self.use_existing_agents:
-        
+            self.try_spawn_qwen_ego()
+            mode = str(self.background_mode).lower()
+            if mode not in ['replay', 'rule_random', 'mixed']:
+                mode = 'replay' if self.use_existing_agents else 'rule_random'
+            if mode in ['rule_random', 'mixed']:
                 if self.keep_spawn_entering:
                     if self.last_enter_sub:
                         self.destroy_subscription(self.last_enter_sub)
@@ -294,7 +321,7 @@ class SimulatorNode(MPClabNode):
                     self.try_spawn_entering()
 
                 self.try_spawn_exiting()
-            else:
+            if mode in ['replay', 'mixed']:
                 self.try_spawn_existing()
 
         # Publish current simulation time
