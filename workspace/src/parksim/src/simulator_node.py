@@ -47,12 +47,17 @@ class SimulatorNodeParams(NodeParamTemplate):
         self.spawn_qwen_ego = False
         self.qwen_ego_spawn_time = 0.5
         self.qwen_ego_spot_index = 1
+        self.spawn_controlled_ego = False
+        self.controlled_ego_spawn_time = 0.5
+        self.controlled_ego_spot_index = 1
+        self.controlled_ego_agent_type = 'qwen_vla'
         self.qwen_endpoint = ''
         self.qwen_model = 'Qwen2.5-VL-7B-Instruct'
         self.qwen_timeout = 15.0
         self.qwen_decision_period = 3.0
         self.qwen_max_candidate_spots = 8
         self.qwen_periodic_replan = False
+        self.qwen_decision_log_path = ''
 
         self.write_log = True
         self.log_path = parksim_path('vehicle_log')
@@ -192,6 +197,7 @@ class SimulatorNode(MPClabNode):
             "vehicle_id:=%d" % self.num_vehicles,
             "spot_index:=%d" % spot_index,
             "agent_type:=%s" % agent_type,
+            "log_path:=%s" % self.log_path,
         ]
         if agent_type == 'qwen_vla':
             command.extend([
@@ -201,6 +207,7 @@ class SimulatorNode(MPClabNode):
                 "qwen_decision_period:=%s" % self.qwen_decision_period,
                 "qwen_max_candidate_spots:=%s" % self.qwen_max_candidate_spots,
                 "qwen_periodic_replan:=%s" % str(self.qwen_periodic_replan).lower(),
+                "qwen_decision_log_path:=%s" % (self.qwen_decision_log_path or os.path.join(self.log_path, "qwen_vla_decisions.jsonl")),
             ])
 
         self.vehicles.append(
@@ -309,9 +316,17 @@ class SimulatorNode(MPClabNode):
 
     def try_spawn_qwen_ego(self):
         current_time = self.get_ros_time() - self.start_time
-        if self.spawn_qwen_ego and not self.qwen_ego_spawned and current_time >= self.qwen_ego_spawn_time:
-            self.add_vehicle(int(self.qwen_ego_spot_index), agent_type='qwen_vla')
-            self.qwen_ego_spawned = True
+        legacy_qwen = bool(self.spawn_qwen_ego)
+        controlled = bool(self.spawn_controlled_ego)
+        if not (legacy_qwen or controlled) or self.qwen_ego_spawned:
+            return
+        spawn_time = float(self.controlled_ego_spawn_time if controlled else self.qwen_ego_spawn_time)
+        if current_time < spawn_time:
+            return
+        spot_index = int(self.controlled_ego_spot_index if controlled else self.qwen_ego_spot_index)
+        agent_type = str(self.controlled_ego_agent_type if controlled else 'qwen_vla').lower()
+        self.add_vehicle(spot_index, agent_type=agent_type)
+        self.qwen_ego_spawned = True
 
     def timer_callback(self):
 
@@ -342,7 +357,12 @@ class SimulatorNode(MPClabNode):
         self.occupancy_pub.publish(occupancy_msg)
 
 
+def _raise_keyboard_interrupt(signum, frame):
+    raise KeyboardInterrupt()
+
+
 def main(args=None):
+    signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
     rclpy.init(args=args)
 
     simulator = SimulatorNode()

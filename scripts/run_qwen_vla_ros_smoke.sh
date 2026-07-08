@@ -45,7 +45,16 @@ if [[ -f "$DECISION_LOG" ]]; then
 fi
 
 qwen_pid=""
+cleanup_ros_processes() {
+  pkill -TERM -f "$ROOT/workspace/install/parksim/lib/parksim/simulator_node.py" 2>/dev/null || true
+  pkill -TERM -f "$ROOT/workspace/install/parksim/lib/parksim/vehicle_node.py" 2>/dev/null || true
+  sleep 1
+  pkill -KILL -f "$ROOT/workspace/install/parksim/lib/parksim/simulator_node.py" 2>/dev/null || true
+  pkill -KILL -f "$ROOT/workspace/install/parksim/lib/parksim/vehicle_node.py" 2>/dev/null || true
+}
+
 cleanup() {
+  cleanup_ros_processes
   if [[ -n "$qwen_pid" ]] && kill -0 "$qwen_pid" 2>/dev/null; then
     kill "$qwen_pid" 2>/dev/null || true
     wait "$qwen_pid" 2>/dev/null || true
@@ -99,6 +108,7 @@ timeout "$DURATION" ros2 run parksim simulator_node.py --ros-args \
   > "$SIM_LOG" 2>&1
 sim_status="$?"
 set -e
+cleanup_ros_processes
 
 if [[ "$sim_status" != "0" && "$sim_status" != "124" ]]; then
   echo "Simulator smoke failed with exit status $sim_status" >&2

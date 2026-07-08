@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import re
 from parksim.controller.stanley_controller import StanleyController
 
@@ -72,6 +73,9 @@ class VehicleNodeParams(NodeParamTemplate):
 
         self.write_log = True
         self.log_path = parksim_path('vehicle_log')
+        self.trace_log_enabled = True
+        self.trace_log_path = ''
+        self.summary_log_path = ''
 
 class VehicleNode(MPClabNode):
     """
@@ -269,8 +273,79 @@ class VehicleNode(MPClabNode):
             'qwen_max_candidate_spots',
             'qwen_periodic_replan',
             'qwen_decision_log_path',
+            'log_path',
+            'trace_log_enabled',
+            'trace_log_path',
+            'summary_log_path',
         ):
             object.__setattr__(self, name, self._get_plain_launch_parameter(name, getattr(self, name)))
+        self.trace_log_enabled = _as_bool(self.trace_log_enabled)
+
+    def _default_trace_log_path(self):
+        return os.path.join(self.log_path, "vehicle_%d_trace.jsonl" % self.vehicle_id)
+
+    def _default_summary_log_path(self):
+        return os.path.join(self.log_path, "vehicle_%d_summary.json" % self.vehicle_id)
+
+    def _append_trace_record(self, current_time, final=False):
+        if not self.write_log or not self.trace_log_enabled:
+            return
+        log_dir_path = self.log_path
+        if not os.path.exists(log_dir_path):
+            os.makedirs(log_dir_path, exist_ok=True)
+        state = self.vehicle.state
+        record = {
+            "time": float(current_time - self.start_time),
+            "wall_time": float(current_time),
+            "vehicle_id": int(self.vehicle_id),
+            "agent_type": str(self.agent_type),
+            "spot_index": int(self.spot_index),
+            "task": self.vehicle.current_task,
+            "is_final": bool(final),
+            "total_non_idle_time": float(self.total_non_idle_time),
+            "x": float(state.x.x),
+            "y": float(state.x.y),
+            "yaw": float(state.e.psi),
+            "speed": float(state.v.v),
+            "acceleration": float(state.u.u_a),
+            "steering": float(state.u.u_steer),
+            "is_braking": bool(getattr(self.vehicle, "is_braking", False)),
+            "waiting_for": int(getattr(self.vehicle, "waiting_for", 0) or 0),
+            "target_idx": int(getattr(self.vehicle, "target_idx", 0) or 0),
+            "vehicle_spot_index": int(getattr(self.vehicle, "spot_index", 0) or 0),
+        }
+        trace_path = self.trace_log_path or self._default_trace_log_path()
+        os.makedirs(os.path.dirname(trace_path), exist_ok=True)
+        with open(trace_path, 'a') as f:
+            f.write(json.dumps(record) + "\n")
+
+    def _write_summary_record(self, current_time):
+        if not self.write_log:
+            return
+        log_dir_path = self.log_path
+        if not os.path.exists(log_dir_path):
+            os.makedirs(log_dir_path, exist_ok=True)
+        state = self.vehicle.state
+        summary = {
+            "vehicle_id": int(self.vehicle_id),
+            "agent_type": str(self.agent_type),
+            "spot_index": int(self.spot_index),
+            "vehicle_spot_index": int(getattr(self.vehicle, "spot_index", 0) or 0),
+            "completed": bool(self.vehicle.is_all_done()),
+            "total_time": float(current_time - self.start_time),
+            "total_non_idle_time": float(self.total_non_idle_time),
+            "final_task": self.vehicle.current_task,
+            "final_state": {
+                "x": float(state.x.x),
+                "y": float(state.x.y),
+                "yaw": float(state.e.psi),
+                "speed": float(state.v.v),
+            },
+        }
+        summary_path = self.summary_log_path or self._default_summary_log_path()
+        os.makedirs(os.path.dirname(summary_path), exist_ok=True)
+        with open(summary_path, 'w') as f:
+            json.dump(summary, f, indent=2)
 
     def sim_status_cb(self, msg: Bool):
         self.sim_is_running = msg.data
@@ -377,23 +452,26 @@ class VehicleNode(MPClabNode):
                 continue
 
     def timer_callback(self):
+        current_time = self.get_ros_time()
         if self.vehicle.is_all_done():
             self.get_logger().info("Vehicle %d is done. Destroying node." % self.vehicle_id)
 
             # write logs
             log_dir_path = self.log_path
             if not os.path.exists(log_dir_path):
-                os.mkdir(log_dir_path)
+                os.makedirs(log_dir_path, exist_ok=True)
 
+            self._append_trace_record(current_time, final=True)
+            self._write_summary_record(current_time)
             with open(log_dir_path + "/vehicle_%d.log" % self.vehicle_id, 'a') as f:
                 f.writelines(str(self.total_non_idle_time))
                 self.vehicle.logger.clear()
 
             self.destroy_node()
+            return
 
         self.update_subs()
 
-        current_time = self.get_ros_time()
         if self.vehicle.current_task != "IDLE":
             self.total_non_idle_time += current_time - self.last_time
         self.last_time = current_time
@@ -404,6 +482,7 @@ class VehicleNode(MPClabNode):
         if self.sim_is_running:
             if self.start_solving:
                 self.vehicle.solve(time=self.get_ros_time())
+            self._append_trace_record(current_time)
         elif self.write_log and len(self.vehicle.logger) > 0:
             # write logs
             log_dir_path = self.log_path

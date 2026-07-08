@@ -24,6 +24,10 @@ def generate_launch_description():
         DeclareLaunchArgument('spot_index', default_value='3'),
         DeclareLaunchArgument('use_existing', default_value='0'),
         DeclareLaunchArgument('agent_type', default_value='rule_based'),
+        DeclareLaunchArgument('log_path', default_value=''),
+        DeclareLaunchArgument('trace_log_enabled', default_value='true'),
+        DeclareLaunchArgument('trace_log_path', default_value=''),
+        DeclareLaunchArgument('summary_log_path', default_value=''),
         DeclareLaunchArgument('rl_policy_path', default_value=''),
         DeclareLaunchArgument('qwen_endpoint', default_value=''),
         DeclareLaunchArgument('qwen_model', default_value='Qwen2.5-VL-7B-Instruct'),
@@ -31,6 +35,7 @@ def generate_launch_description():
         DeclareLaunchArgument('qwen_decision_period', default_value='3.0'),
         DeclareLaunchArgument('qwen_max_candidate_spots', default_value='8'),
         DeclareLaunchArgument('qwen_periodic_replan', default_value='false'),
+        DeclareLaunchArgument('qwen_decision_log_path', default_value=''),
 
         Node(
             package='parksim',
@@ -42,6 +47,10 @@ def generate_launch_description():
                 'spot_index': LaunchConfiguration('spot_index'),
                 'use_existing': LaunchConfiguration('use_existing'),
                 'agent_type': LaunchConfiguration('agent_type'),
+                'log_path': LaunchConfiguration('log_path'),
+                'trace_log_enabled': LaunchConfiguration('trace_log_enabled'),
+                'trace_log_path': LaunchConfiguration('trace_log_path'),
+                'summary_log_path': LaunchConfiguration('summary_log_path'),
                 'rl_policy_path': LaunchConfiguration('rl_policy_path'),
                 'qwen_endpoint': LaunchConfiguration('qwen_endpoint'),
                 'qwen_model': LaunchConfiguration('qwen_model'),
@@ -49,6 +58,7 @@ def generate_launch_description():
                 'qwen_decision_period': LaunchConfiguration('qwen_decision_period'),
                 'qwen_max_candidate_spots': LaunchConfiguration('qwen_max_candidate_spots'),
                 'qwen_periodic_replan': LaunchConfiguration('qwen_periodic_replan'),
+                'qwen_decision_log_path': LaunchConfiguration('qwen_decision_log_path'),
             }],
             output='screen',
             emulate_tty=True

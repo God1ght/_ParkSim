@@ -26,3 +26,8 @@
     qwen_max_candidate_spots: 8
     qwen_periodic_replan: false
     qwen_decision_log_path: "${PARKSIM_ROOT}/vehicle_log/qwen_vla_decisions.jsonl"
+
+    # Evaluation logs used by policy comparison scripts.
+    trace_log_enabled: true
+    trace_log_path: ""
+    summary_log_path: ""

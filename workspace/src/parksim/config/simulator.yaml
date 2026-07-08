@@ -17,8 +17,20 @@
     spawn_qwen_ego: false
     qwen_ego_spawn_time: 0.5
     qwen_ego_spot_index: 1
+
+    # Generic controlled ego for rule_based vs qwen_vla comparisons.
+    spawn_controlled_ego: false
+    controlled_ego_spawn_time: 0.5
+    controlled_ego_spot_index: 1
+    controlled_ego_agent_type: "qwen_vla"
+
     qwen_endpoint: ""
     qwen_model: "Qwen2.5-VL-7B-Instruct"
+    qwen_timeout: 15.0
+    qwen_decision_period: 3.0
+    qwen_max_candidate_spots: 8
+    qwen_periodic_replan: false
+    qwen_decision_log_path: ""
 
     y_bound_to_resume_spawning: 72
 

@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -109,12 +110,14 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
             valid_actions=actions,
             bev_image_path=bev_path or None,
         )
+        decision_started = time.time()
         decision = self.qwen_client.decide(context)
+        latency_seconds = time.time() - decision_started
         ok, action, shield_reason = self.vla_shield.validate(decision, actions, vehicle=self)
         if not ok or action is None:
             fallback = choose_default_action(actions)
             if fallback is None:
-                self._log_decision(time_value, reason, context, decision, shield_reason, None)
+                self._log_decision(time_value, reason, context, decision, shield_reason, None, latency_seconds)
                 return False
             action = fallback
             decision = VLADecision(action_id=action.action_id, reason="fallback after shield rejection: " + shield_reason, used_fallback=True)
@@ -124,10 +127,10 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         finally:
             self._inside_vla_apply = False
         self._last_vla_decision_time = time_value
-        self._log_decision(time_value, reason, context, decision, shield_reason, action)
+        self._log_decision(time_value, reason, context, decision, shield_reason, action, latency_seconds)
         return True
 
-    def _log_decision(self, time_value: float, trigger_reason: str, context: VLAContext, decision: VLADecision, shield_reason: str, action: Any) -> None:
+    def _log_decision(self, time_value: float, trigger_reason: str, context: VLAContext, decision: VLADecision, shield_reason: str, action: Any, latency_seconds: float = 0.0) -> None:
         if not self.decision_log_path:
             return
         record = {
@@ -135,6 +138,7 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
             "trigger_reason": trigger_reason,
             "decision": decision.to_dict(),
             "shield_reason": shield_reason,
+            "latency_seconds": float(latency_seconds),
             "applied_action": action.to_dict() if action is not None else None,
             "context": context.to_dict(),
         }
