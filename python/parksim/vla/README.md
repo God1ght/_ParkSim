@@ -51,3 +51,16 @@ PARKSIM_COMPARE_QWEN_MODE=real ./scripts/run_policy_comparison.sh
 ```
 
 Use `PARKSIM_COMPARE_QWEN_MODE=mock` for a fast CI-style check, `real` to start the local Qwen service, or `external` with `PARKSIM_COMPARE_QWEN_ENDPOINT` for an already running service. The script writes `metrics.json`, `metrics.csv`, `summary.md`, `trajectories.png`, and `metrics.png` under `experiments/qwen_vla_comparison/<timestamp>/`.
+
+## Visualizer Video/GIF Comparison
+
+Generate visualizer-node videos for the baseline rule-based policy and the Qwen-VLA policy:
+
+```bash
+./scripts/build_parksim_ros.sh --cmake-clean-cache
+PARKSIM_VIS_QWEN_MODE=real ./scripts/run_visualizer_policy_videos.sh
+```
+
+Use `PARKSIM_VIS_QWEN_MODE=mock` for a fast pipeline check, `real` to start the local Qwen service, or `external` with `PARKSIM_VIS_QWEN_ENDPOINT` for an already running service. The script runs under `xvfb`, records frames from `visualizer_node.py`, and writes per-policy MP4/GIF files plus `rule_vs_qwen_vla.mp4` and `rule_vs_qwen_vla.gif` under `experiments/qwen_vla_visualizer_videos/<timestamp>/`.
+
+Runtime dependencies on `172.16.0.250` are `xvfb`, `xauth`, `ffmpeg`, Mesa GL packages, and `dearpygui`. DearPyGUI must run under `LIBGL_ALWAYS_SOFTWARE=1` in headless mode, which the script sets automatically.

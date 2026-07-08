@@ -216,6 +216,10 @@ class RealtimeVisualizer(object):
 
                 dpg.draw_quad(p1=[px[0], py[0]], p2=[px[1], py[1]], p3=[px[2], py[2]], p4=[px[3], py[3]], fill=(255,128,0,255), color=(0,0,0,0), parent=self.frame_canvas)
 
+    def save_frame(self, path: str):
+        """Save the current DearPyGUI viewport framebuffer to an image file."""
+        dpg.output_frame_buffer(path)
+
     def render(self):
         """
         render a frame after updating contents

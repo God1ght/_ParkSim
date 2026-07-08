@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from typing import Dict
+import os
 from collections import defaultdict
 
 import rclpy
@@ -40,6 +41,27 @@ class VisualizerNodeParams(NodeParamTemplate):
         self.disp_text_offset = [-2, 2]
         self.disp_text_size = 25
 
+        self.record_frames = False
+        self.record_dir = ''
+        self.record_prefix = 'frame'
+        self.record_every_n = 2
+        self.record_max_frames = 0
+
+
+def _as_bool(value):
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def _as_value(value, default):
+    if value is None:
+        return default
+    if isinstance(value, str) and value == '':
+        return default
+    return value
+
+
 class VisualizerNode(MPClabNode):
     """
     Node class for visualizing everything
@@ -52,6 +74,11 @@ class VisualizerNode(MPClabNode):
         param_template = VisualizerNodeParams()
         self.autodeclare_parameters(param_template, namespace)
         self.autoload_parameters(param_template, namespace)
+        self._load_plain_overrides()
+        self.record_counter = 0
+        self.saved_frame_count = 0
+        if self.record_frames and self.record_dir:
+            os.makedirs(self.record_dir, exist_ok=True)
 
         self.state_subs = {}
         self.info_subs = {}
@@ -77,6 +104,41 @@ class VisualizerNode(MPClabNode):
 
         self.sim_time = 0.
         self.sim_time_sub = self.create_subscription(Float32, '/sim_time', self.sim_time_cb, 10)
+
+    def _get_plain_launch_parameter(self, name, default):
+        if not self.has_parameter(name):
+            self.declare_parameter(name, default)
+        return _as_value(self.get_parameter(name).value, default)
+
+    def _load_plain_overrides(self):
+        for name in (
+            'dlp_path',
+            'timer_period',
+            'use_existing_agents',
+            'dlp_time_offset',
+            'record_frames',
+            'record_dir',
+            'record_prefix',
+            'record_every_n',
+            'record_max_frames',
+        ):
+            object.__setattr__(self, name, self._get_plain_launch_parameter(name, getattr(self, name)))
+        self.use_existing_agents = _as_bool(self.use_existing_agents)
+        self.record_frames = _as_bool(self.record_frames)
+        self.record_every_n = max(1, int(self.record_every_n))
+        self.record_max_frames = max(0, int(self.record_max_frames))
+
+    def _record_frame(self):
+        if not self.record_frames or not self.record_dir:
+            return
+        self.record_counter += 1
+        if self.record_counter % self.record_every_n != 0:
+            return
+        if self.record_max_frames and self.saved_frame_count >= self.record_max_frames:
+            return
+        frame_path = os.path.join(self.record_dir, "%s_%06d.png" % (self.record_prefix, self.saved_frame_count))
+        self.vis.save_frame(frame_path)
+        self.saved_frame_count += 1
 
     def sim_time_cb(self, msg: Float32):
         self.sim_time = msg.data
@@ -188,6 +250,7 @@ class VisualizerNode(MPClabNode):
                 self.vis.draw_text([state.x.x + self.disp_text_offset[0], state.x.y + self.disp_text_offset[1]], info.disp_text, size=self.disp_text_size)
 
         self.vis.render()
+        self._record_frame()
 
         sim_status_msg = Bool()
         sim_status_msg.data = self.vis.is_running()

@@ -15,3 +15,9 @@ visualizer:
     # ======== Text display
     disp_text_offset: [-1, 1]
     disp_text_size: 25
+    # Optional frame recording from visualizer_node for video/GIF exports.
+    record_frames: false
+    record_dir: ""
+    record_prefix: "frame"
+    record_every_n: 2
+    record_max_frames: 0
