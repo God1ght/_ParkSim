@@ -49,6 +49,10 @@ class SimulatorNodeParams(NodeParamTemplate):
         self.qwen_ego_spot_index = 1
         self.qwen_endpoint = ''
         self.qwen_model = 'Qwen2.5-VL-7B-Instruct'
+        self.qwen_timeout = 15.0
+        self.qwen_decision_period = 3.0
+        self.qwen_max_candidate_spots = 8
+        self.qwen_periodic_replan = False
 
         self.write_log = True
         self.log_path = parksim_path('vehicle_log')
@@ -193,6 +197,10 @@ class SimulatorNode(MPClabNode):
             command.extend([
                 "qwen_endpoint:=%s" % self.qwen_endpoint,
                 "qwen_model:=%s" % self.qwen_model,
+                "qwen_timeout:=%s" % self.qwen_timeout,
+                "qwen_decision_period:=%s" % self.qwen_decision_period,
+                "qwen_max_candidate_spots:=%s" % self.qwen_max_candidate_spots,
+                "qwen_periodic_replan:=%s" % str(self.qwen_periodic_replan).lower(),
             ])
 
         self.vehicles.append(

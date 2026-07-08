@@ -13,6 +13,7 @@ SIM_LOG="$LOG_DIR/parksim_qwen_vla_ros_smoke.log"
 DECISION_LOG="$ROOT/vehicle_log/qwen_vla_decisions.jsonl"
 SPOT_INDEX="${PARKSIM_VLA_SMOKE_SPOT_INDEX:-7}"
 BACKGROUND_MODE="${PARKSIM_VLA_SMOKE_BACKGROUND_MODE:-rule_random}"
+QWEN_TIMEOUT="${PARKSIM_VLA_SMOKE_QWEN_TIMEOUT:-60.0}"
 
 # ROS Foxy on Ubuntu 20.04 is built against the system Python 3.8.
 # Keep Conda from shadowing rclpy when this script is launched from a Conda shell.
@@ -91,6 +92,7 @@ timeout "$DURATION" ros2 run parksim simulator_node.py --ros-args \
   -p qwen_ego_spawn_time:=0.5 \
   -p qwen_ego_spot_index:="$SPOT_INDEX" \
   -p qwen_endpoint:="http://127.0.0.1:$PORT/v1/chat/completions" \
+  -p qwen_timeout:="$QWEN_TIMEOUT" \
   -p background_mode:="$BACKGROUND_MODE" \
   -p spawn_entering:=0 \
   -p spawn_exiting:=0 \
