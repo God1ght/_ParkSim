@@ -28,8 +28,11 @@ VIS_TIMER_PERIOD="${PARKSIM_VIS_TIMER_PERIOD:-0.05}"
 RECORD_EVERY_N="${PARKSIM_VIS_RECORD_EVERY_N:-2}"
 VIDEO_FPS="${PARKSIM_VIS_VIDEO_FPS:-10}"
 GIF_FPS="${PARKSIM_VIS_GIF_FPS:-8}"
+ALIGN_DT="${PARKSIM_VIS_ALIGN_DT:-0.1}"
+ALIGN_PANEL_WIDTH="${PARKSIM_VIS_ALIGN_PANEL_WIDTH:-960}"
 VIS_START_DELAY="${PARKSIM_VIS_START_DELAY:-2}"
 VIS_POST_ROLL="${PARKSIM_VIS_POST_ROLL:-2}"
+PYTHON_BIN="${PARKSIM_VIS_PYTHON:-/usr/bin/python3}"
 
 if [[ ! -f "$ROS_SETUP" ]]; then
   echo "ROS setup file not found: $ROS_SETUP" >&2
@@ -48,11 +51,16 @@ if [[ ! -f "${DLP_PATH}_scene.json" ]]; then
   exit 1
 fi
 command -v ffmpeg >/dev/null || { echo "ffmpeg is required" >&2; exit 1; }
-python3 -c 'import dearpygui.dearpygui' >/dev/null 2>&1 || { echo "dearpygui is required for visualizer recording" >&2; exit 1; }
+$PYTHON_BIN -c 'import dearpygui.dearpygui' >/dev/null 2>&1 || { echo "dearpygui is required for visualizer recording" >&2; exit 1; }
 
 set +u
+if [[ -n "${CONDA_PREFIX:-}" && -f /home/step/anaconda3/etc/profile.d/conda.sh ]]; then
+  source /home/step/anaconda3/etc/profile.d/conda.sh
+  conda deactivate >/dev/null 2>&1 || true
+fi
 source "$ROS_SETUP"
 source "$WORKSPACE_SETUP"
+hash -r
 set -u
 
 mkdir -p "$OUT_DIR"
@@ -82,7 +90,7 @@ wait_for_qwen() {
   local base_url="${endpoint%/v1/chat/completions}"
   local ready=0
   for _ in $(seq 1 "$QWEN_STARTUP_TIMEOUT"); do
-    if python3 -c 'import json,sys; from urllib import request; url=sys.argv[1]+"/healthz"; expected=sys.argv[2]; resp=request.urlopen(url, timeout=1.0); payload=json.loads(resp.read().decode("utf-8")); print(payload); raise SystemExit(0 if payload.get("ok") and (expected == "any" or str(payload.get("mock")).lower() == expected) else 1)' "$base_url" "$expected_mock" > "$OUT_DIR/qwen_health.json" 2>/dev/null; then
+    if $PYTHON_BIN -c 'import json,sys; from urllib import request; url=sys.argv[1]+"/healthz"; expected=sys.argv[2]; resp=request.urlopen(url, timeout=1.0); payload=json.loads(resp.read().decode("utf-8")); print(payload); raise SystemExit(0 if payload.get("ok") and (expected == "any" or str(payload.get("mock")).lower() == expected) else 1)' "$base_url" "$expected_mock" > "$OUT_DIR/qwen_health.json" 2>/dev/null; then
       ready=1
       break
     fi
@@ -146,17 +154,19 @@ encode_mode() {
 }
 
 encode_side_by_side() {
-  local left="$OUT_DIR/rule_based/rule_based.mp4"
-  local right="$OUT_DIR/qwen_vla/qwen_vla.mp4"
-  if [[ ! -f "$left" || ! -f "$right" ]]; then
-    return
-  fi
-  ffmpeg -hide_banner -loglevel error -y -i "$left" -i "$right" \
-    -filter_complex "[0:v]scale=960:-2,setpts=PTS-STARTPTS[left];[1:v]scale=960:-2,setpts=PTS-STARTPTS[right];[left][right]hstack=inputs=2[v]" \
-    -map "[v]" -c:v libx264 -pix_fmt yuv420p "$OUT_DIR/rule_vs_qwen_vla.mp4"
-  ffmpeg -hide_banner -loglevel error -y -i "$OUT_DIR/rule_vs_qwen_vla.mp4" \
+  local aligned_dir="$OUT_DIR/aligned_rule_vs_qwen_vla"
+  PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m parksim.vla.align_visualizer_frames \
+    --left "$OUT_DIR/rule_based" \
+    --right "$OUT_DIR/qwen_vla" \
+    --out-dir "$aligned_dir" \
+    --dt "$ALIGN_DT" \
+    --panel-width "$ALIGN_PANEL_WIDTH"
+  ffmpeg -hide_banner -loglevel error -y -framerate "$VIDEO_FPS" -i "$aligned_dir/frame_%06d.png" \
+    -c:v libx264 -pix_fmt yuv420p "$OUT_DIR/rule_vs_qwen_vla.mp4"
+  ffmpeg -hide_banner -loglevel error -y -framerate "$VIDEO_FPS" -i "$aligned_dir/frame_%06d.png" \
     -vf "fps=$GIF_FPS,scale=1280:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" "$OUT_DIR/rule_vs_qwen_vla.gif"
 }
+
 
 run_mode() {
   local mode="$1"
@@ -220,7 +230,7 @@ run_mode rule_based
 run_mode qwen_vla
 encode_side_by_side
 
-PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" python3 -m parksim.vla.compare_results "$OUT_DIR" --root "$ROOT"
+PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m parksim.vla.compare_results "$OUT_DIR" --root "$ROOT"
 
 cat >> "$OUT_DIR/summary.md" <<'EOF_SUMMARY'
 
@@ -230,8 +240,9 @@ cat >> "$OUT_DIR/summary.md" <<'EOF_SUMMARY'
 - `rule_based/rule_based.gif`: baseline policy GIF rendered by `visualizer_node.py`.
 - `qwen_vla/qwen_vla.mp4`: Qwen-VLA policy video rendered by `visualizer_node.py`.
 - `qwen_vla/qwen_vla.gif`: Qwen-VLA policy GIF rendered by `visualizer_node.py`.
-- `rule_vs_qwen_vla.mp4`: side-by-side comparison video.
-- `rule_vs_qwen_vla.gif`: side-by-side comparison GIF.
+- `rule_vs_qwen_vla.mp4`: side-by-side comparison video aligned by visualizer `sim_time`.
+- `rule_vs_qwen_vla.gif`: side-by-side comparison GIF aligned by visualizer `sim_time`.
+- `aligned_rule_vs_qwen_vla/alignment.json`: simulation-time alignment metadata.
 EOF_SUMMARY
 
 echo "visualizer_video_out_dir=$OUT_DIR"

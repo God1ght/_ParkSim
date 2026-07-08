@@ -35,10 +35,17 @@ def main():
     assert selected is not None and selected.target_spot_index == 1, "expected nearest empty spot"
     state = build_vla_state(vehicle, valid_actions=actions)
     assert state["ego"]["vehicle_id"] == 1
+    assert state["world_model"]["occupancy_ready"] is True
+    assert "cruise_to_spot_0" not in state["valid_action_ids"], "occupied spot must not be valid"
+    assert all(row["selectable"] for row in state["candidate_spots"])
+    blocked_zero = [row for row in state["blocked_nearby_spots"] if row["spot_index"] == 0][0]
+    assert blocked_zero["status"] == "occupied" and not blocked_zero["selectable"]
     ok, action, reason = VLASafetyShield().validate(VLADecision(action_id=selected.action_id), actions, vehicle=vehicle)
     assert ok, reason
-    bad, _, _ = VLASafetyShield().validate(VLADecision(action_id="missing"), actions, vehicle=vehicle)
+    bad, _, reason = VLASafetyShield().validate(VLADecision(action_id="missing"), actions, vehicle=vehicle)
     assert not bad
+    bad_action = [action for action in actions if action.action_id == "cruise_to_spot_0"]
+    assert not bad_action, "occupied spot action should not be generated"
     print("parksim.vla smoke ok")
 
 

@@ -21,3 +21,4 @@ visualizer:
     record_prefix: "frame"
     record_every_n: 2
     record_max_frames: 0
+    record_metadata_path: ""

@@ -8,13 +8,14 @@ import numpy as np
 from parksim.agents.rule_based_stanley_vehicle import RuleBasedStanleyVehicle
 from parksim.controller.stanley_controller import StanleyController
 from parksim.controller_types import StanleyParams
-from parksim.vehicle_types import VehicleBody, VehicleConfig
+from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleTask
 from parksim.vla.action_space import apply_candidate_action, build_candidate_actions, choose_default_action
 from parksim.vla.bev_encoder import save_bev_png
 from parksim.vla.qwen_client import QwenPolicyClient
 from parksim.vla.schema import VLAContext, VLADecision
 from parksim.vla.shield import VLASafetyShield
 from parksim.vla.state_encoder import build_vla_state
+from parksim.vla.spot_status import occupancy_ready
 
 
 class QwenVLAVehicle(RuleBasedStanleyVehicle):
@@ -59,19 +60,28 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         self.decision_log_path = decision_log_path
         self._last_vla_decision_time = float("-inf")
         self._inside_vla_apply = False
+        self._latest_solve_time = 0.0
 
     def execute_next_task(self):
         if len(self.task_profile) > 0 or self._inside_vla_apply:
             return super().execute_next_task()
-        if self.current_task is None:
-            if self._make_and_apply_vla_decision(time_value=0.0, reason="initial task selection"):
+        if self.current_task in (None, "IDLE"):
+            if not occupancy_ready(self):
+                self._hold_for_world_state()
+                return
+            decision_time = float(self._latest_solve_time)
+            if self._make_and_apply_vla_decision(time_value=decision_time, reason="initial task selection"):
                 return
         return super().execute_next_task()
 
     def solve(self, time=None):
         time_value = float(time if time is not None else 0.0)
+        self._latest_solve_time = time_value
         if self._should_replan(time_value):
-            self._make_and_apply_vla_decision(time_value=time_value, reason="scheduled high-level decision")
+            if occupancy_ready(self):
+                self._make_and_apply_vla_decision(time_value=time_value, reason="scheduled high-level decision")
+            else:
+                self._hold_for_world_state()
         return super().solve(time=time)
 
     def _should_replan(self, time_value: float) -> bool:
@@ -84,6 +94,16 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         if self.periodic_replan and self.current_task == "CRUISE" and time_value - self._last_vla_decision_time >= self.decision_period:
             return True
         return False
+
+    def _hold_for_world_state(self) -> None:
+        if self.current_task == "IDLE" and self.idle_duration is not None:
+            return
+        self._inside_vla_apply = True
+        try:
+            self.set_task_profile([VehicleTask(name="IDLE", duration=0.2)])
+            super().execute_next_task()
+        finally:
+            self._inside_vla_apply = False
 
     def _make_and_apply_vla_decision(self, time_value: float, reason: str) -> bool:
         actions = build_candidate_actions(
@@ -103,8 +123,11 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         state = build_vla_state(self, valid_actions=actions, max_spots=max(self.max_candidate_spots, 8))
         context = VLAContext(
             instruction=(
-                "Safely complete the parking-lot task. Choose one valid high-level action. "
-                "Do not output low-level control. Prefer safe parking progress over unnecessary waiting."
+                "Safely complete the parking-lot task. Choose exactly one action_id from valid_actions. "
+                "Spots with status occupied or unknown are not selectable and must not be chosen. "
+                "candidate_spots contains only verified available spots; blocked_nearby_spots is explanatory only. "
+                "If a SELECT_SPOT_AND_CRUISE action exists and no nearby vehicle blocks the path, choose it over WAIT. "
+                "Do not output low-level control. Prefer verified available parking progress over unnecessary waiting."
             ),
             state=state,
             valid_actions=actions,

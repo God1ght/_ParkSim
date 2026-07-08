@@ -42,7 +42,13 @@ class QwenPolicyClient:
         prompt = (
             "You are the high-level VLA policy for a parking-lot vehicle. "
             "Choose exactly one action_id from valid_actions. Return strict JSON with "
-            "action_id, reason, and confidence. Do not output steering, acceleration, or free-form routes.\n\n"
+            "action_id, reason, and confidence. valid_actions is already safety-filtered; "
+            "occupied, reserved, and unknown spots must not be selected even if they look close in the image. "
+            "state.candidate_spots contains only selectable available spots; state.blocked_nearby_spots is explanatory only. "
+            "If a SELECT_SPOT_AND_CRUISE action exists and no nearby vehicle blocks the path, choose it over WAIT. "
+            "Use state.decision_contract, state.world_model, candidate_spots, blocked_nearby_spots, "
+            "nearby_vehicles, and the BEV image to explain the choice. Do not output steering, acceleration, "
+            "or free-form routes.\n\n"
             + json.dumps(context.to_dict(), ensure_ascii=False)
         )
         content: Any = prompt

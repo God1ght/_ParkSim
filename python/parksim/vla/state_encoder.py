@@ -3,6 +3,7 @@ from typing import Any, Dict, Iterable, List, Optional
 import numpy as np
 
 from parksim.pytypes import VehicleState
+from parksim.vla.spot_status import build_spot_statuses, effective_occupancy, nearest_spot_statuses, occupancy_ready
 
 
 def _float(value: Any, default: float = 0.0) -> float:
@@ -32,23 +33,6 @@ def encode_occupancy(occupancy: Optional[Iterable[Any]], limit: Optional[int] = 
     return values[:limit] if limit is not None else values
 
 
-def nearest_spots(parking_spaces: Any, ego_state: VehicleState, occupancy: Optional[Iterable[Any]], max_spots: int) -> List[Dict[str, Any]]:
-    if parking_spaces is None or ego_state is None:
-        return []
-    spaces = np.asarray(parking_spaces, dtype=float)
-    if spaces.size == 0:
-        return []
-    occ = encode_occupancy(occupancy)
-    ego_xy = np.asarray([ego_state.x.x, ego_state.x.y], dtype=float)
-    rows = []
-    for idx, xy in enumerate(spaces.reshape((-1, 2))):
-        occupied = bool(occ[idx]) if idx < len(occ) else False
-        dist = float(np.linalg.norm(xy - ego_xy))
-        rows.append({"spot_index": int(idx), "xy": xy.tolist(), "occupied": occupied, "distance": dist})
-    rows.sort(key=lambda row: row["distance"])
-    return rows[:max_spots]
-
-
 def encode_nearby_vehicles(vehicle: Any, max_vehicles: int = 8) -> List[Dict[str, Any]]:
     rows = []
     for vehicle_id in sorted(getattr(vehicle, "other_state", {}).keys()):
@@ -75,7 +59,32 @@ def build_vla_state(vehicle: Any, valid_actions: Optional[List[Any]] = None, max
         spaces = np.asarray(vehicle.parking_spaces)
         if 0 <= idx < len(spaces):
             target = {"spot_index": idx, "xy": np.asarray(spaces[idx], dtype=float).tolist()}
+    all_statuses = build_spot_statuses(vehicle)
+    available_count = sum(1 for row in all_statuses if row["selectable"])
+    nearest_statuses = nearest_spot_statuses(vehicle, max_spots=max(max_spots * 4, 32))
+    selectable_nearby = [row for row in nearest_statuses if row["selectable"]]
+    blocked_nearby = [row for row in nearest_statuses if not row["selectable"]]
+    valid_action_ids = [action.action_id for action in (valid_actions or [])]
     return {
+        "decision_contract": {
+            "output_schema": {"action_id": "one exact string from valid_action_ids", "reason": "short text", "confidence": "0.0 to 1.0"},
+            "hard_constraints": [
+                "Only choose an action_id listed in valid_action_ids.",
+                "Do not select spots with status occupied or unknown.",
+                "If any SELECT_SPOT_AND_CRUISE action exists and there is no immediate conflict, prefer it over WAIT.",
+                "Do not output low-level steering, throttle, braking, or a free-form route.",
+            ],
+            "spot_status_sources": [
+                "central_occupancy from simulator static obstacles and rule-based reservations",
+                "dynamic vehicle proximity to parking-space centers",
+            ],
+        },
+        "world_model": {
+            "occupancy_ready": occupancy_ready(vehicle),
+            "num_spots": len(all_statuses),
+            "available_spots": available_count,
+            "blocked_or_unknown_spots": len(all_statuses) - available_count,
+        },
         "ego": {
             "vehicle_id": int(getattr(vehicle, "vehicle_id", -1)),
             "task": getattr(vehicle, "current_task", None),
@@ -84,8 +93,10 @@ def build_vla_state(vehicle: Any, valid_actions: Optional[List[Any]] = None, max
             "is_braking": bool(getattr(vehicle, "is_braking", False)),
             "waiting_for": int(getattr(vehicle, "waiting_for", 0) or 0),
         },
-        "candidate_spots": nearest_spots(getattr(vehicle, "parking_spaces", None), getattr(vehicle, "state", None), getattr(vehicle, "occupancy", None), max_spots),
+        "candidate_spots": selectable_nearby[:max_spots],
+        "blocked_nearby_spots": blocked_nearby[:max_spots],
         "nearby_vehicles": encode_nearby_vehicles(vehicle),
-        "occupancy": encode_occupancy(getattr(vehicle, "occupancy", None), limit=128),
-        "valid_action_ids": [action.action_id for action in (valid_actions or [])],
+        "central_occupancy": encode_occupancy(getattr(vehicle, "occupancy", None), limit=128),
+        "effective_occupancy": effective_occupancy(vehicle)[:128],
+        "valid_action_ids": valid_action_ids,
     }

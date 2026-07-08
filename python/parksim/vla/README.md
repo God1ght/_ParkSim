@@ -41,6 +41,25 @@ Model cache defaults to `/media/step/data/models/huggingface`. Download the defa
 Set `QWEN_MODEL_ID`, `QWEN_MODEL_CACHE`, `QWEN_VLA_PORT`, `QWEN_TORCH_DTYPE`, `QWEN_MAX_NEW_TOKENS`, and `HF_ENDPOINT` to override defaults. On `172.16.0.250`, official Hugging Face timed out during setup, so scripts default `HF_ENDPOINT` to `https://hf-mirror.com`. After the model is downloaded, `run_qwen_vla_service.sh` automatically prefers the latest local snapshot under `QWEN_MODEL_CACHE` and enables offline loading to avoid runtime network stalls. Set `QWEN_MODEL_LOCAL_ONLY=0` to force model-id loading, `QWEN_MODEL_LOCAL_ONLY=1` to require a local snapshot, or `QWEN_MODEL_LOCAL_SNAPSHOT=/abs/snapshot/path` to pin one snapshot.
 
 
+
+## Qwen Decision Context
+
+Each VLA decision uploads a structured `VLAContext` plus an optional BEV image. Qwen must return only strict JSON with `action_id`, `reason`, and `confidence`.
+
+The required structured fields are:
+
+- `decision_contract`: output schema, hard constraints, and the source of spot availability.
+- `world_model`: whether occupancy is ready, number of spots, available spot count, and blocked/unknown spot count.
+- `ego`: controlled vehicle id, task, pose, speed, current target, braking state, and wait target.
+- `candidate_spots`: nearest selectable parking spaces with `status=available`, coordinates, and distance.
+- `blocked_nearby_spots`: nearby occupied or unknown spots with `central_occupied`, dynamic occupancy, and reasons, included only to explain why they are not valid choices.
+- `nearby_vehicles`: nearby vehicle state and task/progress information.
+- `central_occupancy` and `effective_occupancy`: raw simulator occupancy and safety-filtered occupancy.
+- `valid_action_ids` and `valid_actions`: the only action ids Qwen is allowed to choose.
+- `bev_image_path`: rendered BEV context where available spots, occupied spots, other vehicles, and ego are drawn.
+
+The action enumerator and safety shield both use the same `spot_status` layer. A spot is selectable only when central occupancy is known, central occupancy is false, and no dynamic vehicle is occupying that spot. Unknown or occupied spots are excluded from `valid_actions`, and a Qwen output that names such a spot is rejected before execution.
+
 ## Policy comparison artifacts
 
 Run a reproducible headless comparison between the baseline rule-based policy and the Qwen-VLA high-level policy:
@@ -61,6 +80,6 @@ Generate visualizer-node videos for the baseline rule-based policy and the Qwen-
 PARKSIM_VIS_QWEN_MODE=real ./scripts/run_visualizer_policy_videos.sh
 ```
 
-Use `PARKSIM_VIS_QWEN_MODE=mock` for a fast pipeline check, `real` to start the local Qwen service, or `external` with `PARKSIM_VIS_QWEN_ENDPOINT` for an already running service. The script runs under `xvfb`, records frames from `visualizer_node.py`, and writes per-policy MP4/GIF files plus `rule_vs_qwen_vla.mp4` and `rule_vs_qwen_vla.gif` under `experiments/qwen_vla_visualizer_videos/<timestamp>/`.
+Use `PARKSIM_VIS_QWEN_MODE=mock` for a fast pipeline check, `real` to start the local Qwen service, or `external` with `PARKSIM_VIS_QWEN_ENDPOINT` for an already running service. The script runs under `xvfb`, records frames from `visualizer_node.py`, writes `frame_times.jsonl` with each frame sim time, and writes per-policy MP4/GIF files plus simulation-time-aligned `rule_vs_qwen_vla.mp4` and `rule_vs_qwen_vla.gif` under `experiments/qwen_vla_visualizer_videos/<timestamp>/`. The side-by-side outputs are resampled by visualizer `sim_time`, not by Qwen wall-clock response time.
 
 Runtime dependencies on `172.16.0.250` are `xvfb`, `xauth`, `ffmpeg`, Mesa GL packages, and `dearpygui`. DearPyGUI must run under `LIBGL_ALWAYS_SOFTWARE=1` in headless mode, which the script sets automatically.

@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional, Tuple
 
 from parksim.vla.schema import VLACandidateAction, VLADecision, VLAActionType
+from parksim.vla.spot_status import status_by_index
 
 
 class VLASafetyShield:
@@ -16,11 +17,10 @@ class VLASafetyShield:
                 spot_index = abs(int(action.target_spot_index))
                 if spot_index >= len(vehicle.parking_spaces):
                     return False, None, "target_spot_index is outside parking space range"
-            if vehicle is not None and action.action_type == VLAActionType.SELECT_SPOT_AND_CRUISE:
-                occupancy = getattr(vehicle, "occupancy", None)
-                if occupancy is not None:
-                    occupancy = list(occupancy)
-                    spot_index = abs(int(action.target_spot_index))
-                    if spot_index < len(occupancy) and bool(occupancy[spot_index]):
-                        return False, None, "target spot is already occupied"
+                statuses = status_by_index(vehicle)
+                status = statuses.get(spot_index)
+                if status is None:
+                    return False, None, "target spot status is unavailable"
+                if action.action_type == VLAActionType.SELECT_SPOT_AND_CRUISE and not status.get("selectable", False):
+                    return False, None, "target spot is not selectable: %s" % ",".join(status.get("reasons", []))
         return True, action, "ok"

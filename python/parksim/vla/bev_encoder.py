@@ -1,7 +1,9 @@
 from pathlib import Path
-from typing import Any, Iterable, Optional, Tuple
+from typing import Any, Iterable, Tuple
 
 import numpy as np
+
+from parksim.vla.spot_status import build_spot_statuses
 
 
 def render_bev_array(vehicle: Any, image_size: Tuple[int, int] = (768, 768), meters_per_pixel: float = 0.25) -> np.ndarray:
@@ -14,13 +16,15 @@ def render_bev_array(vehicle: Any, image_size: Tuple[int, int] = (768, 768), met
         delta = (xy - center) / float(meters_per_pixel)
         return int(width / 2 + delta[0]), int(height / 2 - delta[1])
 
-    spaces = getattr(vehicle, "parking_spaces", None)
-    occupancy = list(getattr(vehicle, "occupancy", []) or [])
-    if spaces is not None:
-        for idx, xy in enumerate(np.asarray(spaces, dtype=float).reshape((-1, 2))):
-            px, py = to_px(xy)
-            color = (190, 190, 190) if idx >= len(occupancy) or not occupancy[idx] else (80, 80, 80)
-            _draw_square(image, px, py, 4, color)
+    for row in build_spot_statuses(vehicle):
+        px, py = to_px(row["xy"])
+        if row["status"] == "available":
+            color = (185, 215, 185)
+        elif row["status"] == "occupied":
+            color = (75, 75, 75)
+        else:
+            color = (210, 190, 120)
+        _draw_square(image, px, py, 4, color)
     for _, other in getattr(vehicle, "other_state", {}).items():
         px, py = to_px([other.x.x, other.x.y])
         _draw_square(image, px, py, 7, (220, 60, 60))

@@ -1,32 +1,14 @@
-from typing import Any, Iterable, List, Optional, Sequence
+from typing import Any, List, Optional, Sequence
 
 import numpy as np
 
 from parksim.vehicle_types import VehicleTask
 from parksim.vla.schema import VLAActionType, VLACandidateAction
-
-
-def _occupancy_list(occupancy: Optional[Iterable[Any]]) -> List[int]:
-    if occupancy is None:
-        return []
-    return [int(bool(v)) for v in list(occupancy)]
+from parksim.vla.spot_status import nearest_selectable_spot_indices
 
 
 def empty_spot_indices(vehicle: Any, max_spots: int = 8) -> List[int]:
-    spaces = getattr(vehicle, "parking_spaces", None)
-    if spaces is None:
-        return []
-    spaces = np.asarray(spaces, dtype=float).reshape((-1, 2))
-    occupancy = _occupancy_list(getattr(vehicle, "occupancy", None))
-    ego_xy = np.asarray([vehicle.state.x.x, vehicle.state.x.y], dtype=float)
-    rows = []
-    for idx, xy in enumerate(spaces):
-        occupied = bool(occupancy[idx]) if idx < len(occupancy) else False
-        if occupied:
-            continue
-        rows.append((float(np.linalg.norm(xy - ego_xy)), int(idx)))
-    rows.sort(key=lambda item: item[0])
-    return [idx for _, idx in rows[:max_spots]]
+    return nearest_selectable_spot_indices(vehicle, max_spots=max_spots)
 
 
 def build_candidate_actions(
@@ -36,19 +18,20 @@ def build_candidate_actions(
     exit_coords: Optional[Any] = None,
 ) -> List[VLACandidateAction]:
     actions: List[VLACandidateAction] = []
+    wait_actions: List[VLACandidateAction] = []
     for duration in wait_durations:
-        actions.append(VLACandidateAction(
+        wait_actions.append(VLACandidateAction(
             action_id="wait_%ss" % int(duration),
             action_type=VLAActionType.WAIT,
             duration=float(duration),
-            reason="Yield temporarily and re-evaluate traffic.",
+            reason="Yield temporarily and re-evaluate traffic and parking availability.",
         ))
     for spot_index in empty_spot_indices(vehicle, max_spots=max_spots):
         actions.append(VLACandidateAction(
             action_id="cruise_to_spot_%d" % spot_index,
             action_type=VLAActionType.SELECT_SPOT_AND_CRUISE,
             target_spot_index=int(spot_index),
-            reason="Cruise to an unoccupied candidate parking spot.",
+            reason="Cruise to a verified available candidate parking spot.",
         ))
     if getattr(vehicle, "spot_index", None) is not None:
         spot_index = abs(int(vehicle.spot_index))
@@ -72,6 +55,7 @@ def build_candidate_actions(
             target_coords=np.asarray(exit_coords, dtype=float).reshape(-1).tolist(),
             reason="Cruise to the parking-lot exit coordinates.",
         ))
+    actions.extend(wait_actions)
     return actions
 
 
