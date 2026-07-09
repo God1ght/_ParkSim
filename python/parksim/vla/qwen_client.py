@@ -100,21 +100,49 @@ class QwenPolicyClient:
         )
 
     def _fallback(self, actions: List[VLACandidateAction], reason: str) -> VLADecision:
-        selected = actions[0] if actions else None
-        for action in actions:
-            if action.action_type == VLAActionType.SELECT_SPOT_AND_CRUISE:
-                selected = action
-                break
+        selected = _select_lowest_cost_fallback(actions)
         if selected is None:
             return VLADecision(action_id="", reason=reason, confidence=0.0, used_fallback=True, reason_code="FALLBACK_OR_RECOVERY")
         return VLADecision(
             action_id=selected.action_id,
             target_spot_index=selected.target_spot_index,
-            reason=reason,
+            reason=reason + "; selected lowest-cost valid bundle",
             confidence=0.0,
             used_fallback=True,
             reason_code="FALLBACK_OR_RECOVERY",
         )
+
+
+def _select_lowest_cost_fallback(actions: List[VLACandidateAction]) -> Optional[VLACandidateAction]:
+    if not actions:
+        return None
+    progress_types = {VLAActionType.SELECT_SPOT_AND_CRUISE, VLAActionType.PARK, VLAActionType.REROUTE, VLAActionType.CRUISE_TO_EXIT}
+    cost_ranked = [action for action in actions if _finite_action_cost(action) is not None]
+    if cost_ranked:
+        progress_ranked = [action for action in cost_ranked if action.action_type in progress_types]
+        ranked = progress_ranked or cost_ranked
+        return min(ranked, key=lambda action: (_finite_action_cost(action), _feature_float(action, "conflict_risk"), _feature_float(action, "expected_wait_s")))
+    for action in actions:
+        if action.action_type == VLAActionType.SELECT_SPOT_AND_CRUISE:
+            return action
+    return actions[0]
+
+
+def _finite_action_cost(action: VLACandidateAction) -> Optional[float]:
+    try:
+        value = float((action.features or {}).get("bundle_cost"))
+    except Exception:
+        return None
+    if value != value or value in (float("inf"), float("-inf")):
+        return None
+    return value
+
+
+def _feature_float(action: VLACandidateAction, key: str) -> float:
+    try:
+        return float((action.features or {}).get(key, 1e9))
+    except Exception:
+        return 1e9
 
 
 def _parse_optional_int(value: Any) -> Optional[int]:

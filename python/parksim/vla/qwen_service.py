@@ -82,12 +82,44 @@ def valid_actions_from_context(context: Dict[str, Any]) -> List[Dict[str, Any]]:
 def choose_fallback_action(actions: Sequence[Dict[str, Any]]) -> Tuple[str, str]:
     if not actions:
         return "", "no valid action was provided"
+    cost_ranked = [action for action in actions if _finite_bundle_cost(action) is not None]
+    if cost_ranked:
+        progress_types = {"SELECT_SPOT_AND_CRUISE", "PARK", "REROUTE", "CRUISE_TO_EXIT"}
+        progress_ranked = [action for action in cost_ranked if action.get("action_type") in progress_types]
+        ranked = progress_ranked or cost_ranked
+        selected = min(ranked, key=lambda action: (_finite_bundle_cost(action), _conflict_risk(action), _expected_wait(action)))
+        return str(selected.get("action_id", "")), "fallback selected lowest bundle_cost action"
     preferred_order = ["SELECT_SPOT_AND_CRUISE", "PARK", "REROUTE", "WAIT", "CRUISE_TO_EXIT"]
     for action_type in preferred_order:
         for action in actions:
             if action.get("action_type") == action_type:
                 return str(action.get("action_id", "")), "fallback selected %s" % action_type
     return str(actions[0].get("action_id", "")), "fallback selected first valid action"
+
+
+def _finite_bundle_cost(action: Dict[str, Any]) -> Any:
+    features = action.get("features", {}) if isinstance(action, dict) else {}
+    try:
+        value = float(features.get("bundle_cost"))
+    except Exception:
+        return None
+    if value != value or value in (float("inf"), float("-inf")):
+        return None
+    return value
+
+
+def _conflict_risk(action: Dict[str, Any]) -> float:
+    try:
+        return float((action.get("features") or {}).get("conflict_risk", 1e9))
+    except Exception:
+        return 1e9
+
+
+def _expected_wait(action: Dict[str, Any]) -> float:
+    try:
+        return float((action.get("features") or {}).get("expected_wait_s", 1e9))
+    except Exception:
+        return 1e9
 
 
 def action_by_id(actions: Sequence[Dict[str, Any]], action_id: str) -> Dict[str, Any]:
@@ -112,6 +144,11 @@ def reason_code_for_action(action: Dict[str, Any], fallback: bool = False) -> st
         return "FALLBACK_OR_RECOVERY"
     action_type = action.get("action_type")
     if action_type == "SELECT_SPOT_AND_CRUISE":
+        try:
+            if float(action.get("duration") or 0.0) > 0.0:
+                return "YIELD_TRAFFIC"
+        except Exception:
+            pass
         return "PARK_AVAILABLE"
     if action_type == "PARK":
         return "PARK_READY"

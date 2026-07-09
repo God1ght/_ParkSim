@@ -52,6 +52,8 @@ The required structured fields are:
 - `world_model`: whether occupancy is ready, number of spots, available spot count, and blocked/unknown spot count.
 - `ego`: controlled vehicle id, task, pose, speed, current target, braking state, and wait target.
 - `candidate_spots`: nearest selectable parking spaces with `status=available`, coordinates, and distance.
+- `candidate_assignment_bundles`: executable spot-route-wait candidates with `action_id`, `spot_index`, `route_id`, `route_strategy`, `path_length_m`, `eta_s`, `expected_wait_s`, `conflict_risk`, `conflict_vehicle_count`, and `bundle_cost`. Lower `bundle_cost` is preferred only after hard constraints are satisfied.
+- `selection_objective`: the system-level objective used by Qwen and bundle-aware baselines: reduce route length, expected wait, dynamic conflict risk, and conflict vehicle count under partial observability.
 - `blocked_nearby_spots`: nearby occupied or unknown spots with `central_occupied`, dynamic occupancy, and reasons, included only to explain why they are not valid choices.
 - `nearby_vehicles`: nearby vehicle kinematics and observable behavior. Background task/progress/destination are hidden by default unless `reveal_background_intents_to_vla=true`.
 - `central_occupancy` and `effective_occupancy`: raw simulator occupancy and safety-filtered occupancy.
@@ -60,6 +62,10 @@ The required structured fields are:
 - `bev_image_path`: rendered BEV context where available spots, occupied spots, other vehicles, and ego are drawn.
 
 The action enumerator and safety shield both use the same `spot_status` layer. A spot is selectable only when central occupancy is known, central occupancy is false, and no dynamic vehicle is occupying that spot. Unknown or occupied spots are excluded from `valid_actions`, and a Qwen output that names such a spot is rejected before execution.
+
+Entry parking tasks expose only parking-progress actions. `CRUISE_TO_EXIT` is generated only for exiting vehicles or active unpark/exit task semantics, preventing Qwen from satisfying a parking episode by leaving the lot.
+
+Bundle-aware baseline agents are available as `bundle_risk_aware`, `conflict_aware_bundle`, and `min_bundle_cost`. They use the same candidate bundle interface and safety shield as Qwen-VLA, which makes paper comparisons focus on high-level assignment/path selection rather than different low-level controllers.
 
 Audit decision logs with `python -m parksim.vla.decision_audit <benchmark-or-log> --out-dir <audit-dir> --strict`. This is the paper-facing check for protocol version, prompt version, valid action membership, target consistency, reason code coverage, shield rejections, and unsafe applied parking spots.
 
@@ -94,7 +100,7 @@ Key overrides:
 - `PARKSIM_LONG_HIDDEN_INTENT_FRACTION`: fraction of rule-agent intentions hidden from the VLA state.
 - `PARKSIM_LONG_MAX_CONCURRENT_BACKGROUND_VEHICLES`: cap on scheduled background traffic.
 
-Each run writes `traffic_schedule.json`, `traffic_events.jsonl`, vehicle traces with `vehicle_role` and `intent_observable`, and system-level conflict metrics such as `system_near_miss_event_count`, `trajectory_conflict_event_count`, and `mixed_intent_conflict_event_count`.
+Each run writes `traffic_schedule.json`, `traffic_events.jsonl`, vehicle traces with `vehicle_role` and `intent_observable`, and system-level conflict metrics such as `system_near_miss_event_count`, `trajectory_conflict_event_count`, and `mixed_intent_conflict_event_count`. Default long-horizon agents now include `rule_based`, `greedy_nearest`, `greedy_shortest_path`, `risk_aware_rule`, `bundle_risk_aware`, `conflict_aware_bundle`, and `qwen_vla`.
 
 ## Visualizer Video/GIF Comparison
 

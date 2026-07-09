@@ -18,11 +18,21 @@ def main():
         instruction="choose action",
         state={"ego": {"task": None}},
         valid_actions=[
-            VLACandidateAction(action_id="wait_2s", action_type=VLAActionType.WAIT, duration=2.0),
+            VLACandidateAction(action_id="wait_2s", action_type=VLAActionType.WAIT, duration=2.0, features={"bundle_cost": 5.0}),
             VLACandidateAction(
                 action_id="cruise_to_spot_1",
                 action_type=VLAActionType.SELECT_SPOT_AND_CRUISE,
                 target_spot_index=1,
+                route_id="direct",
+                features={"bundle_cost": 50.0, "conflict_risk": 0.8, "expected_wait_s": 8.0},
+            ),
+            VLACandidateAction(
+                action_id="yield_2s_then_cruise_to_spot_2",
+                action_type=VLAActionType.SELECT_SPOT_AND_CRUISE,
+                target_spot_index=2,
+                duration=2.0,
+                route_id="yield_2s",
+                features={"bundle_cost": 20.0, "conflict_risk": 0.1, "expected_wait_s": 2.0},
             ),
         ],
     )
@@ -31,9 +41,9 @@ def main():
     finally:
         server.shutdown()
         thread.join(timeout=2.0)
-    assert decision.action_id == "cruise_to_spot_1", decision
-    assert decision.target_spot_index == 1, decision
-    assert decision.reason_code == "PARK_AVAILABLE", decision
+    assert decision.action_id == "yield_2s_then_cruise_to_spot_2", decision
+    assert decision.target_spot_index == 2, decision
+    assert decision.reason_code == "YIELD_TRAFFIC", decision
     assert not decision.used_fallback, decision
     print("parksim.vla qwen service smoke ok")
 

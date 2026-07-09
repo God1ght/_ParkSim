@@ -58,6 +58,30 @@ def encode_nearby_vehicles(vehicle: Any, max_vehicles: int = 8) -> List[Dict[str
     return rows[:max_vehicles]
 
 
+def encode_assignment_bundles(valid_actions: Optional[List[Any]], limit: int = 32) -> List[Dict[str, Any]]:
+    bundles: List[Dict[str, Any]] = []
+    for action in valid_actions or []:
+        features = getattr(action, "features", {}) or {}
+        bundle = dict(features.get("assignment_bundle") or {})
+        if not bundle:
+            bundle = {
+                "assignment_id": str(getattr(action, "action_id", "")),
+                "action_id": str(getattr(action, "action_id", "")),
+                "spot_index": getattr(action, "target_spot_index", None),
+                "route_id": getattr(action, "route_id", None),
+                "route_strategy": features.get("route_strategy"),
+                "bundle_cost": features.get("bundle_cost"),
+                "conflict_risk": features.get("conflict_risk"),
+                "expected_wait_s": features.get("expected_wait_s"),
+            }
+        bundle["action_type"] = str(getattr(action, "action_type", ""))
+        bundle["is_valid_action"] = True
+        bundle["ranking_note"] = "lower bundle_cost is preferred after hard constraints are satisfied"
+        bundles.append(bundle)
+    bundles.sort(key=lambda row: float(row.get("bundle_cost", 1e9) if row.get("bundle_cost") is not None else 1e9))
+    return bundles[:limit]
+
+
 def build_vla_state(vehicle: Any, valid_actions: Optional[List[Any]] = None, max_spots: int = 12) -> Dict[str, Any]:
     target = None
     if getattr(vehicle, "spot_index", None) is not None and getattr(vehicle, "parking_spaces", None) is not None:
@@ -78,6 +102,7 @@ def build_vla_state(vehicle: Any, valid_actions: Optional[List[Any]] = None, max
             "hard_constraints": list(VLA_HARD_CONSTRAINTS),
             "input_evidence": [
                 "candidate_spots are selectable verified parking spaces",
+                "candidate_assignment_bundles summarize valid spot-route-wait choices and their system cost",
                 "blocked_nearby_spots explain occupied, blocked, or unknown parking spaces",
                 "valid_actions is the complete executable high-level action set",
                 "nearby_vehicles and action features expose dynamic conflict risk",
@@ -109,6 +134,12 @@ def build_vla_state(vehicle: Any, valid_actions: Optional[List[Any]] = None, max
             "waiting_for": int(getattr(vehicle, "waiting_for", 0) or 0),
         },
         "candidate_spots": selectable_nearby[:max_spots],
+        "candidate_assignment_bundles": encode_assignment_bundles(valid_actions),
+        "selection_objective": {
+            "primary": "minimize feasible assignment-route bundle cost",
+            "cost_terms": ["route length", "expected wait", "dynamic conflict risk", "conflicting vehicle count"],
+            "scope": "system efficiency under partially observable human/rule background traffic",
+        },
         "blocked_nearby_spots": blocked_nearby[:max_spots],
         "nearby_vehicles": encode_nearby_vehicles(vehicle),
         "central_occupancy": encode_occupancy(getattr(vehicle, "occupancy", None), limit=128),

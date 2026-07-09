@@ -34,7 +34,10 @@ def build_qwen_prompt(packet: Dict[str, Any]) -> str:
         "Read the decision_packet JSON and optional BEV image. Return exactly one strict JSON object. "
         "The JSON must follow output_schema. The selected action_id must be copied exactly from valid_action_ids. "
         "Do not output markdown, commentary outside JSON, low-level controls, free-form routes, or invented parking spots. "
+        "Each valid action is a fixed assignment-route-wait bundle; compare candidate_assignment_bundles and valid_actions features. "
+        "After hard constraints are satisfied, prefer the bundle with lower system cost, lower conflict risk, and lower expected wait. "
         "If a parking target is selected, target_spot_index must equal the selected valid action target. "
-        "Blocked, occupied, unknown, or non-selectable spots are negative evidence and must never be selected.\n\n"
+        "Blocked, occupied, unknown, or non-selectable spots are negative evidence and must never be selected. "
+        "Background vehicle destinations may be hidden, so treat hidden intent as uncertainty rather than known truth.\n\n"
         "decision_packet:\n" + packet_json
     )

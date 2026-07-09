@@ -127,11 +127,12 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         state = build_vla_state(self, valid_actions=actions, max_spots=max(self.max_candidate_spots, 8))
         context = VLAContext(
             instruction=(
-                "Safely complete the parking-lot task. Choose exactly one action_id from valid_actions. "
+                "Safely complete the parking-lot task by choosing exactly one action_id from valid_actions. "
+                "Each valid action is a fixed spot-route-wait bundle; compare bundle_cost, conflict_risk, expected_wait_s, and path length. "
                 "Spots with status occupied or unknown are not selectable and must not be chosen. "
                 "candidate_spots contains only verified available spots; blocked_nearby_spots is explanatory only. "
-                "If a SELECT_SPOT_AND_CRUISE action exists and no nearby vehicle blocks the path, choose it over WAIT. "
-                "Do not output low-level control. Prefer verified available parking progress over unnecessary waiting."
+                "Background human/rule vehicle intent is partially observable, so use pose, speed, braking, and uncertainty fields. "
+                "Do not output low-level control. Prefer lower-cost safe parking progress over unnecessary waiting."
             ),
             state=state,
             valid_actions=actions,

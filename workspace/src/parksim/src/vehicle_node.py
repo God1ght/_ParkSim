@@ -25,7 +25,7 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
-VLA_BASELINE_AGENT_TYPES = ('greedy_nearest', 'greedy_shortest_path', 'risk_aware_rule', 'vla_baseline')
+VLA_BASELINE_AGENT_TYPES = ('greedy_nearest', 'greedy_shortest_path', 'risk_aware_rule', 'bundle_risk_aware', 'conflict_aware_bundle', 'min_bundle_cost', 'vla_baseline')
 
 
 def _as_bool(value):
@@ -209,7 +209,12 @@ class VehicleNode(MPClabNode):
                 intent_predictor=None
                 )
         else:
-            raise ValueError("Unsupported agent_type '%s'. Use 'rule_based', 'rl_policy', 'qwen_vla', 'greedy_nearest', 'greedy_shortest_path', 'risk_aware_rule', or 'vla_baseline'." % self.agent_type)
+            raise ValueError("Unsupported agent_type '%s'. Use 'rule_based', 'rl_policy', 'qwen_vla', 'greedy_nearest', 'greedy_shortest_path', 'risk_aware_rule', 'bundle_risk_aware', 'conflict_aware_bundle', 'min_bundle_cost', or 'vla_baseline'." % self.agent_type)
+
+        self.vehicle.vehicle_role = str(self.vehicle_role)
+        self.vehicle.intent_observable = _as_bool(self.intent_observable)
+        self.vehicle.intent_label = str(self.intent_label)
+        self.vehicle.spawn_event_id = str(self.spawn_event_id)
 
         self.vehicle.set_printer(self.get_logger().info)
         self.vehicle.load_parking_spaces(spots_data_path=self.spots_data_path)

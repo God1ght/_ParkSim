@@ -33,9 +33,12 @@ VLA_OUTPUT_SCHEMA = {
 VLA_HARD_CONSTRAINTS = (
     "Choose exactly one action_id listed in valid_action_ids.",
     "Never invent a parking spot, route, speed, steering angle, throttle, or brake command.",
+    "Treat each valid action as an executable assignment-route-wait bundle; never modify its route_id, duration, or target.",
     "Never select a spot whose status is occupied, blocked, unknown, or not selectable.",
     "If target_spot_index is present, it must match the selected action target exactly.",
     "Use blocked_nearby_spots only as negative evidence; those spots are not valid targets.",
+    "When candidate_assignment_bundles is present, prefer lower bundle_cost after satisfying all hard constraints.",
+    "Background human/rule vehicles may hide destination and task intent; infer risk only from observable evidence and uncertainty fields.",
     "Prefer verified parking progress over waiting when a safe SELECT_SPOT_AND_CRUISE action exists.",
 )
 
@@ -55,7 +58,7 @@ class VLACandidateAction:
     target_spot_index: Optional[int] = None
     target_coords: Optional[Any] = None
     duration: Optional[float] = None
-    route_id: Optional[int] = None
+    route_id: Optional[Any] = None
     reason: str = ""
     features: Dict[str, Any] = field(default_factory=dict)
 

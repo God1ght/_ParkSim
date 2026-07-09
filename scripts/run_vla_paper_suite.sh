@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT_DIR="${PARKSIM_SUITE_OUT_DIR:-$ROOT/experiments/qwen_vla_paper_suite/$(date +%Y%m%d_%H%M%S)}"
-AGENTS="${PARKSIM_SUITE_AGENTS:-rule_based greedy_nearest greedy_shortest_path risk_aware_rule qwen_vla}"
+AGENTS="${PARKSIM_SUITE_AGENTS:-rule_based greedy_nearest greedy_shortest_path risk_aware_rule bundle_risk_aware conflict_aware_bundle qwen_vla}"
 SEEDS="${PARKSIM_SUITE_SEEDS:-0 1 2}"
 BACKGROUND_MODES="${PARKSIM_SUITE_BACKGROUND_MODES:-rule_random mixed replay}"
 DENSITY_CONFIGS="${PARKSIM_SUITE_DENSITY_CONFIGS:-empty:0:0 light:1:0 balanced:2:2 dense:4:4}"
