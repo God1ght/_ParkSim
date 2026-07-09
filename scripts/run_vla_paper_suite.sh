@@ -357,4 +357,4 @@ write_suite_config
 write_suite_manifest
 
 echo "paper_suite_out_dir=$OUT_DIR"
-find "$OUT_DIR" -maxdepth 3 \( -name 'suite_manifest.json' -o -name 'suite_config.json' -o -name 'paper_summary.md' -o -name 'paper_table.tex' -o -name 'paper_report_manifest.json' -o -name 'qwen_health.json' -o -name 'qwen_service.log' \) -print | sort
+find "$OUT_DIR" -maxdepth 3 \( -name 'suite_manifest.json' -o -name 'suite_config.json' -o -name 'paper_summary.md' -o -name 'paper_table.tex' -o -name 'paper_report_manifest.json' -o -name 'paper_statistical_tests.csv' -o -name 'paper_stratified_summary.csv' -o -name 'paper_reproducibility.json' -o -name 'qwen_health.json' -o -name 'qwen_service.log' \) -print | sort

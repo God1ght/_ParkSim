@@ -87,7 +87,7 @@ PYTHONPATH=python python3 -m parksim.vla.paper_report \
   --reference-agent qwen_vla
 ```
 
-The paper report writes `paper_summary.csv`, `paper_summary.md`, `paper_paired_deltas.csv`, `paper_paired_delta_summary.csv`, `paper_table.tex`, and `paper_report_manifest.json`.
+The paper report writes `paper_summary.csv`, `paper_summary.md`, `paper_paired_deltas.csv`, `paper_paired_delta_summary.csv`, `paper_statistical_tests.csv`, `paper_stratified_summary.csv`, `paper_reproducibility.json`, `paper_table.tex`, and `paper_report_manifest.json`. The statistical table includes paired sign tests, Wilcoxon signed-rank normal approximations, and paired effect sizes; the stratified table breaks results down by background mode, density label, and spawn profile.
 
 Run a full paper-suite orchestration across modes, density levels, seeds, and agents:
 

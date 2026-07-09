@@ -22,6 +22,26 @@ DEFAULT_METRICS = [
     "qwen_latency_mean",
 ]
 
+HIGHER_IS_BETTER_METRICS = {
+    "min_other_distance_m",
+    "min_ttc_s",
+}
+
+STRATIFY_FIELDS = [
+    "background_mode",
+    "density_label",
+    "spawn_profile",
+]
+
+MARKDOWN_TEST_METRICS = [
+    "objective_score",
+    "path_length",
+    "total_non_idle_time",
+    "near_miss_event_count",
+    "collision_proxy_event_count",
+    "unsafe_occupancy_action_count",
+]
+
 
 def _load_json(path: Path) -> Any:
     with path.open() as f:
@@ -57,6 +77,104 @@ def _ci95(values: Iterable[float]) -> float:
     return 1.96 * _std(values) / math.sqrt(len(values))
 
 
+def _normal_cdf(value: float) -> float:
+    return 0.5 * (1.0 + math.erf(value / math.sqrt(2.0)))
+
+
+def _two_sided_normal_p(z_value: float) -> float:
+    return max(0.0, min(1.0, 2.0 * (1.0 - _normal_cdf(abs(z_value)))))
+
+
+def _rank_abs_values(values: List[float]) -> List[float]:
+    indexed = sorted(enumerate(abs(value) for value in values), key=lambda item: item[1])
+    ranks = [0.0] * len(values)
+    i = 0
+    while i < len(indexed):
+        j = i + 1
+        while j < len(indexed) and indexed[j][1] == indexed[i][1]:
+            j += 1
+        average_rank = (i + 1 + j) / 2.0
+        for k in range(i, j):
+            ranks[indexed[k][0]] = average_rank
+        i = j
+    return ranks
+
+
+def _wilcoxon_signed_rank(values: Iterable[float]) -> Dict[str, Any]:
+    nonzero = [float(value) for value in values if abs(float(value)) > 1e-12]
+    n = len(nonzero)
+    if n == 0:
+        return {"n": 0, "w_plus": 0.0, "w_minus": 0.0, "statistic": 0.0, "z": 0.0, "p_value": 1.0}
+    ranks = _rank_abs_values(nonzero)
+    w_plus = sum(rank for rank, value in zip(ranks, nonzero) if value > 0.0)
+    w_minus = sum(rank for rank, value in zip(ranks, nonzero) if value < 0.0)
+    statistic = min(w_plus, w_minus)
+    mean_w = n * (n + 1) / 4.0
+    var_w = n * (n + 1) * (2 * n + 1) / 24.0
+    if var_w <= 0.0:
+        z_value = 0.0
+        p_value = 1.0
+    else:
+        continuity = 0.5 if w_plus > mean_w else -0.5 if w_plus < mean_w else 0.0
+        z_value = (w_plus - mean_w - continuity) / math.sqrt(var_w)
+        p_value = _two_sided_normal_p(z_value)
+    return {
+        "n": n,
+        "w_plus": w_plus,
+        "w_minus": w_minus,
+        "statistic": statistic,
+        "z": z_value,
+        "p_value": p_value,
+    }
+
+
+def _sign_test(values: Iterable[float]) -> Dict[str, Any]:
+    values = [float(value) for value in values]
+    positive = sum(1 for value in values if value > 1e-12)
+    negative = sum(1 for value in values if value < -1e-12)
+    ties = len(values) - positive - negative
+    n = positive + negative
+    if n == 0:
+        p_value = 1.0
+    else:
+        k = min(positive, negative)
+        lower_tail = sum(math.comb(n, i) for i in range(k + 1)) / float(2 ** n)
+        p_value = min(1.0, 2.0 * lower_tail)
+    return {"positive": positive, "negative": negative, "ties": ties, "n": n, "p_value": p_value}
+
+
+def _metric_direction(metric: str) -> str:
+    return "higher_is_better" if metric in HIGHER_IS_BETTER_METRICS else "lower_is_better"
+
+
+def _reference_better(delta: float, metric: str) -> bool:
+    if abs(delta) <= 1e-12:
+        return False
+    if _metric_direction(metric) == "higher_is_better":
+        return delta < 0.0
+    return delta > 0.0
+
+
+def _agent_better(delta: float, metric: str) -> bool:
+    if abs(delta) <= 1e-12:
+        return False
+    if _metric_direction(metric) == "higher_is_better":
+        return delta > 0.0
+    return delta < 0.0
+
+
+def _density_label(row: Dict[str, Any], benchmark_id: str) -> str:
+    background = str(row.get("background_mode", ""))
+    text = benchmark_id
+    prefix = background + "_"
+    if background and text.startswith(prefix):
+        text = text[len(prefix):]
+    suffix = "_enter%s_exit%s" % (row.get("spawn_entering", ""), row.get("spawn_exiting", ""))
+    if text.endswith(suffix):
+        text = text[:-len(suffix)]
+    return text or "unknown"
+
+
 def collect_rows(inputs: List[Path], require_validation_ok: bool = True) -> Tuple[List[Dict[str, Any]], List[str]]:
     rows: List[Dict[str, Any]] = []
     warnings: List[str] = []
@@ -89,6 +207,8 @@ def collect_rows(inputs: List[Path], require_validation_ok: bool = True) -> Tupl
             item["benchmark_id"] = bench_dir.name
             item["row_index"] = idx
             item["pair_key"] = "%s/%s" % (bench_dir.name, item.get("scenario_id", "scenario"))
+            item["density_label"] = _density_label(item, bench_dir.name)
+            item["spawn_profile"] = "enter%s_exit%s" % (item.get("spawn_entering"), item.get("spawn_exiting"))
             item["git_commit"] = run_config.get("git_commit", "")
             item["git_branch"] = run_config.get("git_branch", "")
             rows.append(item)
@@ -163,6 +283,122 @@ def summarize_deltas(deltas: List[Dict[str, Any]], metrics: List[str]) -> List[D
     return summary
 
 
+def statistical_tests(deltas: List[Dict[str, Any]], metrics: List[str]) -> List[Dict[str, Any]]:
+    grouped: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for row in deltas:
+        grouped[str(row.get("agent_type"))].append(row)
+    stats: List[Dict[str, Any]] = []
+    for agent in sorted(grouped):
+        group = grouped[agent]
+        for metric in metrics:
+            if metric == "completed":
+                continue
+            key = metric + "_delta_vs_ref"
+            values = [_safe_float(row.get(key)) for row in group]
+            if not values:
+                continue
+            sign = _sign_test(values)
+            wilcoxon = _wilcoxon_signed_rank(values)
+            std = _std(values)
+            ref_better = sum(1 for value in values if _reference_better(value, metric))
+            agent_better = sum(1 for value in values if _agent_better(value, metric))
+            tie = len(values) - ref_better - agent_better
+            stats.append({
+                "agent_type": agent,
+                "metric": metric,
+                "metric_direction": _metric_direction(metric),
+                "paired_count": len(values),
+                "delta_mean": _mean(values),
+                "delta_std": std,
+                "delta_ci95": _ci95(values),
+                "effect_dz": _mean(values) / std if std > 1e-12 else 0.0,
+                "reference_better_count": ref_better,
+                "agent_better_count": agent_better,
+                "tie_count": tie,
+                "reference_better_rate": ref_better / len(values) if values else 0.0,
+                "agent_better_rate": agent_better / len(values) if values else 0.0,
+                "sign_test_n": sign["n"],
+                "sign_test_positive_delta": sign["positive"],
+                "sign_test_negative_delta": sign["negative"],
+                "sign_test_ties": sign["ties"],
+                "sign_test_p": sign["p_value"],
+                "wilcoxon_n": wilcoxon["n"],
+                "wilcoxon_w_plus": wilcoxon["w_plus"],
+                "wilcoxon_w_minus": wilcoxon["w_minus"],
+                "wilcoxon_statistic": wilcoxon["statistic"],
+                "wilcoxon_z": wilcoxon["z"],
+                "wilcoxon_p_normal_approx": wilcoxon["p_value"],
+            })
+    return stats
+
+
+def stratified_summary(rows: List[Dict[str, Any]], metrics: List[str], factors: List[str]) -> List[Dict[str, Any]]:
+    output: List[Dict[str, Any]] = []
+    for factor in factors:
+        factor_rows = [row for row in rows if row.get(factor) is not None]
+        grouped: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+        for row in factor_rows:
+            grouped[(str(row.get(factor)), str(row.get("agent_type")))].append(row)
+        for (level, agent), group in sorted(grouped.items()):
+            item: Dict[str, Any] = {
+                "factor": factor,
+                "level": level,
+                "agent_type": agent,
+                "episodes": len(group),
+                "scenario_count": len({row.get("pair_key") for row in group}),
+                "success_rate_mean": _mean(1.0 if row.get("completed") else 0.0 for row in group),
+            }
+            for metric in metrics:
+                if metric == "completed":
+                    continue
+                values = [_safe_float(row.get(metric)) for row in group]
+                item[metric + "_mean"] = _mean(values)
+                item[metric + "_ci95"] = _ci95(values)
+            output.append(item)
+    return output
+
+
+def reproducibility_manifest(
+    rows: List[Dict[str, Any]],
+    inputs: List[Path],
+    warnings: List[str],
+    reference_agent: str,
+    metrics: List[str],
+) -> Dict[str, Any]:
+    agents = sorted({str(row.get("agent_type")) for row in rows})
+    return {
+        "type": "parksim_vla_reproducibility_manifest",
+        "inputs": [str(path.resolve()) for path in inputs],
+        "reference_agent": reference_agent,
+        "metrics": metrics,
+        "row_count": len(rows),
+        "agent_count": len(agents),
+        "agents": agents,
+        "benchmark_count": len({row.get("benchmark_id") for row in rows}),
+        "scenario_count": len({row.get("pair_key") for row in rows}),
+        "background_modes": sorted({str(row.get("background_mode")) for row in rows if row.get("background_mode") is not None}),
+        "density_labels": sorted({str(row.get("density_label")) for row in rows if row.get("density_label") is not None}),
+        "spawn_profiles": sorted({str(row.get("spawn_profile")) for row in rows if row.get("spawn_profile") is not None}),
+        "seeds": sorted({str(row.get("seed")) for row in rows if row.get("seed") is not None}),
+        "git_commits": sorted({str(row.get("git_commit")) for row in rows if row.get("git_commit")}),
+        "git_branches": sorted({str(row.get("git_branch")) for row in rows if row.get("git_branch")}),
+        "validated_inputs_only": True,
+        "warnings": warnings,
+        "outputs": [
+            "paper_rows.csv",
+            "paper_summary.csv",
+            "paper_paired_deltas.csv",
+            "paper_paired_delta_summary.csv",
+            "paper_statistical_tests.csv",
+            "paper_stratified_summary.csv",
+            "paper_reproducibility.json",
+            "paper_summary.md",
+            "paper_table.tex",
+            "paper_report_manifest.json",
+        ],
+    }
+
+
 def write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not rows:
@@ -182,7 +418,15 @@ def write_json(path: Path, payload: Any) -> None:
         json.dump(payload, f, indent=2)
 
 
-def write_markdown(path: Path, summary: List[Dict[str, Any]], delta_summary: List[Dict[str, Any]], reference_agent: str) -> None:
+def write_markdown(
+    path: Path,
+    summary: List[Dict[str, Any]],
+    delta_summary: List[Dict[str, Any]],
+    stats: List[Dict[str, Any]],
+    strata: List[Dict[str, Any]],
+    reproducibility: Dict[str, Any],
+    reference_agent: str,
+) -> None:
     lines = [
         "# ParkSim-VLA Paper Report",
         "",
@@ -214,6 +458,55 @@ def write_markdown(path: Path, summary: List[Dict[str, Any]], delta_summary: Lis
             "{near_miss_event_count_delta_vs_ref_mean:.3f} | {collision_proxy_event_count_delta_vs_ref_mean:.3f} | "
             "{unsafe_occupancy_action_count_delta_vs_ref_mean:.3f} |".format(**_with_defaults(row))
         )
+    lines.extend([
+        "",
+        "## Paired Statistical Tests",
+        "",
+        "Sign tests are exact two-sided binomial tests after dropping ties. Wilcoxon p-values use the signed-rank normal approximation. For lower-is-better metrics, a positive delta means the compared agent is worse than `%s`." % reference_agent,
+        "",
+        "| agent | metric | pairs | mean_delta | ci95 | dz | ref_better | agent_better | ties | sign_p | wilcoxon_p |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ])
+    for row in stats:
+        if row.get("metric") not in MARKDOWN_TEST_METRICS:
+            continue
+        lines.append(
+            "| {agent_type} | {metric} | {paired_count:d} | {delta_mean:.3f} | {delta_ci95:.3f} | {effect_dz:.3f} | "
+            "{reference_better_count:d} | {agent_better_count:d} | {tie_count:d} | {sign_test_p:.4f} | {wilcoxon_p_normal_approx:.4f} |".format(**_with_defaults(row))
+        )
+    lines.extend([
+        "",
+        "## Scenario Stratification",
+        "",
+        "Full stratified results are in `paper_stratified_summary.csv`; the table below keeps the objective score by background mode and density level.",
+        "",
+        "| factor | level | agent | episodes | success | objective | path_m | non_idle_s |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
+    ])
+    for row in strata:
+        if row.get("factor") not in {"background_mode", "density_label"}:
+            continue
+        data = _with_defaults(row)
+        lines.append(
+            "| {factor} | {level} | {agent_type} | {episodes:d} | {success_rate_mean:.3f} | "
+            "{objective_score_mean:.3f} | {path_length_mean:.3f} | {total_non_idle_time_mean:.3f} |".format(**data)
+        )
+    lines.extend([
+        "",
+        "## Reproducibility Checklist",
+        "",
+        "- Validated benchmark inputs: %d" % len(reproducibility.get("inputs", [])),
+        "- Rows / agents / paired scenarios: %d / %d / %d" % (
+            int(reproducibility.get("row_count", 0)),
+            int(reproducibility.get("agent_count", 0)),
+            int(reproducibility.get("scenario_count", 0)),
+        ),
+        "- Background modes: %s" % ", ".join(reproducibility.get("background_modes", [])),
+        "- Density labels: %s" % ", ".join(reproducibility.get("density_labels", [])),
+        "- Seeds: %s" % ", ".join(reproducibility.get("seeds", [])),
+        "- Git commits: %s" % ", ".join(reproducibility.get("git_commits", [])),
+        "- Additional machine-readable evidence: `paper_reproducibility.json`, `paper_statistical_tests.csv`, and `paper_report_manifest.json`.",
+    ])
     path.write_text("\n".join(lines) + "\n")
 
 
@@ -269,12 +562,18 @@ def main() -> None:
     summary = summarize(rows, metrics)
     deltas = paired_deltas(rows, args.reference_agent, metrics)
     delta_summary = summarize_deltas(deltas, metrics)
+    stats = statistical_tests(deltas, metrics)
+    strata = stratified_summary(rows, metrics, STRATIFY_FIELDS)
+    repro = reproducibility_manifest(rows, args.inputs, warnings, args.reference_agent, metrics)
     out_dir.mkdir(parents=True, exist_ok=True)
     write_csv(out_dir / "paper_rows.csv", rows)
     write_csv(out_dir / "paper_summary.csv", summary)
     write_csv(out_dir / "paper_paired_deltas.csv", deltas)
     write_csv(out_dir / "paper_paired_delta_summary.csv", delta_summary)
-    write_markdown(out_dir / "paper_summary.md", summary, delta_summary, args.reference_agent)
+    write_csv(out_dir / "paper_statistical_tests.csv", stats)
+    write_csv(out_dir / "paper_stratified_summary.csv", strata)
+    write_json(out_dir / "paper_reproducibility.json", repro)
+    write_markdown(out_dir / "paper_summary.md", summary, delta_summary, stats, strata, repro, args.reference_agent)
     write_latex(out_dir / "paper_table.tex", summary)
     manifest = {
         "type": "parksim_vla_paper_report",
@@ -285,6 +584,9 @@ def main() -> None:
         "row_count": len(rows),
         "agent_count": len(summary),
         "paired_delta_count": len(deltas),
+        "statistical_test_count": len(stats),
+        "stratified_row_count": len(strata),
+        "reproducibility_manifest": str(out_dir / "paper_reproducibility.json"),
         "warnings": warnings,
     }
     write_json(out_dir / "paper_report_manifest.json", manifest)
