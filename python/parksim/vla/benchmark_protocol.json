@@ -1,0 +1,58 @@
+{
+  "name": "ParkSim-VLA-Bench-v0",
+  "description": "Reproducible high-level policy benchmark for ParkSim Qwen-VLA and deterministic baselines.",
+  "agents": [
+    "rule_based",
+    "greedy_nearest",
+    "greedy_shortest_path",
+    "risk_aware_rule",
+    "qwen_vla"
+  ],
+  "scenario_factors": {
+    "background_mode": [
+      "rule_random",
+      "replay",
+      "mixed"
+    ],
+    "seed": [
+      0,
+      1,
+      2
+    ],
+    "controlled_ego_spot_index": [
+      7
+    ],
+    "spawn_entering": [
+      0,
+      3
+    ],
+    "spawn_exiting": [
+      0,
+      3
+    ]
+  },
+  "primary_metrics": [
+    "success_rate",
+    "objective_score",
+    "path_length",
+    "total_non_idle_time",
+    "idle_time",
+    "waiting_time",
+    "shield_rejection_count",
+    "qwen_fallback_count",
+    "qwen_latency_mean"
+  ],
+  "outputs": [
+    "episodes.jsonl",
+    "metrics.csv",
+    "metrics.json",
+    "summary.md",
+    "summary.json",
+    "preference_dataset.jsonl"
+  ],
+  "notes": [
+    "All agents share the same lower-level A*/Stanley/parking executor unless the agent is the original rule_based controller.",
+    "Qwen-VLA must choose an action_id from valid_actions; safety shield rejects malformed or unsafe choices.",
+    "Preference pairs are derived from completed/path/time/shield/fallback objective scores and are intended for prompt optimization or offline preference tuning."
+  ]
+}

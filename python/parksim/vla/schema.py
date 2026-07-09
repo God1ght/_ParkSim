@@ -21,6 +21,7 @@ class VLACandidateAction:
     duration: Optional[float] = None
     route_id: Optional[int] = None
     reason: str = ""
+    features: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         target_coords = self.target_coords
@@ -34,6 +35,7 @@ class VLACandidateAction:
             "duration": self.duration,
             "route_id": self.route_id,
             "reason": self.reason,
+            "features": dict(self.features or {}),
         }
 
 

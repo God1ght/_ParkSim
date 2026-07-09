@@ -25,6 +25,9 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
+VLA_BASELINE_AGENT_TYPES = ('greedy_nearest', 'greedy_shortest_path', 'risk_aware_rule', 'vla_baseline')
+
+
 def _as_bool(value):
     if isinstance(value, bool):
         return value
@@ -70,6 +73,7 @@ class VehicleNodeParams(NodeParamTemplate):
         self.qwen_max_candidate_spots = 8
         self.qwen_periodic_replan = False
         self.qwen_decision_log_path = parksim_path('vehicle_log', 'qwen_vla_decisions.jsonl')
+        self.vla_baseline_strategy = 'risk_aware_rule'
 
         self.write_log = True
         self.log_path = parksim_path('vehicle_log')
@@ -155,6 +159,22 @@ class VehicleNode(MPClabNode):
                 periodic_replan=_as_bool(self.qwen_periodic_replan),
                 decision_log_path=str(self.qwen_decision_log_path),
             )
+        elif agent_type in VLA_BASELINE_AGENT_TYPES:
+            from parksim.vla.agent import BaselineVLAVehicle
+
+            baseline_strategy = agent_type if agent_type != 'vla_baseline' else str(self.vla_baseline_strategy).lower()
+            self.vehicle = BaselineVLAVehicle(
+                vehicle_id=self.vehicle_id,
+                vehicle_body=vehicle_body,
+                vehicle_config=vehicle_config,
+                baseline_strategy=baseline_strategy,
+                decision_period=float(self.qwen_decision_period),
+                max_candidate_spots=int(self.qwen_max_candidate_spots),
+                entrance_coords=np.array(self.entrance_coords),
+                fallback_spot_index=self.spot_index if self.spot_index > 0 else None,
+                periodic_replan=_as_bool(self.qwen_periodic_replan),
+                decision_log_path=str(self.qwen_decision_log_path),
+            )
         elif agent_type == 'rl_policy':
             from parksim.rl.agents import RLPolicyAgent
 
@@ -181,7 +201,7 @@ class VehicleNode(MPClabNode):
                 intent_predictor=None
                 )
         else:
-            raise ValueError("Unsupported agent_type '%s'. Use 'rule_based', 'rl_policy', or 'qwen_vla'." % self.agent_type)
+            raise ValueError("Unsupported agent_type '%s'. Use 'rule_based', 'rl_policy', 'qwen_vla', 'greedy_nearest', 'greedy_shortest_path', 'risk_aware_rule', or 'vla_baseline'." % self.agent_type)
 
         self.vehicle.set_printer(self.get_logger().info)
         self.vehicle.load_parking_spaces(spots_data_path=self.spots_data_path)
@@ -193,7 +213,7 @@ class VehicleNode(MPClabNode):
 
         if not self.use_existing_agents:
             if self.spot_index > 0:
-                if agent_type == 'qwen_vla':
+                if agent_type == 'qwen_vla' or agent_type in VLA_BASELINE_AGENT_TYPES:
                     task_profile = []
                 else:
                     cruise_task = VehicleTask(
@@ -273,6 +293,7 @@ class VehicleNode(MPClabNode):
             'qwen_max_candidate_spots',
             'qwen_periodic_replan',
             'qwen_decision_log_path',
+            'vla_baseline_strategy',
             'log_path',
             'trace_log_enabled',
             'trace_log_path',

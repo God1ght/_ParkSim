@@ -31,3 +31,34 @@ Authors: Xu Shen, Matthew Lacayo, Nidhir Guggilla, Francesco Borrelli
 See [this document](https://github.com/XuShenLZ/ParkSim/tree/main/python/parksim/trajectory_predict) for instruction.
 1. A pre-trained intent prediction model can be [downloaded here](https://drive.google.com/file/d/1LVQJRQmjGfGchxhMRchiZRCjrlFDVch-/view?usp=sharing).
 2. A pre-trained trajectory prediction model can be [downloaded here](https://drive.google.com/file/d/1c9KQXwFMRIYPJo1sXJKepoBcrEme_HxU/view?usp=sharing).
+
+## ParkSim-VLA-Bench
+
+This branch adds a reproducible high-level policy benchmark for Qwen-VLA style parking decisions. The benchmark keeps the low-level A*/Stanley/parking maneuver stack fixed and compares only the high-level action selector.
+
+Available controlled ego agents:
+
+- `rule_based`: original rule-based Stanley vehicle with fixed assigned spot.
+- `greedy_nearest`: VLA-action baseline selecting the closest verified available spot.
+- `greedy_shortest_path`: VLA-action baseline selecting the shortest A* route to a verified available spot.
+- `risk_aware_rule`: VLA-action baseline using route length, estimated time, nearby-vehicle risk, and shield-compatible occupancy features.
+- `qwen_vla`: Qwen policy client selecting one `action_id` from the same `valid_actions` schema.
+
+Run a quick local benchmark after ROS build and DLP setup:
+
+```bash
+PARKSIM_BENCH_SEEDS="0" \
+PARKSIM_BENCH_BACKGROUND_MODES="rule_random" \
+PARKSIM_BENCH_AGENTS="rule_based greedy_nearest greedy_shortest_path risk_aware_rule qwen_vla" \
+PARKSIM_BENCH_QWEN_MODE="mock" \
+./scripts/run_vla_benchmark.sh
+```
+
+Outputs are written under `experiments/qwen_vla_benchmark/<timestamp>/`:
+
+- `episodes.jsonl`: scenario, seed, agent, and log-path manifest.
+- `metrics.csv` / `metrics.json`: episode-level reproducibility table.
+- `summary.md` / `summary.json`: agent-level aggregate metrics.
+- `preference_dataset.jsonl`: pairwise lower-is-better preference pairs for prompt optimization or offline preference tuning.
+
+The protocol skeleton is stored in `python/parksim/vla/benchmark_protocol.json`.

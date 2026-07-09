@@ -10,6 +10,7 @@ from parksim.controller.stanley_controller import StanleyController
 from parksim.controller_types import StanleyParams
 from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleTask
 from parksim.vla.action_space import apply_candidate_action, build_candidate_actions, choose_default_action
+from parksim.vla.baselines import make_baseline_decision
 from parksim.vla.bev_encoder import save_bev_png
 from parksim.vla.qwen_client import QwenPolicyClient
 from parksim.vla.schema import VLAContext, VLADecision
@@ -134,7 +135,7 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
             bev_image_path=bev_path or None,
         )
         decision_started = time.time()
-        decision = self.qwen_client.decide(context)
+        decision = self._decide(context)
         latency_seconds = time.time() - decision_started
         ok, action, shield_reason = self.vla_shield.validate(decision, actions, vehicle=self)
         if not ok or action is None:
@@ -153,6 +154,9 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         self._log_decision(time_value, reason, context, decision, shield_reason, action, latency_seconds)
         return True
 
+    def _decide(self, context: VLAContext) -> VLADecision:
+        return self.qwen_client.decide(context)
+
     def _log_decision(self, time_value: float, trigger_reason: str, context: VLAContext, decision: VLADecision, shield_reason: str, action: Any, latency_seconds: float = 0.0) -> None:
         if not self.decision_log_path:
             return
@@ -169,3 +173,17 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a") as f:
             f.write(json.dumps(record) + "\n")
+
+class BaselineVLAVehicle(QwenVLAVehicle):
+    """Deterministic high-level VLA baseline over the same action interface."""
+
+    def __init__(self, *args, baseline_strategy: str = "risk_aware_rule", **kwargs):
+        self.baseline_strategy = str(baseline_strategy or "risk_aware_rule").lower()
+        kwargs.setdefault("qwen_endpoint", "")
+        kwargs.setdefault("qwen_model", "baseline:%s" % self.baseline_strategy)
+        kwargs.setdefault("qwen_timeout", 0.0)
+        super().__init__(*args, **kwargs)
+        self.baseline_strategy = str(baseline_strategy or "risk_aware_rule").lower()
+
+    def _decide(self, context: VLAContext) -> VLADecision:
+        return make_baseline_decision(context.valid_actions, self.baseline_strategy)

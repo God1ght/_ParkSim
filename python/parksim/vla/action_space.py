@@ -3,6 +3,7 @@ from typing import Any, List, Optional, Sequence
 import numpy as np
 
 from parksim.vehicle_types import VehicleTask
+from parksim.vla.action_features import enrich_candidate_actions
 from parksim.vla.schema import VLAActionType, VLACandidateAction
 from parksim.vla.spot_status import nearest_selectable_spot_indices
 
@@ -56,7 +57,7 @@ def build_candidate_actions(
             reason="Cruise to the parking-lot exit coordinates.",
         ))
     actions.extend(wait_actions)
-    return actions
+    return enrich_candidate_actions(vehicle, actions)
 
 
 def choose_default_action(actions: List[VLACandidateAction]) -> Optional[VLACandidateAction]:

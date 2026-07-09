@@ -22,6 +22,9 @@ from parksim.srv import OccupancySrv
 from parksim.base_node import MPClabNode, parksim_path
 from parksim.pytypes import VehicleState, NodeParamTemplate
 
+VLA_AGENT_TYPES = {'qwen_vla', 'greedy_nearest', 'greedy_shortest_path', 'risk_aware_rule', 'vla_baseline'}
+
+
 class SimulatorNodeParams(NodeParamTemplate):
     """
     template that stores all parameters needed for the node as well as default values
@@ -58,6 +61,7 @@ class SimulatorNodeParams(NodeParamTemplate):
         self.qwen_max_candidate_spots = 8
         self.qwen_periodic_replan = False
         self.qwen_decision_log_path = ''
+        self.vla_baseline_strategy = 'risk_aware_rule'
 
         self.write_log = True
         self.log_path = parksim_path('vehicle_log')
@@ -199,7 +203,7 @@ class SimulatorNode(MPClabNode):
             "agent_type:=%s" % agent_type,
             "log_path:=%s" % self.log_path,
         ]
-        if agent_type == 'qwen_vla':
+        if agent_type in VLA_AGENT_TYPES:
             command.extend([
                 "qwen_endpoint:=%s" % self.qwen_endpoint,
                 "qwen_model:=%s" % self.qwen_model,
@@ -208,6 +212,7 @@ class SimulatorNode(MPClabNode):
                 "qwen_max_candidate_spots:=%s" % self.qwen_max_candidate_spots,
                 "qwen_periodic_replan:=%s" % str(self.qwen_periodic_replan).lower(),
                 "qwen_decision_log_path:=%s" % (self.qwen_decision_log_path or os.path.join(self.log_path, "qwen_vla_decisions.jsonl")),
+                "vla_baseline_strategy:=%s" % self.vla_baseline_strategy,
             ])
 
         self.vehicles.append(
