@@ -67,7 +67,8 @@
     "paper_report_manifest.json",
     "suite_config.json",
     "benchmarks.jsonl",
-    "suite_manifest.json"
+    "suite_manifest.json",
+    "failures.jsonl"
   ],
   "notes": [
     "All agents share the same lower-level A*/Stanley/parking executor unless the agent is the original rule_based controller.",
@@ -81,6 +82,8 @@
     "Cross-vehicle safety metrics synchronize traces by wall_time when available; per-vehicle relative time is used only as a fallback.",
     "Use scripts/run_vla_paper_suite.sh for paper-scale orchestration across background modes, density levels, seeds, and agents.",
     "The suite runner delegates each condition to run_vla_benchmark.sh, validates each benchmark directory, and then calls parksim.vla.paper_report for final tables.",
-    "Paper-suite replay mode skips non-empty density configs by default because replay ignores random entering/exiting spawn density."
+    "Paper-suite replay mode skips non-empty density configs by default because replay ignores random entering/exiting spawn density.",
+    "Paper-suite runs support resume-by-validation, dry-run planning, and continue-on-fail failure recording.",
+    "Suite manifests include per-condition status values such as planned, completed, skipped_valid, and failed."
   ]
 }
