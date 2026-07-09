@@ -65,7 +65,7 @@ The action enumerator and safety shield both use the same `spot_status` layer. A
 
 Entry parking tasks expose only parking-progress actions. `CRUISE_TO_EXIT` is generated only for exiting vehicles or active unpark/exit task semantics, preventing Qwen from satisfying a parking episode by leaving the lot.
 
-Bundle-aware baseline agents are available as `bundle_risk_aware`, `conflict_aware_bundle`, and `min_bundle_cost`. They use the same candidate bundle interface and safety shield as Qwen-VLA, which makes paper comparisons focus on high-level assignment/path selection rather than different low-level controllers.
+Bundle-aware baseline agents are available as `bundle_risk_aware`, `conflict_aware_bundle`, `min_bundle_cost`, `reservation_bundle`, `rolling_horizon_bundle`, `centralized_min_cost`, and `oracle_intent_bundle`. They use the same candidate bundle interface and safety shield as Qwen-VLA, which makes paper comparisons focus on high-level assignment/path selection rather than different low-level controllers. `oracle_intent_bundle` reveals hidden task/progress/reference-path information and should be reported only as an upper bound, not as a deployable policy.
 
 Audit decision logs with `python -m parksim.vla.decision_audit <benchmark-or-log> --out-dir <audit-dir> --strict`. This is the paper-facing check for protocol version, prompt version, valid action membership, target consistency, reason code coverage, shield rejections, and unsafe applied parking spots.
 
@@ -100,7 +100,17 @@ Key overrides:
 - `PARKSIM_LONG_HIDDEN_INTENT_FRACTION`: fraction of rule-agent intentions hidden from the VLA state.
 - `PARKSIM_LONG_MAX_CONCURRENT_BACKGROUND_VEHICLES`: cap on scheduled background traffic.
 
-Each run writes `traffic_schedule.json`, `traffic_events.jsonl`, vehicle traces with `vehicle_role` and `intent_observable`, and system-level conflict metrics such as `system_near_miss_event_count`, `trajectory_conflict_event_count`, and `mixed_intent_conflict_event_count`. Default long-horizon agents now include `rule_based`, `greedy_nearest`, `greedy_shortest_path`, `risk_aware_rule`, `bundle_risk_aware`, `conflict_aware_bundle`, and `qwen_vla`.
+Each run writes `traffic_schedule.json`, `traffic_events.jsonl`, vehicle traces with `vehicle_role` and `intent_observable`, and system-level conflict metrics such as `system_near_miss_event_count`, `trajectory_conflict_event_count`, and `mixed_intent_conflict_event_count`. Default long-horizon agents now include `rule_based`, `greedy_nearest`, `greedy_shortest_path`, `risk_aware_rule`, `bundle_risk_aware`, `conflict_aware_bundle`, `reservation_bundle`, `rolling_horizon_bundle`, `centralized_min_cost`, `oracle_intent_bundle`, and `qwen_vla`.
+
+
+### Paper Baseline Interpretation
+
+- `greedy_nearest` and `greedy_shortest_path` test myopic assignment rules.
+- `risk_aware_rule`, `bundle_risk_aware`, and `conflict_aware_bundle` test local conflict-aware bundle scoring.
+- `reservation_bundle` approximates reservation-based planning by penalizing near-term path conflicts and expected wait.
+- `centralized_min_cost` is a deterministic centralized-cost proxy over global occupancy, nearby traffic load, and bundle cost.
+- `oracle_intent_bundle` reveals hidden background task/progress/reference-path fields and should be interpreted as an upper-bound baseline under full intent observability.
+- Qwen-VLA remains weight-frozen in this protocol; optimization is limited to state/action packet design, prompt contract, safety shielding, and candidate-bundle selection.
 
 ## Visualizer Video/GIF Comparison
 

@@ -32,6 +32,14 @@ def build_action_features(vehicle: Any, action: VLACandidateAction) -> Dict[str,
     estimated_time = _estimated_time(vehicle, action, route_length, wait_before_departure)
     expected_wait = _expected_wait_seconds(action, conflict_risk, min_ttc, nearby_count)
     bundle_cost = _bundle_cost(action, route_length, estimated_time, expected_wait, conflict_risk, conflict_vehicle_count, spot_status)
+    reservation_cost = _reservation_cost(action, bundle_cost, expected_wait, conflict_risk, conflict_vehicle_count)
+    rolling_horizon_cost = _rolling_horizon_cost(action, bundle_cost, expected_wait, conflict_risk, conflict_vehicle_count)
+    centralized_assignment_cost = _centralized_assignment_cost(action, bundle_cost, nearby_count, conflict_vehicle_count, spot_status)
+    oracle_enabled = bool(getattr(vehicle, "reveal_background_intents_to_vla", False))
+    oracle_risk, oracle_count, oracle_spot_competition = _oracle_intent_features(
+        vehicle, ego_xy, target_xy, wait_before_departure=wait_before_departure, enabled=oracle_enabled
+    )
+    oracle_bundle_cost = _oracle_bundle_cost(bundle_cost, oracle_risk, oracle_count, oracle_spot_competition)
     rule_prior = _rule_prior_score(action, route_length, estimated_time, expected_wait, conflict_risk, conflict_vehicle_count, spot_status)
     assignment_id = _assignment_id(action)
     route_id = str(action.route_id or ("wait" if action.action_type == VLAActionType.WAIT else "direct"))
@@ -52,6 +60,14 @@ def build_action_features(vehicle: Any, action: VLACandidateAction) -> Dict[str,
         "occupancy_status": (spot_status or {}).get("status"),
         "selectable": bool((spot_status or {}).get("selectable", action.target_spot_index is None)),
         "bundle_cost": round(float(bundle_cost), 4),
+        "reservation_cost": round(float(reservation_cost), 4),
+        "rolling_horizon_cost": round(float(rolling_horizon_cost), 4),
+        "centralized_assignment_cost": round(float(centralized_assignment_cost), 4),
+        "oracle_intent_available": bool(oracle_enabled),
+        "oracle_conflict_risk": round(float(oracle_risk), 4) if oracle_enabled else None,
+        "oracle_conflict_vehicle_count": int(oracle_count) if oracle_enabled else None,
+        "oracle_spot_competition": round(float(oracle_spot_competition), 4) if oracle_enabled else None,
+        "oracle_bundle_cost": round(float(oracle_bundle_cost), 4) if oracle_enabled else None,
         "rule_prior_score": round(float(rule_prior), 4),
         "assignment_bundle": {
             "assignment_id": assignment_id,
@@ -66,7 +82,12 @@ def build_action_features(vehicle: Any, action: VLACandidateAction) -> Dict[str,
             "conflict_risk": round(float(conflict_risk), 4),
             "conflict_vehicle_count": int(conflict_vehicle_count),
             "bundle_cost": round(float(bundle_cost), 4),
-            "observable_only": True,
+            "reservation_cost": round(float(reservation_cost), 4),
+            "rolling_horizon_cost": round(float(rolling_horizon_cost), 4),
+            "centralized_assignment_cost": round(float(centralized_assignment_cost), 4),
+            "oracle_bundle_cost": round(float(oracle_bundle_cost), 4) if oracle_enabled else None,
+            "oracle_intent_available": bool(oracle_enabled),
+            "observable_only": not bool(oracle_enabled),
         },
     }
 
@@ -226,6 +247,115 @@ def _expected_wait_seconds(action: VLACandidateAction, conflict_risk: float, min
         wait += max(0.0, 4.0 - min_ttc)
     wait += min(3.0, 0.25 * float(nearby_count))
     return wait
+
+
+def _reservation_cost(
+    action: VLACandidateAction,
+    bundle_cost: float,
+    expected_wait: float,
+    conflict_risk: float,
+    conflict_vehicle_count: int,
+) -> float:
+    if action.action_type == VLAActionType.WAIT:
+        return bundle_cost + 0.5 * expected_wait
+    return bundle_cost + 20.0 * conflict_risk + 4.0 * conflict_vehicle_count + 0.8 * expected_wait
+
+
+def _rolling_horizon_cost(
+    action: VLACandidateAction,
+    bundle_cost: float,
+    expected_wait: float,
+    conflict_risk: float,
+    conflict_vehicle_count: int,
+) -> float:
+    cost = bundle_cost + 0.5 * expected_wait + 10.0 * conflict_risk + 2.0 * conflict_vehicle_count
+    if _route_strategy(action) == "yield_then_go" and conflict_risk > 0.25:
+        cost -= 4.0
+    return cost
+
+
+def _centralized_assignment_cost(
+    action: VLACandidateAction,
+    bundle_cost: float,
+    nearby_count: int,
+    conflict_vehicle_count: int,
+    spot_status: Optional[Dict[str, Any]],
+) -> float:
+    cost = bundle_cost + 0.8 * nearby_count + 8.0 * conflict_vehicle_count
+    if spot_status and spot_status.get("status") == "available":
+        cost -= 1.0
+    if action.action_type == VLAActionType.WAIT:
+        cost += 12.0
+    return cost
+
+
+def _oracle_bundle_cost(bundle_cost: float, oracle_risk: float, oracle_count: int, oracle_spot_competition: float) -> float:
+    return bundle_cost + 55.0 * oracle_risk + 6.0 * oracle_count + 30.0 * oracle_spot_competition
+
+
+def _oracle_intent_features(
+    vehicle: Any,
+    ego_xy: np.ndarray,
+    target_xy: Optional[np.ndarray],
+    wait_before_departure: float = 0.0,
+    enabled: bool = False,
+) -> Tuple[float, int, float]:
+    if not enabled or target_xy is None:
+        return 0.0, 0, 0.0
+    other_states = getattr(vehicle, "other_state", {}) or {}
+    other_tasks = getattr(vehicle, "other_task", {}) or {}
+    other_progress = getattr(vehicle, "other_parking_progress", {}) or {}
+    other_refs = getattr(vehicle, "other_ref_pose", {}) or {}
+    other_done = getattr(vehicle, "other_is_all_done", {}) or {}
+    risk = 0.0
+    count = 0
+    spot_competition = 0.0
+    for vehicle_id, state in other_states.items():
+        if other_done.get(vehicle_id):
+            continue
+        task = str(other_tasks.get(vehicle_id) or "").upper()
+        progress = str(other_progress.get(vehicle_id) or "").upper()
+        ref_points = _reference_points(other_refs.get(vehicle_id))
+        vehicle_conflict = False
+        if ref_points:
+            d_ref = _polyline_to_segment_distance(ref_points, ego_xy, target_xy)
+            if d_ref < 7.0:
+                vehicle_conflict = True
+                risk += max(0.0, (7.0 - d_ref) / 7.0) * 0.75
+            final_ref = ref_points[-1]
+            d_spot = float(np.linalg.norm(final_ref - target_xy))
+            if task in ("CRUISE", "PARK") and d_spot < 8.0:
+                spot_competition += max(0.0, (8.0 - d_spot) / 8.0)
+        if task == "UNPARK" or progress == "UNPARKING":
+            predicted = _predict_xy(state, wait_before_departure)
+            d_path = _point_to_segment_distance(predicted, ego_xy, target_xy)
+            if d_path < 9.0:
+                vehicle_conflict = True
+                risk += max(0.0, (9.0 - d_path) / 9.0) * 0.65
+        if vehicle_conflict:
+            count += 1
+    return min(1.0, risk), count, min(1.0, spot_competition)
+
+
+def _reference_points(ref_pose: Any, limit: int = 16) -> List[np.ndarray]:
+    if ref_pose is None:
+        return []
+    try:
+        xs = list(getattr(ref_pose, "x", []) or [])
+        ys = list(getattr(ref_pose, "y", []) or [])
+    except Exception:
+        return []
+    points = []
+    for x, y in list(zip(xs, ys))[:limit]:
+        points.append(np.asarray([float(x), float(y)], dtype=float))
+    return points
+
+
+def _polyline_to_segment_distance(points: Iterable[np.ndarray], a: np.ndarray, b: np.ndarray) -> float:
+    best = float("inf")
+    for point in points:
+        best = min(best, _point_to_segment_distance(np.asarray(point, dtype=float), a, b))
+    return best
 
 
 def _bundle_cost(

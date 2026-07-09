@@ -128,7 +128,7 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         context = VLAContext(
             instruction=(
                 "Safely complete the parking-lot task by choosing exactly one action_id from valid_actions. "
-                "Each valid action is a fixed spot-route-wait bundle; compare bundle_cost, conflict_risk, expected_wait_s, and path length. "
+                "Each valid action is a fixed spot-route-wait bundle; compare bundle_cost, reservation_cost, centralized_assignment_cost, conflict_risk, expected_wait_s, and path length. "
                 "Spots with status occupied or unknown are not selectable and must not be chosen. "
                 "candidate_spots contains only verified available spots; blocked_nearby_spots is explanatory only. "
                 "Background human/rule vehicle intent is partially observable, so use pose, speed, braking, and uncertainty fields. "
@@ -188,6 +188,8 @@ class BaselineVLAVehicle(QwenVLAVehicle):
 
     def __init__(self, *args, baseline_strategy: str = "risk_aware_rule", **kwargs):
         self.baseline_strategy = str(baseline_strategy or "risk_aware_rule").lower()
+        if self.baseline_strategy == "oracle_intent_bundle":
+            kwargs["reveal_background_intents_to_vla"] = True
         kwargs.setdefault("qwen_endpoint", "")
         kwargs.setdefault("qwen_model", "baseline:%s" % self.baseline_strategy)
         kwargs.setdefault("qwen_timeout", 0.0)

@@ -1,0 +1,149 @@
+
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage[UTF8]{ctex}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage{xcolor}
+
+\title{面向人机混驾停车场的 ParkSim--Qwen-VLA 高层泊位--路径联合决策框架}
+
+\author{\IEEEauthorblockN{项目内部技术报告}
+\IEEEauthorblockA{ParkSim-Qwen VLA 实验分支：\texttt{feature/qwen-vla-high-level-policy}}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+本文面向真实人机混驾停车场中的大规模长时段运行问题，设计一种基于 ParkSim 与 Qwen-VLA 的高层泊位--路径联合决策框架。不同于 MAPPO 等强化学习范式，也不同于端到端低层控制，本文将 Qwen-VLA 限定为受约束的高层策略选择器：模型只能在仿真器生成的合法 \emph{spot-route-wait} 候选动作包中选择一个 \texttt{action\_id}，低层轨迹跟踪、泊车机动和安全执行仍由 ParkSim 既有 A*/Stanley/泊车控制器完成。当前实现不采用 LoRA、DPO 或任何模型权重微调，而是通过决策状态设计、候选动作包生成、强规则基线、安全盾、长时段混驾场景和论文级评价指标来提升可复现性与可比较性。报告给出问题形式化、方法框架、baseline 体系、评价指标、实验矩阵和当前实现状态，为后续高质量期刊论文撰写提供方法复现基础。
+\end{abstract}
+
+\begin{IEEEkeywords}
+停车场仿真，人机混驾，视觉-语言-动作模型，泊位分配，路径规划，安全约束，ParkSim，Qwen-VLA
+\end{IEEEkeywords}
+
+\section{研究目标与问题定义}
+本文研究目标是在大规模、长时段、部分可观测的人机混驾停车场中，通过优化受控车辆的泊位分配、全局路径选择和等待/让行策略，提高系统级运行效能。系统效能不只包含单车停车成功率，还包括吞吐量、平均完成时间、等待时间、路径长度、近失事件、轨迹冲突、泊位竞争失败和安全盾触发率等指标。
+
+设停车场在时刻 $t$ 的可观测状态为
+\begin{equation}
+    o_t = \{s_t^{ego}, O_t, B_t, V_t^{obs}, A_t\},
+\end{equation}
+其中 $s_t^{ego}$ 表示受控车辆状态，$O_t$ 表示中心泊位占用与动态占用估计，$B_t$ 表示候选泊位集合，$V_t^{obs}$ 表示背景车辆的可观测运动状态，$A_t$ 表示由仿真器生成的合法高层动作集合。背景车辆真实任务、目标泊位和未来路径默认不可见，仅在 oracle baseline 中开放。
+
+本文将高层动作定义为候选动作包
+\begin{equation}
+    a_t^i = (p_i, r_i, \tau_i, c_i),
+\end{equation}
+其中 $p_i$ 为目标泊位，$r_i$ 为候选路径或路径策略，$\tau_i$ 为出发前等待时间，$c_i$ 为基于路径长度、预计等待、冲突风险和车辆竞争关系计算的动作包代价。Qwen-VLA 的输出被约束为
+\begin{equation}
+    \pi_{VLA}(o_t) \in \{\texttt{action\_id}(a_t^i) \mid a_t^i \in A_t\}.
+\end{equation}
+该约束避免模型生成不存在的泊位、路径、速度、转角或油门控制。
+
+\section{方法框架}
+整体框架由五个模块组成，如表~\ref{tab:modules} 所示。仿真器负责生成混驾交通和候选动作包，Qwen-VLA 仅做高层选择，安全盾负责执行前校验。
+
+\begin{table}[htbp]
+\caption{ParkSim--Qwen-VLA 方法模块}
+\label{tab:modules}
+\centering
+\begin{tabular}{p{0.24\linewidth}p{0.62\linewidth}}
+\toprule
+模块 & 功能 \\
+\midrule
+混驾场景生成 & 生成长时段进场/离场需求，恢复静态障碍物为离场车辆，引入 replay/rule/mixed 背景交通与隐藏意图。 \\
+状态编码 & 构造 BEV 与结构化状态，包括泊位状态、附近车辆、可观测意图、候选泊位和候选动作包。 \\
+候选动作包 & 枚举 \texttt{WAIT}、\texttt{SELECT\_SPOT\_AND\_CRUISE}、\texttt{PARK}、\texttt{REROUTE}、\texttt{CRUISE\_TO\_EXIT} 等合法动作。 \\
+Qwen-VLA 决策 & 在冻结模型条件下，根据决策协议从合法 \texttt{action\_id} 中选择一个动作包。 \\
+安全盾与执行 & 校验动作合法性、泊位可选性、任务语义和目标一致性，通过后交给 ParkSim 低层控制器执行。 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{候选动作包代价}
+当前实现为每个动作包计算多种代价项：
+\begin{align}
+    J_{bundle} &= L + \alpha T + \beta W + \gamma R + \delta N_c, \\
+    J_{res} &= J_{bundle} + \lambda_1 R + \lambda_2 N_c + \lambda_3 W, \\
+    J_{cent} &= J_{bundle} + \eta_1 N_{near} + \eta_2 N_c, \\
+    J_{oracle} &= J_{bundle} + \rho_1 R^{oracle} + \rho_2 N_c^{oracle} + \rho_3 C_{spot}^{oracle},
+\end{align}
+其中 $L$ 是路径长度，$T$ 是预计行驶时间，$W$ 是预计等待时间，$R$ 是可观测冲突风险，$N_c$ 是冲突车辆数，$N_{near}$ 是附近车辆数。$R^{oracle}$、$N_c^{oracle}$ 和 $C_{spot}^{oracle}$ 仅用于 oracle 上界 baseline，来自背景车辆真实任务、停车进度和参考路径。
+
+\subsection{安全约束}
+安全盾执行以下硬约束：1）只能选择 \texttt{valid\_action\_ids} 中的动作；2）不能选择占用、阻塞、未知或不可选泊位；3）\texttt{target\_spot\_index} 必须与所选动作一致；4）进场停车任务不暴露 \texttt{CRUISE\_TO\_EXIT}；5）Qwen 不得输出低层控制。该设计将 VLA 模型限制在可执行高层策略空间内，降低大模型幻觉带来的安全风险。
+
+\section{Baseline 体系}
+为支撑高质量期刊论文，当前分支已将 baseline 从简单规则扩展为多层对照体系，如表~\ref{tab:baselines} 所示。
+
+\begin{table*}[htbp]
+\caption{当前可复现实验 baseline 体系}
+\label{tab:baselines}
+\centering
+\begin{tabular}{p{0.18\linewidth}p{0.27\linewidth}p{0.40\linewidth}}
+\toprule
+Baseline & 可观测性 & 作用 \\
+\midrule
+\texttt{rule\_based} & 常规规则车信息 & 原 ParkSim 规则策略，用作基础控制对照。 \\
+\texttt{greedy\_nearest} & 部分可观测 & 选择最近可用泊位，检验距离贪心策略。 \\
+\texttt{greedy\_shortest\_path} & 部分可观测 & 选择最短路径泊位，检验路径贪心策略。 \\
+\texttt{risk\_aware\_rule} & 部分可观测 & 基于动作包总代价选择低风险泊位与路径。 \\
+\texttt{bundle\_risk\_aware} & 部分可观测 & 直接最小化 \texttt{bundle\_cost}，作为强规则主 baseline。 \\
+\texttt{conflict\_aware\_bundle} & 部分可观测 & 优先降低冲突风险和冲突车辆数，用于安全消融。 \\
+\texttt{reservation\_bundle} & 部分可观测 & 近似时间窗预约策略，惩罚预计等待和路径冲突。 \\
+\texttt{rolling\_horizon\_bundle} & 部分可观测 & 近似滚动时域重规划，鼓励在冲突场景下先让行再进入。 \\
+\texttt{centralized\_min\_cost} & 全局占用 + 可观测交通 & 集中式最小系统代价代理，不使用 LLM。 \\
+\texttt{oracle\_intent\_bundle} & 真实背景任务/参考路径可见 & 上界 baseline，用于衡量隐藏意图造成的性能损失。 \\
+\texttt{qwen\_vla} & 部分可观测 + BEV/结构化状态 & 冻结 Qwen-VLA 高层策略，不进行 LoRA/DPO 微调。 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\section{实验设计}
+建议采用三层实验矩阵。第一层为 smoke/pilot，用于验证协议、日志和视频管线；第二层为 paper-scale，用于统计显著性；第三层为 stress-test，用于检验极端拥堵和意图隐藏条件下的鲁棒性。
+
+\subsection{场景因素}
+实验因素应至少包含：1）背景模式：\texttt{rule\_random}、\texttt{replay}、\texttt{mixed}；2）需求密度：低、中、高、极高；3）进出场结构：进场主导、离场主导、均衡、高周转；4）隐藏意图比例：0、0.5、0.75、1.0；5）随机种子：至少 3--5 个。
+
+\subsection{评价指标}
+评价指标分为四类：
+\begin{itemize}
+    \item 个体效率：成功率、完成时间、路径长度、等待时间、非空闲时间；
+    \item 系统效率：单位时间完成车辆数、背景车辆延误、总吞吐量；
+    \item 安全性：near miss、collision proxy、TTC、轨迹冲突、混合意图冲突；
+    \item 决策质量：非法动作率、安全盾触发率、fallback 率、Qwen 延迟、目标不一致次数。
+\end{itemize}
+
+\subsection{统计检验}
+每个场景--种子--agent 组合应生成完整 episode、指标表、决策日志和可视化视频。论文表格建议报告均值、标准差、95\% 置信区间、paired delta、符号检验或 Wilcoxon 近似检验，以及 effect size。Qwen-VLA 的比较对象应优先选择 \texttt{bundle\_risk\_aware}、\texttt{reservation\_bundle}、\texttt{centralized\_min\_cost} 和 \texttt{oracle\_intent\_bundle}，而不是只与最近泊位规则比较。
+
+\section{当前实现状态}
+当前分支已完成以下内容：1）长时段人机混驾交通生成；2）部分可观测状态编码；3）候选 \emph{spot-route-wait} 动作包；4）冻结 Qwen-VLA 高层决策接口；5）安全盾与 fallback；6）强 baseline 注册；7）paper gate 与 benchmark 默认 agent 扩展；8）决策日志、审计、可视化和系统级指标。当前 smoke 与短时长 long-horizon 回归已验证新增 baseline 可启动、可生成候选动作包，并且进场任务不再暴露 \texttt{CRUISE\_TO\_EXIT}。
+
+\section{局限与后续工作}
+当前阶段仍有三点限制。第一，\texttt{centralized\_min\_cost} 是集中式代价代理，并非真正的多车同时 Hungarian/ILP 分配器；后续若需要更强理论上界，应实现跨车辆全局分配器。第二，当前 Qwen-VLA 仍依赖 prompt 与结构化输入，未进行权重适配；本文按用户设定不采用 LoRA/DPO。第三，真实数据校准仍需补充，包括进出场到达分布、泊位偏好、驾驶风格和 replay 轨迹统计。
+
+\section{结论}
+本文将 ParkSim--Qwen-VLA 框架从可运行原型推进到面向期刊论文复现的 baseline 体系。核心思想是将 Qwen-VLA 约束为高层泊位--路径--等待动作包选择器，通过候选动作生成、系统代价评估、强规则 baseline、oracle 上界和安全盾，支撑在真实人机混驾停车场中的系统效能评估。下一阶段应执行 paper-scale 多种子、多密度、多背景交通实验，并以强 baseline 和 oracle 上界为主要比较对象，验证 Qwen-VLA 在部分可观测混驾场景中的稳定收益。
+
+\section*{可复现命令摘要}
+\begin{verbatim}
+./scripts/build_parksim_ros.sh
+PYTHONPATH=$PWD/python python3 -m parksim.vla.smoke
+PYTHONPATH=$PWD/python python3 -m parksim.vla.service_smoke
+PARKSIM_LONG_QWEN_MODE=mock ./scripts/run_vla_long_horizon_suite.sh
+PARKSIM_LONG_QWEN_MODE=real ./scripts/run_vla_long_horizon_suite.sh
+\end{verbatim}
+
+\begin{thebibliography}{1}
+\bibitem{qwen_placeholder} Qwen Team, ``Qwen-VL/Qwen2.5-VL Technical Report,'' official technical report, citation to be replaced by the final model reference used in experiments.
+\bibitem{vla_placeholder} Robotics VLA literature, ``Vision-Language-Action Models for Robotic Decision Making,'' representative references to be finalized according to the paper submission venue.
+\bibitem{parksim_placeholder} ParkSim project documentation and source code, internal experiment branch \texttt{feature/qwen-vla-high-level-policy}.
+\end{thebibliography}
+
+\end{document}

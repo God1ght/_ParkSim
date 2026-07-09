@@ -25,7 +25,7 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
-VLA_BASELINE_AGENT_TYPES = ('greedy_nearest', 'greedy_shortest_path', 'risk_aware_rule', 'bundle_risk_aware', 'conflict_aware_bundle', 'min_bundle_cost', 'vla_baseline')
+VLA_BASELINE_AGENT_TYPES = ('greedy_nearest', 'greedy_shortest_path', 'risk_aware_rule', 'bundle_risk_aware', 'conflict_aware_bundle', 'min_bundle_cost', 'reservation_bundle', 'rolling_horizon_bundle', 'centralized_min_cost', 'oracle_intent_bundle', 'vla_baseline')
 
 
 def _as_bool(value):
@@ -209,7 +209,7 @@ class VehicleNode(MPClabNode):
                 intent_predictor=None
                 )
         else:
-            raise ValueError("Unsupported agent_type '%s'. Use 'rule_based', 'rl_policy', 'qwen_vla', 'greedy_nearest', 'greedy_shortest_path', 'risk_aware_rule', 'bundle_risk_aware', 'conflict_aware_bundle', 'min_bundle_cost', or 'vla_baseline'." % self.agent_type)
+            raise ValueError("Unsupported agent_type '%s'. Use 'rule_based', 'rl_policy', 'qwen_vla', 'greedy_nearest', 'greedy_shortest_path', 'risk_aware_rule', 'bundle_risk_aware', 'conflict_aware_bundle', 'min_bundle_cost', 'reservation_bundle', 'rolling_horizon_bundle', 'centralized_min_cost', 'oracle_intent_bundle', or 'vla_baseline'." % self.agent_type)
 
         self.vehicle.vehicle_role = str(self.vehicle_role)
         self.vehicle.intent_observable = _as_bool(self.intent_observable)

@@ -36,6 +36,7 @@ def build_qwen_prompt(packet: Dict[str, Any]) -> str:
         "Do not output markdown, commentary outside JSON, low-level controls, free-form routes, or invented parking spots. "
         "Each valid action is a fixed assignment-route-wait bundle; compare candidate_assignment_bundles and valid_actions features. "
         "After hard constraints are satisfied, prefer the bundle with lower system cost, lower conflict risk, and lower expected wait. "
+        "Use bundle_cost as the primary deployable score, and use reservation_cost or centralized_assignment_cost as supporting system-efficiency evidence when present. "
         "If a parking target is selected, target_spot_index must equal the selected valid action target. "
         "Blocked, occupied, unknown, or non-selectable spots are negative evidence and must never be selected. "
         "Background vehicle destinations may be hidden, so treat hidden intent as uncertainty rather than known truth.\n\n"

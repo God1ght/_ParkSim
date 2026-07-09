@@ -11,6 +11,10 @@ BASELINE_STRATEGIES = {
     "bundle_risk_aware",
     "conflict_aware_bundle",
     "min_bundle_cost",
+    "reservation_bundle",
+    "rolling_horizon_bundle",
+    "centralized_min_cost",
+    "oracle_intent_bundle",
 }
 
 
@@ -47,6 +51,18 @@ def select_baseline_action(actions: List[VLACandidateAction], strategy: str) -> 
     if strategy == "conflict_aware_bundle":
         ranked = spot_progress_actions or progress_actions or actions
         return _min_conflict_bundle(ranked) or choose_default_action(actions)
+    if strategy == "reservation_bundle":
+        ranked = spot_progress_actions or progress_actions or actions
+        return _min_named_cost(ranked, "reservation_cost") or choose_default_action(actions)
+    if strategy == "rolling_horizon_bundle":
+        ranked = spot_progress_actions or progress_actions or actions
+        return _min_named_cost(ranked, "rolling_horizon_cost") or choose_default_action(actions)
+    if strategy == "centralized_min_cost":
+        ranked = spot_progress_actions or progress_actions or actions
+        return _min_named_cost(ranked, "centralized_assignment_cost") or choose_default_action(actions)
+    if strategy == "oracle_intent_bundle":
+        ranked = spot_progress_actions or progress_actions or actions
+        return _min_oracle_bundle(ranked) or choose_default_action(actions)
     return choose_default_action(actions)
 
 
@@ -86,6 +102,15 @@ def _min_bundle_cost(actions: List[VLACandidateAction]) -> Optional[VLACandidate
 
 def _min_conflict_bundle(actions: List[VLACandidateAction]) -> Optional[VLACandidateAction]:
     return min(actions, key=_conflict_key, default=None)
+
+
+def _min_named_cost(actions: List[VLACandidateAction], key: str) -> Optional[VLACandidateAction]:
+    return min(actions, key=lambda action: float((action.features or {}).get(key, 1e9)), default=None)
+
+
+def _min_oracle_bundle(actions: List[VLACandidateAction]) -> Optional[VLACandidateAction]:
+    oracle_actions = [action for action in actions if (action.features or {}).get("oracle_bundle_cost") is not None]
+    return _min_named_cost(oracle_actions or actions, "oracle_bundle_cost") or _min_named_cost(actions, "centralized_assignment_cost")
 
 
 def _bundle_cost_key(action: VLACandidateAction) -> float:

@@ -8,6 +8,10 @@
     "risk_aware_rule",
     "bundle_risk_aware",
     "conflict_aware_bundle",
+    "reservation_bundle",
+    "rolling_horizon_bundle",
+    "centralized_min_cost",
+    "oracle_intent_bundle",
     "qwen_vla"
   ],
   "scenario_factors": {
@@ -109,7 +113,11 @@
     "Suite manifests record qwen.mode, qwen.bench_mode, qwen.managed, qwen.ready, endpoint, health payload, and service-log presence.",
     "VLA baseline agents share the same valid action bundle interface as Qwen-VLA so comparisons isolate high-level selection rather than low-level control.",
     "Bundle-aware baselines evaluate executable spot-route-wait candidates using route length, expected wait, dynamic conflict risk, and conflicting vehicle count.",
-    "Entry parking tasks do not expose cruise_to_exit as a valid action; exit actions are generated only for exiting or UNPARK task semantics."
+    "Entry parking tasks do not expose cruise_to_exit as a valid action; exit actions are generated only for exiting or UNPARK task semantics.",
+    "Reservation_bundle approximates time-window reservation by penalizing expected wait, path conflict risk, and conflicting vehicle count on each executable spot-route-wait bundle.",
+    "Centralized_min_cost is a deterministic centralized-cost proxy over the same candidate bundle set; it uses global occupancy, nearby-traffic load, and path-conflict terms without using an LLM.",
+    "Oracle_intent_bundle reveals background task/progress/reference-path information and is treated as an upper-bound baseline, not as a deployable partially observable policy.",
+    "No LoRA, DPO, or model weight adaptation is part of this protocol; Qwen-VLA optimization is restricted to decision packet design, constrained action bundles, safety shielding, and prompt-level selection objectives."
   ],
   "qwen_decision_protocol": {
     "protocol_version": "ParkSim-Qwen-VLA-Decision-v1",

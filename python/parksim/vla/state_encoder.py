@@ -138,6 +138,8 @@ def build_vla_state(vehicle: Any, valid_actions: Optional[List[Any]] = None, max
         "selection_objective": {
             "primary": "minimize feasible assignment-route bundle cost",
             "cost_terms": ["route length", "expected wait", "dynamic conflict risk", "conflicting vehicle count"],
+            "baseline_cost_fields": ["bundle_cost", "reservation_cost", "rolling_horizon_cost", "centralized_assignment_cost"],
+            "oracle_cost_field": "oracle_bundle_cost is available only to oracle baselines, not deployable Qwen-VLA",
             "scope": "system efficiency under partially observable human/rule background traffic",
         },
         "blocked_nearby_spots": blocked_nearby[:max_spots],
