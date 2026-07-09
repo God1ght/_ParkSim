@@ -90,22 +90,85 @@ def choose_fallback_action(actions: Sequence[Dict[str, Any]]) -> Tuple[str, str]
     return str(actions[0].get("action_id", "")), "fallback selected first valid action"
 
 
+def action_by_id(actions: Sequence[Dict[str, Any]], action_id: str) -> Dict[str, Any]:
+    for action in actions:
+        if str(action.get("action_id", "")) == str(action_id):
+            return action
+    return {}
+
+
+def action_target(action: Dict[str, Any]) -> Any:
+    value = action.get("target_spot_index")
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def reason_code_for_action(action: Dict[str, Any], fallback: bool = False) -> str:
+    if fallback:
+        return "FALLBACK_OR_RECOVERY"
+    action_type = action.get("action_type")
+    if action_type == "SELECT_SPOT_AND_CRUISE":
+        return "PARK_AVAILABLE"
+    if action_type == "PARK":
+        return "PARK_READY"
+    if action_type == "REROUTE":
+        return "REROUTE_CONFLICT"
+    if action_type == "CRUISE_TO_EXIT":
+        return "EXIT_READY"
+    if action_type == "WAIT":
+        return "YIELD_TRAFFIC"
+    return "FALLBACK_OR_RECOVERY"
+
+
+def int_or_none(value: Any) -> Any:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
 def normalize_decision(text: str, actions: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     parsed = first_json_object(text)
     valid_ids = {str(action.get("action_id")) for action in actions}
     action_id = str(parsed.get("action_id", "")) if parsed else ""
     reason = str(parsed.get("reason", "")) if parsed else ""
+    reason_code = str(parsed.get("reason_code", "")) if parsed else ""
+    parsed_target = int_or_none(parsed.get("target_spot_index")) if parsed else None
     try:
         confidence = float(parsed.get("confidence", 0.0)) if parsed else 0.0
     except Exception:
         confidence = 0.0
+    fallback = False
     if action_id not in valid_ids:
         fallback_id, fallback_reason = choose_fallback_action(actions)
         reason = "model output invalid action_id %r; %s" % (action_id, fallback_reason)
         action_id = fallback_id
         confidence = 0.0
+        fallback = True
+    selected = action_by_id(actions, action_id)
+    selected_target = action_target(selected)
+    if not fallback and parsed_target is not None and selected_target != parsed_target:
+        fallback_id, fallback_reason = choose_fallback_action(actions)
+        reason = "model output target_spot_index %r mismatched action_id %r; %s" % (parsed_target, action_id, fallback_reason)
+        action_id = fallback_id
+        selected = action_by_id(actions, action_id)
+        selected_target = action_target(selected)
+        confidence = 0.0
+        fallback = True
+    if not reason_code:
+        reason_code = reason_code_for_action(selected, fallback=fallback)
+    elif fallback:
+        reason_code = "FALLBACK_OR_RECOVERY"
     return {
         "action_id": action_id,
+        "target_spot_index": selected_target,
+        "reason_code": reason_code,
         "reason": reason,
         "confidence": clamp(confidence, 0.0, 1.0),
     }
@@ -213,7 +276,14 @@ class QwenVLAInferenceService:
         actions = valid_actions_from_context(context)
         if self.mock:
             action_id, reason = choose_fallback_action(actions)
-            return {"action_id": action_id, "reason": "mock qwen service: " + reason, "confidence": 1.0 if action_id else 0.0}
+            selected = action_by_id(actions, action_id)
+            return {
+                "action_id": action_id,
+                "target_spot_index": action_target(selected),
+                "reason_code": reason_code_for_action(selected),
+                "reason": "mock qwen service: " + reason,
+                "confidence": 1.0 if action_id else 0.0,
+            }
         self.load()
         messages = normalize_messages(payload.get("messages", []))
         output = self._generate(messages)

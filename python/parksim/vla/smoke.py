@@ -2,7 +2,8 @@ import numpy as np
 
 from parksim.pytypes import VehicleState
 from parksim.vla.action_space import build_candidate_actions, choose_default_action
-from parksim.vla.schema import VLADecision
+from parksim.vla.decision_protocol import build_decision_packet
+from parksim.vla.schema import VLA_DECISION_PROTOCOL_VERSION, VLADecision, VLAContext
 from parksim.vla.shield import VLASafetyShield
 from parksim.vla.state_encoder import build_vla_state
 
@@ -40,8 +41,15 @@ def main():
     assert all(row["selectable"] for row in state["candidate_spots"])
     blocked_zero = [row for row in state["blocked_nearby_spots"] if row["spot_index"] == 0][0]
     assert blocked_zero["status"] == "occupied" and not blocked_zero["selectable"]
-    ok, action, reason = VLASafetyShield().validate(VLADecision(action_id=selected.action_id), actions, vehicle=vehicle)
+    context = VLAContext(instruction="choose action", state=state, valid_actions=actions)
+    packet = build_decision_packet(context)
+    assert packet["protocol_version"] == VLA_DECISION_PROTOCOL_VERSION
+    assert packet["valid_action_ids"] == state["valid_action_ids"]
+    assert packet["output_schema"]["required"] == ["action_id", "target_spot_index", "reason_code", "confidence"]
+    ok, action, reason = VLASafetyShield().validate(VLADecision(action_id=selected.action_id, target_spot_index=1), actions, vehicle=vehicle)
     assert ok, reason
+    bad, _, reason = VLASafetyShield().validate(VLADecision(action_id=selected.action_id, target_spot_index=0), actions, vehicle=vehicle)
+    assert not bad and "does not match" in reason
     bad, _, reason = VLASafetyShield().validate(VLADecision(action_id="missing"), actions, vehicle=vehicle)
     assert not bad
     bad_action = [action for action in actions if action.action_id == "cruise_to_spot_0"]

@@ -45,7 +45,9 @@
     "near_miss_event_count",
     "collision_proxy_event_count",
     "unsafe_occupancy_action_count",
-    "malformed_decision_count"
+    "malformed_decision_count",
+    "missing_reason_code_count",
+    "target_mismatch_decision_count"
   ],
   "outputs": [
     "episodes.jsonl",
@@ -84,6 +86,20 @@
     "The suite runner delegates each condition to run_vla_benchmark.sh, validates each benchmark directory, and then calls parksim.vla.paper_report for final tables.",
     "Paper-suite replay mode skips non-empty density configs by default because replay ignores random entering/exiting spawn density.",
     "Paper-suite runs support resume-by-validation, dry-run planning, and continue-on-fail failure recording.",
-    "Suite manifests include per-condition status values such as planned, completed, skipped_valid, and failed."
-  ]
+    "Suite manifests include per-condition status values such as planned, completed, skipped_valid, and failed.",
+    "Each Qwen-VLA decision log stores the versioned decision_packet seen by the policy, including valid_action_ids, valid_actions, hard constraints, and BEV attachment metadata.",
+    "The safety shield rejects a decision when target_spot_index is inconsistent with the selected action_id, even if action_id itself is valid.",
+    "Protocol compliance metrics include target_mismatch_decision_count and missing_reason_code_count in addition to malformed_decision_count and shield_rejection_count."
+  ],
+  "qwen_decision_protocol": {
+    "protocol_version": "ParkSim-Qwen-VLA-Decision-v1",
+    "prompt_version": "qwen-vla-high-level-policy-v1",
+    "output_fields": [
+      "action_id",
+      "target_spot_index",
+      "reason_code",
+      "reason",
+      "confidence"
+    ]
+  }
 }

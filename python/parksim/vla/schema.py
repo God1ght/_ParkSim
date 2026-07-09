@@ -4,6 +4,42 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 
+VLA_DECISION_PROTOCOL_VERSION = "ParkSim-Qwen-VLA-Decision-v1"
+VLA_PROMPT_VERSION = "qwen-vla-high-level-policy-v1"
+
+VLA_REASON_CODES = (
+    "PARK_AVAILABLE",
+    "AVOID_OCCUPIED_SPOT",
+    "YIELD_TRAFFIC",
+    "REROUTE_CONFLICT",
+    "PARK_READY",
+    "EXIT_READY",
+    "FALLBACK_OR_RECOVERY",
+)
+
+VLA_OUTPUT_SCHEMA = {
+    "type": "object",
+    "required": ["action_id", "target_spot_index", "reason_code", "confidence"],
+    "additional_properties": False,
+    "properties": {
+        "action_id": "string; exactly one value from valid_action_ids",
+        "target_spot_index": "integer target from the selected action, or null for non-spot actions",
+        "reason_code": "one value from reason_codes",
+        "reason": "short natural-language justification without hidden reasoning",
+        "confidence": "float in [0.0, 1.0]",
+    },
+}
+
+VLA_HARD_CONSTRAINTS = (
+    "Choose exactly one action_id listed in valid_action_ids.",
+    "Never invent a parking spot, route, speed, steering angle, throttle, or brake command.",
+    "Never select a spot whose status is occupied, blocked, unknown, or not selectable.",
+    "If target_spot_index is present, it must match the selected action target exactly.",
+    "Use blocked_nearby_spots only as negative evidence; those spots are not valid targets.",
+    "Prefer verified parking progress over waiting when a safe SELECT_SPOT_AND_CRUISE action exists.",
+)
+
+
 class VLAActionType:
     WAIT = "WAIT"
     SELECT_SPOT_AND_CRUISE = "SELECT_SPOT_AND_CRUISE"
@@ -46,10 +82,14 @@ class VLADecision:
     confidence: float = 0.0
     raw_response: str = ""
     used_fallback: bool = False
+    target_spot_index: Optional[int] = None
+    reason_code: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "action_id": self.action_id,
+            "target_spot_index": self.target_spot_index,
+            "reason_code": self.reason_code,
             "reason": self.reason,
             "confidence": self.confidence,
             "raw_response": self.raw_response,
@@ -63,11 +103,20 @@ class VLAContext:
     state: Dict[str, Any]
     valid_actions: List[VLACandidateAction] = field(default_factory=list)
     bev_image_path: Optional[str] = None
+    protocol_version: str = VLA_DECISION_PROTOCOL_VERSION
+    prompt_version: str = VLA_PROMPT_VERSION
 
     def to_dict(self) -> Dict[str, Any]:
+        valid_actions = [action.to_dict() for action in self.valid_actions]
         return {
+            "protocol_version": self.protocol_version,
+            "prompt_version": self.prompt_version,
             "instruction": self.instruction,
+            "output_schema": dict(VLA_OUTPUT_SCHEMA),
+            "reason_codes": list(VLA_REASON_CODES),
+            "hard_constraints": list(VLA_HARD_CONSTRAINTS),
             "state": self.state,
-            "valid_actions": [action.to_dict() for action in self.valid_actions],
+            "valid_action_ids": [action["action_id"] for action in valid_actions],
+            "valid_actions": valid_actions,
             "bev_image_path": self.bev_image_path,
         }

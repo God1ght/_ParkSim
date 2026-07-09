@@ -44,7 +44,7 @@ Set `QWEN_MODEL_ID`, `QWEN_MODEL_CACHE`, `QWEN_VLA_PORT`, `QWEN_TORCH_DTYPE`, `Q
 
 ## Qwen Decision Context
 
-Each VLA decision uploads a structured `VLAContext` plus an optional BEV image. Qwen must return only strict JSON with `action_id`, `reason`, and `confidence`.
+Each VLA decision uploads a versioned `ParkSim-Qwen-VLA-Decision-v1` decision packet plus an optional BEV image. Qwen must return only strict JSON with `action_id`, `target_spot_index`, `reason_code`, `reason`, and `confidence`.
 
 The required structured fields are:
 
@@ -55,6 +55,7 @@ The required structured fields are:
 - `blocked_nearby_spots`: nearby occupied or unknown spots with `central_occupied`, dynamic occupancy, and reasons, included only to explain why they are not valid choices.
 - `nearby_vehicles`: nearby vehicle state and task/progress information.
 - `central_occupancy` and `effective_occupancy`: raw simulator occupancy and safety-filtered occupancy.
+- `protocol_version`, `prompt_version`, `output_schema`, `reason_codes`, and `hard_constraints`: the reproducible VLA decision contract.
 - `valid_action_ids` and `valid_actions`: the only action ids Qwen is allowed to choose.
 - `bev_image_path`: rendered BEV context where available spots, occupied spots, other vehicles, and ego are drawn.
 

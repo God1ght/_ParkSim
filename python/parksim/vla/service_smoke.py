@@ -32,6 +32,8 @@ def main():
         server.shutdown()
         thread.join(timeout=2.0)
     assert decision.action_id == "cruise_to_spot_1", decision
+    assert decision.target_spot_index == 1, decision
+    assert decision.reason_code == "PARK_AVAILABLE", decision
     assert not decision.used_fallback, decision
     print("parksim.vla qwen service smoke ok")
 

@@ -3,6 +3,7 @@ from typing import Any, Dict, Iterable, List, Optional
 import numpy as np
 
 from parksim.pytypes import VehicleState
+from parksim.vla.schema import VLA_HARD_CONSTRAINTS, VLA_OUTPUT_SCHEMA, VLA_REASON_CODES
 from parksim.vla.spot_status import build_spot_statuses, effective_occupancy, nearest_spot_statuses, occupancy_ready
 
 
@@ -67,12 +68,15 @@ def build_vla_state(vehicle: Any, valid_actions: Optional[List[Any]] = None, max
     valid_action_ids = [action.action_id for action in (valid_actions or [])]
     return {
         "decision_contract": {
-            "output_schema": {"action_id": "one exact string from valid_action_ids", "reason": "short text", "confidence": "0.0 to 1.0"},
-            "hard_constraints": [
-                "Only choose an action_id listed in valid_action_ids.",
-                "Do not select spots with status occupied or unknown.",
-                "If any SELECT_SPOT_AND_CRUISE action exists and there is no immediate conflict, prefer it over WAIT.",
-                "Do not output low-level steering, throttle, braking, or a free-form route.",
+            "output_schema": dict(VLA_OUTPUT_SCHEMA),
+            "reason_codes": list(VLA_REASON_CODES),
+            "hard_constraints": list(VLA_HARD_CONSTRAINTS),
+            "input_evidence": [
+                "candidate_spots are selectable verified parking spaces",
+                "blocked_nearby_spots explain occupied, blocked, or unknown parking spaces",
+                "valid_actions is the complete executable high-level action set",
+                "nearby_vehicles and action features expose dynamic conflict risk",
+                "BEV image is visual evidence only; structured valid_actions has priority",
             ],
             "spot_status_sources": [
                 "central_occupancy from simulator static obstacles and rule-based reservations",

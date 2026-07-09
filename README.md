@@ -63,7 +63,7 @@ Outputs are written under `experiments/qwen_vla_benchmark/<timestamp>/`:
 - `run_config.json`: benchmark configuration snapshot, including branch, commit, agents, seeds, and scenario factors.
 - `validation.json` / `manifest.json`: completeness checks and artifact index for reproducible paper tables.
 
-The metric table includes progress, timing, Qwen latency, shield/fallback counts, and safety proxies such as minimum other-vehicle distance, near-miss events, collision-proxy events, TTC, malformed decisions, and unsafe occupancy choices. Visualizer-video runs also write `video_manifest.json` to bind MP4/GIF files, frame counts, sim-time alignment, and metric files.
+The metric table includes progress, timing, Qwen latency, shield/fallback counts, protocol compliance counts, and safety proxies such as minimum other-vehicle distance, near-miss events, collision-proxy events, TTC, malformed decisions, target mismatches, missing reason codes, and unsafe occupancy choices. Visualizer-video runs also write `video_manifest.json` to bind MP4/GIF files, frame counts, sim-time alignment, and metric files.
 
 The protocol skeleton is stored in `python/parksim/vla/benchmark_protocol.json`.
 

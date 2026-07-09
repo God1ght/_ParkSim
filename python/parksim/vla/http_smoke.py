@@ -3,24 +3,27 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from parksim.vla.qwen_client import QwenPolicyClient
-from parksim.vla.schema import VLAContext, VLACandidateAction, VLAActionType
+from parksim.vla.schema import VLA_DECISION_PROTOCOL_VERSION, VLAActionType, VLACandidateAction, VLAContext
+
+REQUESTS = []
 
 
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
-        self.rfile.read(length)
+        payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        REQUESTS.append(payload)
         body = {
             "choices": [
-                {"message": {"content": json.dumps({"action_id": "cruise_to_spot_1", "reason": "mock", "confidence": 0.9})}}
+                {"message": {"content": json.dumps({"action_id": "cruise_to_spot_1", "target_spot_index": 1, "reason_code": "PARK_AVAILABLE", "reason": "mock", "confidence": 0.9})}}
             ]
         }
-        payload = json.dumps(body).encode("utf-8")
+        response = json.dumps(body).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Content-Length", str(len(response)))
         self.end_headers()
-        self.wfile.write(payload)
+        self.wfile.write(response)
 
     def log_message(self, format, *args):
         return
@@ -42,7 +45,12 @@ def main():
     )
     decision = client.decide(context)
     server.shutdown()
+    thread.join(timeout=2.0)
     assert decision.action_id == "cruise_to_spot_1", decision
+    assert decision.target_spot_index == 1, decision
+    assert decision.reason_code == "PARK_AVAILABLE", decision
+    assert REQUESTS and REQUESTS[0]["context"]["protocol_version"] == VLA_DECISION_PROTOCOL_VERSION
+    assert REQUESTS[0]["context"]["valid_action_ids"] == ["wait_2s", "cruise_to_spot_1"]
     print("parksim.vla http smoke ok")
 
 

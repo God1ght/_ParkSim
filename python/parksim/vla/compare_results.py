@@ -149,7 +149,8 @@ def write_metrics(experiment_dir: Path, collected: Dict[str, Dict[str, Any]]) ->
         "qwen_fallback_count", "shield_rejection_count", "qwen_latency_mean", "qwen_latency_max", "first_action_type",
         "other_vehicle_trace_count", "min_other_distance_m", "near_miss_event_count", "near_miss_time_s",
         "collision_proxy_event_count", "collision_proxy_time_s", "min_ttc_s", "unsafe_occupancy_action_count",
-        "malformed_decision_count", "candidate_action_count_mean", "available_candidate_count_mean",
+        "malformed_decision_count", "target_mismatch_decision_count", "missing_reason_code_count",
+        "candidate_action_count_mean", "available_candidate_count_mean",
     ]
     with (experiment_dir / "metrics.csv").open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)

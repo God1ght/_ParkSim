@@ -131,6 +131,8 @@ def _distance_safety_metrics(
 def _decision_safety_metrics(decisions: List[Dict[str, Any]]) -> Dict[str, Any]:
     unsafe_occupancy = 0
     malformed_action = 0
+    target_mismatch = 0
+    missing_reason_code = 0
     candidate_counts: List[int] = []
     available_counts: List[int] = []
     occupied_or_unknown_counts: List[int] = []
@@ -145,6 +147,11 @@ def _decision_safety_metrics(decisions: List[Dict[str, Any]]) -> Dict[str, Any]:
         decision = row.get("decision") or {}
         if not decision.get("action_id"):
             malformed_action += 1
+        elif not decision.get("reason_code"):
+            missing_reason_code += 1
+        shield_reason = str(row.get("shield_reason") or "")
+        if "target_spot_index" in shield_reason and shield_reason != "ok":
+            target_mismatch += 1
         valid_actions = ((row.get("context") or {}).get("valid_actions") or [])
         if valid_actions:
             candidate_counts.append(len(valid_actions))
@@ -162,6 +169,8 @@ def _decision_safety_metrics(decisions: List[Dict[str, Any]]) -> Dict[str, Any]:
     return {
         "unsafe_occupancy_action_count": int(unsafe_occupancy),
         "malformed_decision_count": int(malformed_action),
+        "target_mismatch_decision_count": int(target_mismatch),
+        "missing_reason_code_count": int(missing_reason_code),
         "candidate_action_count_mean": _mean(candidate_counts),
         "available_candidate_count_mean": _mean(available_counts),
         "blocked_candidate_count_mean": _mean(occupied_or_unknown_counts),

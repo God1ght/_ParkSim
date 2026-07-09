@@ -15,7 +15,7 @@ PREFERRED_FIELDS = [
     "selected_spot_index", "executed_spot_index", "first_action_type",
     "other_vehicle_trace_count", "min_other_distance_m", "min_ttc_s",
     "near_miss_event_count", "near_miss_time_s", "collision_proxy_event_count", "collision_proxy_time_s",
-    "unsafe_occupancy_action_count", "malformed_decision_count",
+    "unsafe_occupancy_action_count", "malformed_decision_count", "target_mismatch_decision_count", "missing_reason_code_count",
     "candidate_action_count_mean", "available_candidate_count_mean", "blocked_candidate_count_mean",
     "trace_path", "summary_path", "decisions_path",
 ]
@@ -69,6 +69,8 @@ def objective_score(metrics: Dict[str, Any]) -> float:
         + 100.0 * _safe_float(metrics.get("near_miss_event_count"))
         + 100.0 * _safe_float(metrics.get("unsafe_occupancy_action_count"))
         + 20.0 * _safe_float(metrics.get("malformed_decision_count"))
+        + 20.0 * _safe_float(metrics.get("target_mismatch_decision_count"))
+        + 2.0 * _safe_float(metrics.get("missing_reason_code_count"))
         + 5.0 * _safe_float(metrics.get("shield_rejection_count"))
         + 2.0 * _safe_float(metrics.get("qwen_fallback_count"))
         + 0.05 * _safe_float(metrics.get("qwen_latency_mean"))
@@ -135,6 +137,8 @@ def aggregate_by_agent(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "mean_near_miss_events": _mean(_safe_float(row.get("near_miss_event_count")) for row in group),
             "mean_collision_proxy_events": _mean(_safe_float(row.get("collision_proxy_event_count")) for row in group),
             "mean_unsafe_occupancy_actions": _mean(_safe_float(row.get("unsafe_occupancy_action_count")) for row in group),
+            "mean_target_mismatch_decisions": _mean(_safe_float(row.get("target_mismatch_decision_count")) for row in group),
+            "mean_missing_reason_code": _mean(_safe_float(row.get("missing_reason_code_count")) for row in group),
             "mean_objective_score": _mean(_safe_float(row.get("objective_score")) for row in group),
         })
     return summary
@@ -195,7 +199,7 @@ def _preference_view(row: Dict[str, Any]) -> Dict[str, Any]:
         "completed", "objective_score", "path_length", "total_non_idle_time",
         "idle_time", "decision_count", "qwen_fallback_count", "shield_rejection_count",
         "min_other_distance_m", "near_miss_event_count", "collision_proxy_event_count",
-        "unsafe_occupancy_action_count", "malformed_decision_count",
+        "unsafe_occupancy_action_count", "malformed_decision_count", "target_mismatch_decision_count", "missing_reason_code_count",
         "selected_spot_index", "executed_spot_index", "first_action_type",
         "decisions_path", "trace_path",
     ]

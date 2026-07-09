@@ -12,6 +12,7 @@ from parksim.vehicle_types import VehicleBody, VehicleConfig, VehicleTask
 from parksim.vla.action_space import apply_candidate_action, build_candidate_actions, choose_default_action
 from parksim.vla.baselines import make_baseline_decision
 from parksim.vla.bev_encoder import save_bev_png
+from parksim.vla.decision_protocol import build_decision_packet
 from parksim.vla.qwen_client import QwenPolicyClient
 from parksim.vla.schema import VLAContext, VLADecision
 from parksim.vla.shield import VLASafetyShield
@@ -160,13 +161,18 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
     def _log_decision(self, time_value: float, trigger_reason: str, context: VLAContext, decision: VLADecision, shield_reason: str, action: Any, latency_seconds: float = 0.0) -> None:
         if not self.decision_log_path:
             return
+        decision_packet = build_decision_packet(context)
         record = {
             "time": time_value,
             "trigger_reason": trigger_reason,
+            "protocol_version": decision_packet.get("protocol_version"),
+            "prompt_version": decision_packet.get("prompt_version"),
+            "valid_action_ids": decision_packet.get("valid_action_ids", []),
             "decision": decision.to_dict(),
             "shield_reason": shield_reason,
             "latency_seconds": float(latency_seconds),
             "applied_action": action.to_dict() if action is not None else None,
+            "decision_packet": decision_packet,
             "context": context.to_dict(),
         }
         path = Path(self.decision_log_path)

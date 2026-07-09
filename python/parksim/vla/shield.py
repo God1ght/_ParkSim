@@ -10,6 +10,11 @@ class VLASafetyShield:
         action = by_id.get(decision.action_id)
         if action is None:
             return False, None, "action_id is not in valid_actions"
+        if decision.target_spot_index is not None:
+            if action.target_spot_index is None:
+                return False, None, "target_spot_index was provided for a non-spot action"
+            if abs(int(decision.target_spot_index)) != abs(int(action.target_spot_index)):
+                return False, None, "target_spot_index does not match selected action_id"
         if action.action_type in (VLAActionType.SELECT_SPOT_AND_CRUISE, VLAActionType.PARK, VLAActionType.REROUTE):
             if action.target_spot_index is None:
                 return False, None, "spot action has no target_spot_index"

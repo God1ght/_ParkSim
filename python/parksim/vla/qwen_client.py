@@ -4,10 +4,11 @@ import mimetypes
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from urllib import request, error
 
-from parksim.vla.schema import VLACandidateAction, VLADecision, VLAContext
+from parksim.vla.decision_protocol import build_decision_packet, build_qwen_prompt
+from parksim.vla.schema import VLAActionType, VLACandidateAction, VLADecision, VLAContext
 
 
 class QwenPolicyClient:
@@ -39,18 +40,8 @@ class QwenPolicyClient:
         return decision
 
     def _build_payload(self, context: VLAContext) -> Dict[str, Any]:
-        prompt = (
-            "You are the high-level VLA policy for a parking-lot vehicle. "
-            "Choose exactly one action_id from valid_actions. Return strict JSON with "
-            "action_id, reason, and confidence. valid_actions is already safety-filtered; "
-            "occupied, reserved, and unknown spots must not be selected even if they look close in the image. "
-            "state.candidate_spots contains only selectable available spots; state.blocked_nearby_spots is explanatory only. "
-            "If a SELECT_SPOT_AND_CRUISE action exists and no nearby vehicle blocks the path, choose it over WAIT. "
-            "Use state.decision_contract, state.world_model, candidate_spots, blocked_nearby_spots, "
-            "nearby_vehicles, and the BEV image to explain the choice. Do not output steering, acceleration, "
-            "or free-form routes.\n\n"
-            + json.dumps(context.to_dict(), ensure_ascii=False)
-        )
+        packet = build_decision_packet(context)
+        prompt = build_qwen_prompt(packet)
         content: Any = prompt
         if context.bev_image_path:
             image_url = self._image_data_url(context.bev_image_path)
@@ -61,9 +52,17 @@ class QwenPolicyClient:
                 ]
         return {
             "model": self.model,
-            "messages": [{"role": "user", "content": content}],
-            "temperature": 0.1,
+            "messages": [
+                {"role": "system", "content": "Return strict JSON only for the ParkSim VLA decision protocol."},
+                {"role": "user", "content": content},
+            ],
+            "temperature": 0.0,
             "max_tokens": 256,
+            "context": packet,
+            "metadata": {
+                "protocol_version": packet.get("protocol_version"),
+                "prompt_version": packet.get("prompt_version"),
+            },
         }
 
     def _image_data_url(self, image_path: str) -> str:
@@ -96,12 +95,32 @@ class QwenPolicyClient:
             action_id=str(parsed.get("action_id", "")),
             reason=str(parsed.get("reason", "")),
             confidence=float(parsed.get("confidence", 0.0) or 0.0),
+            target_spot_index=_parse_optional_int(parsed.get("target_spot_index")),
+            reason_code=str(parsed.get("reason_code", "")),
         )
 
     def _fallback(self, actions: List[VLACandidateAction], reason: str) -> VLADecision:
-        action_id = actions[0].action_id if actions else ""
+        selected = actions[0] if actions else None
         for action in actions:
-            if action.action_type == "SELECT_SPOT_AND_CRUISE":
-                action_id = action.action_id
+            if action.action_type == VLAActionType.SELECT_SPOT_AND_CRUISE:
+                selected = action
                 break
-        return VLADecision(action_id=action_id, reason=reason, confidence=0.0, used_fallback=True)
+        if selected is None:
+            return VLADecision(action_id="", reason=reason, confidence=0.0, used_fallback=True, reason_code="FALLBACK_OR_RECOVERY")
+        return VLADecision(
+            action_id=selected.action_id,
+            target_spot_index=selected.target_spot_index,
+            reason=reason,
+            confidence=0.0,
+            used_fallback=True,
+            reason_code="FALLBACK_OR_RECOVERY",
+        )
+
+
+def _parse_optional_int(value: Any) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None

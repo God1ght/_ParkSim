@@ -15,6 +15,8 @@ DEFAULT_METRICS = [
     "near_miss_event_count",
     "collision_proxy_event_count",
     "unsafe_occupancy_action_count",
+    "target_mismatch_decision_count",
+    "missing_reason_code_count",
     "shield_rejection_count",
     "qwen_fallback_count",
     "qwen_latency_mean",
