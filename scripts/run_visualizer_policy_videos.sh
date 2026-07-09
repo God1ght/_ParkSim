@@ -18,6 +18,7 @@ SPAWN_TIME="${PARKSIM_VIS_SPAWN_TIME:-0.5}"
 BACKGROUND_MODE="${PARKSIM_VIS_BACKGROUND_MODE:-rule_random}"
 SPAWN_ENTERING="${PARKSIM_VIS_SPAWN_ENTERING:-0}"
 SPAWN_EXITING="${PARKSIM_VIS_SPAWN_EXITING:-0}"
+CONTROLLED_EGO_BLOCKS_ENTRANCE="${PARKSIM_VIS_CONTROLLED_EGO_BLOCKS_ENTRANCE:-true}"
 RANDOM_SEED="${PARKSIM_VIS_RANDOM_SEED:-0}"
 QWEN_MODE="${PARKSIM_VIS_QWEN_MODE:-mock}"
 QWEN_PORT="${PARKSIM_VIS_QWEN_PORT:-18088}"
@@ -201,6 +202,7 @@ run_mode() {
     -p controlled_ego_agent_type:="$mode" \
     -p controlled_ego_spawn_time:="$SPAWN_TIME" \
     -p controlled_ego_spot_index:="$SPOT_INDEX" \
+    -p controlled_ego_blocks_entrance:="$CONTROLLED_EGO_BLOCKS_ENTRANCE" \
     -p random_seed:="$RANDOM_SEED" \
     -p background_mode:="$BACKGROUND_MODE" \
     -p spawn_entering:="$SPAWN_ENTERING" \

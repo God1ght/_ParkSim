@@ -88,7 +88,7 @@ def _distance_safety_metrics(
     min_ttc = float("inf")
 
     for idx, ego_row in enumerate(ego_trace):
-        t = _safe_float(ego_row.get("time"))
+        t = _sync_time(ego_row)
         dt = _row_dt(ego_trace, idx)
         row_near = False
         row_collision = False
@@ -96,7 +96,7 @@ def _distance_safety_metrics(
             other_row, other_indices[trace_idx] = _nearest_time_row(other_rows, t, other_indices[trace_idx])
             if other_row is None:
                 continue
-            if abs(_safe_float(other_row.get("time")) - t) > max_time_gap:
+            if abs(_sync_time(other_row) - t) > max_time_gap:
                 continue
             distance = _xy_distance(ego_row, other_row)
             min_distance = min(min_distance, distance)
@@ -172,13 +172,19 @@ def _nearest_time_row(rows: List[Dict[str, Any]], t: float, start_idx: int) -> T
     if not rows:
         return None, start_idx
     idx = max(0, min(start_idx, len(rows) - 1))
-    while idx + 1 < len(rows) and _safe_float(rows[idx + 1].get("time")) <= t:
+    while idx + 1 < len(rows) and _sync_time(rows[idx + 1]) <= t:
         idx += 1
     candidates = [idx]
     if idx + 1 < len(rows):
         candidates.append(idx + 1)
-    best = min(candidates, key=lambda i: abs(_safe_float(rows[i].get("time")) - t))
+    best = min(candidates, key=lambda i: abs(_sync_time(rows[i]) - t))
     return rows[best], best
+
+
+def _sync_time(row: Dict[str, Any]) -> float:
+    if row.get("wall_time") is not None:
+        return _safe_float(row.get("wall_time"))
+    return _safe_float(row.get("time"))
 
 
 def _row_dt(rows: List[Dict[str, Any]], idx: int) -> float:

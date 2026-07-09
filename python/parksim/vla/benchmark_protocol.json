@@ -57,7 +57,14 @@
     "run_config.json",
     "validation.json",
     "manifest.json",
-    "video_manifest.json"
+    "video_manifest.json",
+    "paper_rows.csv",
+    "paper_summary.csv",
+    "paper_paired_deltas.csv",
+    "paper_paired_delta_summary.csv",
+    "paper_summary.md",
+    "paper_table.tex",
+    "paper_report_manifest.json"
   ],
   "notes": [
     "All agents share the same lower-level A*/Stanley/parking executor unless the agent is the original rule_based controller.",
@@ -65,6 +72,9 @@
     "Preference pairs are derived from completed/path/time/shield/fallback objective scores and are intended for prompt optimization or offline preference tuning.",
     "Benchmark validation fails on empty or structurally incomplete episode logs so paper tables do not include partial runs.",
     "Safety metrics are computed from synchronized ego/background traces and decision logs, including near-miss, collision-proxy, TTC, and unsafe occupancy choices.",
-    "Visualizer video artifacts should be paired with video_manifest.json to bind videos, frame counts, simulation-time alignment, and metrics."
+    "Visualizer video artifacts should be paired with video_manifest.json to bind videos, frame counts, simulation-time alignment, and metrics.",
+    "Controlled ego vehicles block the entrance spawn gate by default, so random entering vehicles wait until the ego leaves the entrance region instead of spawning on top of it.",
+    "Use python -m parksim.vla.paper_report to aggregate multiple validated benchmark directories into mean/std/95CI tables and paired deltas against a reference agent.",
+    "Cross-vehicle safety metrics synchronize traces by wall_time when available; per-vehicle relative time is used only as a fallback."
   ]
 }

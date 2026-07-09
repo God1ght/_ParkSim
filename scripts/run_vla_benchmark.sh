@@ -14,6 +14,7 @@ SPOT_INDEX="${PARKSIM_BENCH_SPOT_INDEX:-7}"
 SPAWN_TIME="${PARKSIM_BENCH_SPAWN_TIME:-0.5}"
 SPAWN_ENTERING="${PARKSIM_BENCH_SPAWN_ENTERING:-0}"
 SPAWN_EXITING="${PARKSIM_BENCH_SPAWN_EXITING:-0}"
+CONTROLLED_EGO_BLOCKS_ENTRANCE="${PARKSIM_BENCH_CONTROLLED_EGO_BLOCKS_ENTRANCE:-true}"
 QWEN_MODE="${PARKSIM_BENCH_QWEN_MODE:-mock}"
 QWEN_PORT="${PARKSIM_BENCH_QWEN_PORT:-18087}"
 QWEN_ENDPOINT="${PARKSIM_BENCH_QWEN_ENDPOINT:-}"
@@ -48,7 +49,7 @@ mkdir -p "$OUT_DIR/episodes"
 qwen_pid=""
 GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 GIT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown)"
-export ROOT GIT_COMMIT GIT_BRANCH DURATION AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING QWEN_MODE QWEN_ENDPOINT
+export ROOT GIT_COMMIT GIT_BRANCH DURATION AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING CONTROLLED_EGO_BLOCKS_ENTRANCE QWEN_MODE QWEN_ENDPOINT
 write_run_config() {
   python3 - "$OUT_DIR/run_config.json" <<'RUN_CONFIG_JSON'
 import json
@@ -65,6 +66,7 @@ payload = {
     "spot_index": os.environ.get("SPOT_INDEX", ""),
     "spawn_entering": os.environ.get("SPAWN_ENTERING", ""),
     "spawn_exiting": os.environ.get("SPAWN_EXITING", ""),
+    "controlled_ego_blocks_entrance": os.environ.get("CONTROLLED_EGO_BLOCKS_ENTRANCE", ""),
     "qwen_mode": os.environ.get("QWEN_MODE", ""),
     "qwen_endpoint": os.environ.get("QWEN_ENDPOINT", ""),
 }
@@ -205,6 +207,7 @@ run_episode() {
     -p controlled_ego_agent_type:="$agent" \
     -p controlled_ego_spawn_time:="$SPAWN_TIME" \
     -p controlled_ego_spot_index:="$SPOT_INDEX" \
+    -p controlled_ego_blocks_entrance:="$CONTROLLED_EGO_BLOCKS_ENTRANCE" \
     -p random_seed:="$seed" \
     -p background_mode:="$background_mode" \
     -p spawn_entering:="$SPAWN_ENTERING" \

@@ -54,6 +54,7 @@ class SimulatorNodeParams(NodeParamTemplate):
         self.controlled_ego_spawn_time = 0.5
         self.controlled_ego_spot_index = 1
         self.controlled_ego_agent_type = 'qwen_vla'
+        self.controlled_ego_blocks_entrance = True
         self.qwen_endpoint = ''
         self.qwen_model = 'Qwen2.5-VL-7B-Instruct'
         self.qwen_timeout = 15.0
@@ -279,6 +280,12 @@ class SimulatorNode(MPClabNode):
             self.keep_spawn_entering = True
             self.get_logger().info("Vehicle %d left the entrance area." % self.last_enter_id)
 
+    def _track_entrance_vehicle(self, current_time):
+        self.last_enter_time = current_time
+        self.last_enter_id = self.num_vehicles
+        self.last_enter_sub = self.create_subscription(VehicleStateMsg, '/vehicle_%d/state' % self.last_enter_id, self.last_enter_cb, 10)
+        self.keep_spawn_entering = False
+
     def try_spawn_entering(self):
         current_time = self.get_ros_time()
 
@@ -289,10 +296,7 @@ class SimulatorNode(MPClabNode):
             self.occupied[chosen_spot] = True
             self.spawn_entering_time.pop(0)
 
-            self.last_enter_time = current_time
-            self.last_enter_id = self.num_vehicles
-            self.last_enter_sub = self.create_subscription(VehicleStateMsg, '/vehicle_%d/state' % self.last_enter_id, self.last_enter_cb, 10)
-            self.keep_spawn_entering = False
+            self._track_entrance_vehicle(current_time)
 
     def try_spawn_exiting(self):
         current_time = self.get_ros_time()
@@ -331,6 +335,8 @@ class SimulatorNode(MPClabNode):
         spot_index = int(self.controlled_ego_spot_index if controlled else self.qwen_ego_spot_index)
         agent_type = str(self.controlled_ego_agent_type if controlled else 'qwen_vla').lower()
         self.add_vehicle(spot_index, agent_type=agent_type)
+        if spot_index > 0 and bool(self.controlled_ego_blocks_entrance):
+            self._track_entrance_vehicle(self.get_ros_time())
         self.qwen_ego_spawned = True
 
     def timer_callback(self):
