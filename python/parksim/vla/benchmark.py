@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from parksim.vla.compare_results import collect_mode_metrics
+from parksim.vla.decision_audit import audit_logs, discover_logs, write_outputs
 
 PREFERRED_FIELDS = [
     "scenario_id", "agent_type", "seed", "background_mode", "spot_index",
@@ -194,6 +195,13 @@ def write_preference_dataset(out_dir: Path, rows: List[Dict[str, Any]]) -> None:
                 f.write(json.dumps(record) + "\n")
 
 
+def write_decision_audit(out_dir: Path) -> Dict[str, Any]:
+    logs = discover_logs([out_dir])
+    summary = audit_logs(logs)
+    write_outputs(summary, out_dir)
+    return summary
+
+
 def _preference_view(row: Dict[str, Any]) -> Dict[str, Any]:
     keys = [
         "completed", "objective_score", "path_length", "total_non_idle_time",
@@ -219,6 +227,14 @@ def validate(out_dir: Path, require_complete: bool = False, expected_agents: Opt
     for artifact in ("metrics.csv", "metrics.json", "summary.md", "summary.json", "preference_dataset.jsonl"):
         if not (out_dir / artifact).exists():
             problems.append("missing artifact: %s" % artifact)
+    audit_path = out_dir / "decision_audit.json"
+    has_qwen_episode = any(str(episode.get("agent_type", "")).startswith("qwen") for episode in episodes)
+    if audit_path.exists():
+        audit = _load_json(audit_path)
+        if not audit.get("ok", False):
+            problems.append("decision audit failed: %s failures" % audit.get("failure_count", "unknown"))
+    elif has_qwen_episode:
+        warnings.append("missing decision_audit.json for qwen agent episodes")
     by_scenario: Dict[str, set] = defaultdict(set)
     for episode in episodes:
         scenario_id = str(episode.get("scenario_id", ""))
@@ -259,7 +275,7 @@ def validate(out_dir: Path, require_complete: bool = False, expected_agents: Opt
 
 def write_manifest(out_dir: Path, rows: List[Dict[str, Any]], validation: Dict[str, Any]) -> None:
     artifacts = {}
-    for name in ("episodes.jsonl", "metrics.csv", "metrics.json", "summary.md", "summary.json", "preference_dataset.jsonl", "validation.json"):
+    for name in ("episodes.jsonl", "metrics.csv", "metrics.json", "summary.md", "summary.json", "preference_dataset.jsonl", "decision_audit.json", "decision_audit_failures.jsonl", "validation.json"):
         path = out_dir / name
         artifacts[name] = {"path": str(path), "exists": path.exists(), "bytes": path.stat().st_size if path.exists() else 0}
     manifest = {
@@ -294,12 +310,14 @@ def main() -> None:
         write_metrics(out_dir, rows)
         write_summary(out_dir, rows)
         write_preference_dataset(out_dir, rows)
+        audit = write_decision_audit(out_dir)
         validation = validate(out_dir)
         write_manifest(out_dir, rows, validation)
         print("benchmark metrics written to %s" % out_dir)
         for row in aggregate_by_agent(rows):
             print("{agent_type} episodes={episodes} success={success_rate:.3f} objective={mean_objective_score:.3f}".format(**row))
         print("validation_ok=%s" % validation["ok"])
+        print("decision_audit_ok=%s failures=%s logs=%s" % (audit.get("ok"), audit.get("failure_count"), audit.get("log_count")))
     elif args.cmd == "validate":
         out_dir = args.out_dir.resolve()
         expected = [item for item in args.expected_agents.split(",") if item]

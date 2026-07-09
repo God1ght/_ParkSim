@@ -65,6 +65,14 @@ Outputs are written under `experiments/qwen_vla_benchmark/<timestamp>/`:
 
 The metric table includes progress, timing, Qwen latency, shield/fallback counts, protocol compliance counts, and safety proxies such as minimum other-vehicle distance, near-miss events, collision-proxy events, TTC, malformed decisions, target mismatches, missing reason codes, and unsafe occupancy choices. Visualizer-video runs also write `video_manifest.json` to bind MP4/GIF files, frame counts, sim-time alignment, and metric files.
 
+Audit Qwen-VLA decision logs after any benchmark or suite run with:
+
+```bash
+PYTHONPATH=python python3 -m parksim.vla.decision_audit experiments/qwen_vla_benchmark/<run> --out-dir experiments/qwen_vla_benchmark/<run>/audit --strict
+```
+
+The audit writes `decision_audit.json` and `decision_audit_failures.jsonl` with protocol-version, prompt-version, valid-action membership, target consistency, reason-code, shield, and unsafe-applied-spot checks.
+
 The protocol skeleton is stored in `python/parksim/vla/benchmark_protocol.json`.
 
 Controlled ego vehicles block the entrance spawn gate by default during benchmark and visualizer runs. This prevents random entering background vehicles from spawning at the same entrance pose as the controlled ego and turning spawn overlap into a false collision metric.
