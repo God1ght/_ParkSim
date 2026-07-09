@@ -72,7 +72,9 @@
     "suite_manifest.json",
     "failures.jsonl",
     "decision_audit.json",
-    "decision_audit_failures.jsonl"
+    "decision_audit_failures.jsonl",
+    "qwen_health.json",
+    "qwen_service.log"
   ],
   "notes": [
     "All agents share the same lower-level A*/Stanley/parking executor unless the agent is the original rule_based controller.",
@@ -93,7 +95,9 @@
     "The safety shield rejects a decision when target_spot_index is inconsistent with the selected action_id, even if action_id itself is valid.",
     "Protocol compliance metrics include target_mismatch_decision_count and missing_reason_code_count in addition to malformed_decision_count and shield_rejection_count.",
     "Use python -m parksim.vla.decision_audit to audit decision logs for protocol version, prompt version, valid action membership, target consistency, reason codes, shield rejections, and unsafe applied spots.",
-    "Decision audit failures are exported as JSONL so paper experiments can index and replay representative Qwen-VLA failure cases."
+    "Decision audit failures are exported as JSONL so paper experiments can index and replay representative Qwen-VLA failure cases.",
+    "Paper-suite real Qwen mode starts one managed Qwen service per suite and passes its endpoint to child benchmarks as external to avoid repeated model reloads.",
+    "Suite manifests record qwen.mode, qwen.bench_mode, qwen.managed, qwen.ready, endpoint, health payload, and service-log presence."
   ],
   "qwen_decision_protocol": {
     "protocol_version": "ParkSim-Qwen-VLA-Decision-v1",

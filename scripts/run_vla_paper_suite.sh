@@ -13,6 +13,11 @@ QWEN_MODE="${PARKSIM_SUITE_QWEN_MODE:-mock}"
 QWEN_ENDPOINT="${PARKSIM_SUITE_QWEN_ENDPOINT:-}"
 QWEN_TIMEOUT="${PARKSIM_SUITE_QWEN_TIMEOUT:-120.0}"
 QWEN_STARTUP_TIMEOUT="${PARKSIM_SUITE_QWEN_STARTUP_TIMEOUT:-900}"
+QWEN_PORT="${PARKSIM_SUITE_QWEN_PORT:-18100}"
+QWEN_BENCH_MODE="$QWEN_MODE"
+QWEN_MANAGED="0"
+QWEN_READY="0"
+qwen_pid=""
 CONTROLLED_EGO_BLOCKS_ENTRANCE="${PARKSIM_SUITE_CONTROLLED_EGO_BLOCKS_ENTRANCE:-true}"
 REQUIRE_COMPLETE="${PARKSIM_SUITE_REQUIRE_COMPLETE:-0}"
 REFERENCE_AGENT="${PARKSIM_SUITE_REFERENCE_AGENT:-qwen_vla}"
@@ -25,6 +30,7 @@ CONTINUE_ON_FAIL="${PARKSIM_SUITE_CONTINUE_ON_FAIL:-0}"
 mkdir -p "$OUT_DIR/benchmarks" "$OUT_DIR/reports"
 : > "$OUT_DIR/benchmarks.jsonl"
 : > "$OUT_DIR/failures.jsonl"
+rm -f "$OUT_DIR/qwen_health.json" "$OUT_DIR/qwen_service.log"
 
 GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 GIT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown)"
@@ -47,6 +53,12 @@ payload = {
     "qwen_mode": os.environ.get("QWEN_MODE", ""),
     "qwen_endpoint": os.environ.get("QWEN_ENDPOINT", ""),
     "qwen_timeout": os.environ.get("QWEN_TIMEOUT", ""),
+    "qwen_port": os.environ.get("QWEN_PORT", ""),
+    "qwen_bench_mode": os.environ.get("QWEN_BENCH_MODE", ""),
+    "qwen_managed": os.environ.get("QWEN_MANAGED", ""),
+    "qwen_ready": os.environ.get("QWEN_READY", ""),
+    "qwen_health_path": os.path.join(os.path.dirname(sys.argv[1]), "qwen_health.json"),
+    "qwen_service_log": os.path.join(os.path.dirname(sys.argv[1]), "qwen_service.log"),
     "controlled_ego_blocks_entrance": os.environ.get("CONTROLLED_EGO_BLOCKS_ENTRANCE", ""),
     "require_complete": os.environ.get("REQUIRE_COMPLETE", ""),
     "reference_agent": os.environ.get("REFERENCE_AGENT", ""),
@@ -111,6 +123,86 @@ with open(path, "a") as f:
 FAILURE_JSON
 }
 
+needs_qwen() {
+  for agent in $AGENTS; do
+    if [[ "$agent" == "qwen_vla" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+cleanup() {
+  if [[ -n "$qwen_pid" ]] && kill -0 "$qwen_pid" 2>/dev/null; then
+    kill "$qwen_pid" 2>/dev/null || true
+    wait "$qwen_pid" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+wait_for_qwen() {
+  local endpoint="$1"
+  local expected_mock="$2"
+  local base_url="${endpoint%/v1/chat/completions}"
+  local ready=0
+  for _ in $(seq 1 "$QWEN_STARTUP_TIMEOUT"); do
+    if python3 -c 'import json,sys; from urllib import request; url=sys.argv[1]+"/healthz"; expected=sys.argv[2]; resp=request.urlopen(url, timeout=1.0); payload=json.loads(resp.read().decode("utf-8")); print(json.dumps(payload)); raise SystemExit(0 if payload.get("ok") and (expected == "any" or str(payload.get("mock")).lower() == expected) else 1)' "$base_url" "$expected_mock" > "$OUT_DIR/qwen_health.json" 2>/dev/null; then
+      ready=1
+      break
+    fi
+    if [[ -n "$qwen_pid" ]] && ! kill -0 "$qwen_pid" 2>/dev/null; then
+      echo "Suite Qwen service exited early" >&2
+      tail -n 120 "$OUT_DIR/qwen_service.log" >&2 || true
+      exit 1
+    fi
+    sleep 1
+  done
+  if [[ "$ready" != "1" ]]; then
+    echo "Suite Qwen service did not become healthy: $endpoint" >&2
+    tail -n 120 "$OUT_DIR/qwen_service.log" >&2 || true
+    exit 1
+  fi
+}
+
+start_qwen_if_needed() {
+  if ! needs_qwen || [[ "$DRY_RUN" == "1" || "$QWEN_READY" == "1" ]]; then
+    return
+  fi
+  if [[ -n "$QWEN_ENDPOINT" ]]; then
+    wait_for_qwen "$QWEN_ENDPOINT" "any"
+    QWEN_BENCH_MODE="external"
+    QWEN_READY="1"
+    export QWEN_ENDPOINT QWEN_BENCH_MODE QWEN_MANAGED QWEN_READY
+    write_suite_config
+    return
+  fi
+  case "$QWEN_MODE" in
+    real)
+      QWEN_ENDPOINT="http://127.0.0.1:$QWEN_PORT/v1/chat/completions"
+      QWEN_VLA_PORT="$QWEN_PORT" "$ROOT/scripts/run_qwen_vla_service.sh" > "$OUT_DIR/qwen_service.log" 2>&1 &
+      qwen_pid="$!"
+      QWEN_MANAGED="1"
+      wait_for_qwen "$QWEN_ENDPOINT" "false"
+      QWEN_BENCH_MODE="external"
+      QWEN_READY="1"
+      ;;
+    mock)
+      QWEN_BENCH_MODE="mock"
+      QWEN_READY="1"
+      ;;
+    external)
+      echo "PARKSIM_SUITE_QWEN_MODE=external requires PARKSIM_SUITE_QWEN_ENDPOINT" >&2
+      exit 1
+      ;;
+    *)
+      echo "Unsupported PARKSIM_SUITE_QWEN_MODE: $QWEN_MODE" >&2
+      exit 1
+      ;;
+  esac
+  export QWEN_ENDPOINT QWEN_BENCH_MODE QWEN_MANAGED QWEN_READY
+  write_suite_config
+}
+
 validate_benchmark_dir() {
   local benchmark_dir="$1"
   local expected_agents_csv
@@ -144,6 +236,18 @@ if benchmarks_path.exists():
             benchmarks.append(item)
 import os
 report_dir = out_dir / "reports" / os.environ.get("REPORT_NAME", "paper_report")
+qwen_health_path = out_dir / "qwen_health.json"
+qwen_service_log = out_dir / "qwen_service.log"
+qwen_health = None
+qwen_health_error = ""
+if qwen_health_path.exists():
+    try:
+        qwen_health_text = qwen_health_path.read_text().strip()
+        qwen_health = json.loads(qwen_health_text) if qwen_health_text else None
+        if not qwen_health_text:
+            qwen_health_error = "empty qwen_health.json"
+    except Exception as exc:
+        qwen_health_error = str(exc)
 manifest = {
     "type": "parksim_vla_paper_suite",
     "out_dir": str(out_dir),
@@ -158,13 +262,25 @@ manifest = {
         "table_tex": str(report_dir / "paper_table.tex"),
         "manifest": str(report_dir / "paper_report_manifest.json"),
     },
+    "qwen": {
+        "mode": os.environ.get("QWEN_MODE", ""),
+        "bench_mode": os.environ.get("QWEN_BENCH_MODE", ""),
+        "managed": os.environ.get("QWEN_MANAGED", ""),
+        "ready": os.environ.get("QWEN_READY", ""),
+        "endpoint": os.environ.get("QWEN_ENDPOINT", ""),
+        "health_path": str(qwen_health_path),
+        "health": qwen_health,
+        "health_error": qwen_health_error,
+        "service_log": str(qwen_service_log),
+        "service_log_exists": qwen_service_log.exists(),
+    },
 }
 (out_dir / "suite_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 print("suite_manifest=%s benchmarks=%d all_valid=%s" % (out_dir / "suite_manifest.json", len(benchmarks), manifest["all_valid"]))
 SUITE_MANIFEST_JSON
 }
 
-export ROOT GIT_COMMIT GIT_BRANCH AGENTS SEEDS BACKGROUND_MODES DENSITY_CONFIGS DURATION SPOT_INDEX QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT CONTROLLED_EGO_BLOCKS_ENTRANCE REQUIRE_COMPLETE REFERENCE_AGENT REPLAY_ALL_DENSITIES REPORT_NAME RESUME DRY_RUN CONTINUE_ON_FAIL
+export ROOT GIT_COMMIT GIT_BRANCH AGENTS SEEDS BACKGROUND_MODES DENSITY_CONFIGS DURATION SPOT_INDEX QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT QWEN_STARTUP_TIMEOUT QWEN_PORT QWEN_BENCH_MODE QWEN_MANAGED QWEN_READY CONTROLLED_EGO_BLOCKS_ENTRANCE REQUIRE_COMPLETE REFERENCE_AGENT REPLAY_ALL_DENSITIES REPORT_NAME RESUME DRY_RUN CONTINUE_ON_FAIL
 write_suite_config
 
 benchmark_dirs=()
@@ -191,6 +307,7 @@ for background_mode in $BACKGROUND_MODES; do
       append_benchmark_manifest "$benchmark_dir" "$background_mode" "$density_label" "$spawn_entering" "$spawn_exiting" skipped_valid "resume"
       continue
     fi
+    start_qwen_if_needed
     set +e
     PARKSIM_BENCH_OUT_DIR="$benchmark_dir" \
     PARKSIM_BENCH_AGENTS="$AGENTS" \
@@ -200,7 +317,7 @@ for background_mode in $BACKGROUND_MODES; do
     PARKSIM_BENCH_SPOT_INDEX="$SPOT_INDEX" \
     PARKSIM_BENCH_SPAWN_ENTERING="$spawn_entering" \
     PARKSIM_BENCH_SPAWN_EXITING="$spawn_exiting" \
-    PARKSIM_BENCH_QWEN_MODE="$QWEN_MODE" \
+    PARKSIM_BENCH_QWEN_MODE="$QWEN_BENCH_MODE" \
     PARKSIM_BENCH_QWEN_ENDPOINT="$QWEN_ENDPOINT" \
     PARKSIM_BENCH_QWEN_TIMEOUT="$QWEN_TIMEOUT" \
     PARKSIM_BENCH_QWEN_STARTUP_TIMEOUT="$QWEN_STARTUP_TIMEOUT" \
@@ -236,7 +353,8 @@ fi
 
 report_dir="$OUT_DIR/reports/$REPORT_NAME"
 PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" python3 -m parksim.vla.paper_report "$report_dir" --inputs "${benchmark_dirs[@]}" --reference-agent "$REFERENCE_AGENT"
+write_suite_config
 write_suite_manifest
 
 echo "paper_suite_out_dir=$OUT_DIR"
-find "$OUT_DIR" -maxdepth 3 \( -name 'suite_manifest.json' -o -name 'suite_config.json' -o -name 'paper_summary.md' -o -name 'paper_table.tex' -o -name 'paper_report_manifest.json' \) -print | sort
+find "$OUT_DIR" -maxdepth 3 \( -name 'suite_manifest.json' -o -name 'suite_config.json' -o -name 'paper_summary.md' -o -name 'paper_table.tex' -o -name 'paper_report_manifest.json' -o -name 'qwen_health.json' -o -name 'qwen_service.log' \) -print | sort
