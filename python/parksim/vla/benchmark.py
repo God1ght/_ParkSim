@@ -59,6 +59,20 @@ def _mean(values: Iterable[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
+def _mean_or_none(values: Iterable[float]) -> Optional[float]:
+    values = list(values)
+    return sum(values) / len(values) if values else None
+
+
+def _format_metric(value: Any) -> str:
+    if value is None:
+        return "NA"
+    try:
+        return "%.3f" % float(value)
+    except Exception:
+        return str(value)
+
+
 def objective_score(metrics: Dict[str, Any]) -> float:
     incomplete_penalty = 0.0 if metrics.get("completed") else 1000.0
     return (
@@ -134,7 +148,7 @@ def aggregate_by_agent(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "mean_fallback_count": _mean(_safe_float(row.get("qwen_fallback_count")) for row in group),
             "mean_shield_rejection_count": _mean(_safe_float(row.get("shield_rejection_count")) for row in group),
             "mean_latency_s": _mean(_safe_float(row.get("qwen_latency_mean")) for row in group),
-            "mean_min_other_distance_m": _mean(_safe_float(row.get("min_other_distance_m")) for row in group if row.get("min_other_distance_m") is not None),
+            "mean_min_other_distance_m": _mean_or_none(_safe_float(row.get("min_other_distance_m")) for row in group if row.get("min_other_distance_m") is not None),
             "mean_near_miss_events": _mean(_safe_float(row.get("near_miss_event_count")) for row in group),
             "mean_collision_proxy_events": _mean(_safe_float(row.get("collision_proxy_event_count")) for row in group),
             "mean_unsafe_occupancy_actions": _mean(_safe_float(row.get("unsafe_occupancy_action_count")) for row in group),
@@ -156,10 +170,21 @@ def write_summary(out_dir: Path, rows: List[Dict[str, Any]]) -> None:
     ]
     for row in grouped:
         lines.append(
-            "| {agent_type} | {episodes:d} | {success_rate:.3f} | {mean_objective_score:.3f} | "
-            "{mean_path_length:.3f} | {mean_total_non_idle_time:.3f} | {mean_min_other_distance_m:.3f} | "
-            "{mean_near_miss_events:.3f} | {mean_collision_proxy_events:.3f} | {mean_unsafe_occupancy_actions:.3f} | "
-            "{mean_decision_count:.3f} | {mean_latency_s:.3f} |".format(**row)
+            "| %s | %d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |"
+            % (
+                row.get("agent_type", ""),
+                int(row.get("episodes", 0)),
+                _format_metric(row.get("success_rate")),
+                _format_metric(row.get("mean_objective_score")),
+                _format_metric(row.get("mean_path_length")),
+                _format_metric(row.get("mean_total_non_idle_time")),
+                _format_metric(row.get("mean_min_other_distance_m")),
+                _format_metric(row.get("mean_near_miss_events")),
+                _format_metric(row.get("mean_collision_proxy_events")),
+                _format_metric(row.get("mean_unsafe_occupancy_actions")),
+                _format_metric(row.get("mean_decision_count")),
+                _format_metric(row.get("mean_latency_s")),
+            )
         )
     lines.extend([
         "",
