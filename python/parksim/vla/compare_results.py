@@ -10,6 +10,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from parksim.vla.safety_metrics import collect_safety_metrics
+
 MODES = ("rule_based", "qwen_vla")
 
 
@@ -132,6 +134,7 @@ def collect_mode_metrics(experiment_dir: Path, mode: str) -> Dict[str, Any]:
         "summary_path": str(summary_path),
         "decisions_path": str(decisions_path) if decisions_path.exists() else "",
     }
+    metrics.update(collect_safety_metrics(log_dir, trace_path, trace, decisions))
     return {"metrics": metrics, "trace": trace, "summary": summary, "decisions": decisions}
 
 
@@ -144,6 +147,9 @@ def write_metrics(experiment_dir: Path, collected: Dict[str, Dict[str, Any]]) ->
         "total_time", "total_non_idle_time", "path_length", "mean_speed", "max_speed",
         "idle_time", "low_speed_time", "brake_time", "waiting_time", "decision_count",
         "qwen_fallback_count", "shield_rejection_count", "qwen_latency_mean", "qwen_latency_max", "first_action_type",
+        "other_vehicle_trace_count", "min_other_distance_m", "near_miss_event_count", "near_miss_time_s",
+        "collision_proxy_event_count", "collision_proxy_time_s", "min_ttc_s", "unsafe_occupancy_action_count",
+        "malformed_decision_count", "candidate_action_count_mean", "available_candidate_count_mean",
     ]
     with (experiment_dir / "metrics.csv").open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
@@ -192,7 +198,7 @@ def plot_metrics(experiment_dir: Path, collected: Dict[str, Dict[str, Any]]) -> 
         ("total_non_idle_time", "Non-idle time (s)"),
         ("path_length", "Path length (m)"),
         ("low_speed_time", "Low-speed time (s)"),
-        ("qwen_latency_mean", "Qwen latency mean (s)"),
+        ("near_miss_event_count", "Near-miss events"),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(10, 7))
     for ax, (name, title) in zip(axes.flat, metric_names):
@@ -221,6 +227,10 @@ def write_summary(experiment_dir: Path, collected: Dict[str, Dict[str, Any]]) ->
         ("qwen_fallback_count", "fallbacks"),
         ("shield_rejection_count", "shield_rejects"),
         ("qwen_latency_mean", "qwen_latency_mean_s"),
+        ("min_other_distance_m", "min_dist_m"),
+        ("near_miss_event_count", "near_miss_events"),
+        ("collision_proxy_event_count", "collision_proxy_events"),
+        ("unsafe_occupancy_action_count", "unsafe_occupancy_actions"),
     ]
     lines = ["# ParkSim Policy Comparison", "", "| metric | rule_based | qwen_vla |", "| --- | ---: | ---: |"]
     for key, label in fields:

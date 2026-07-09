@@ -46,6 +46,33 @@ set -u
 mkdir -p "$OUT_DIR/episodes"
 : > "$OUT_DIR/episodes.jsonl"
 qwen_pid=""
+GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+GIT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown)"
+export ROOT GIT_COMMIT GIT_BRANCH DURATION AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING QWEN_MODE QWEN_ENDPOINT
+write_run_config() {
+  python3 - "$OUT_DIR/run_config.json" <<'RUN_CONFIG_JSON'
+import json
+import os
+import sys
+payload = {
+    "root": os.environ.get("ROOT", ""),
+    "git_commit": os.environ.get("GIT_COMMIT", ""),
+    "git_branch": os.environ.get("GIT_BRANCH", ""),
+    "duration": os.environ.get("DURATION", ""),
+    "agents": os.environ.get("AGENTS", "").split(),
+    "seeds": os.environ.get("SEEDS", "").split(),
+    "background_modes": os.environ.get("BACKGROUND_MODES", "").split(),
+    "spot_index": os.environ.get("SPOT_INDEX", ""),
+    "spawn_entering": os.environ.get("SPAWN_ENTERING", ""),
+    "spawn_exiting": os.environ.get("SPAWN_EXITING", ""),
+    "qwen_mode": os.environ.get("QWEN_MODE", ""),
+    "qwen_endpoint": os.environ.get("QWEN_ENDPOINT", ""),
+}
+with open(sys.argv[1], "w") as f:
+    json.dump(payload, f, indent=2)
+RUN_CONFIG_JSON
+
+}
 
 cleanup_ros_processes() {
   pkill -TERM -f "$ROOT/workspace/install/parksim/lib/parksim/simulator_node.py" 2>/dev/null || true
@@ -171,6 +198,7 @@ run_episode() {
   local sim_log="$run_dir/simulator.log"
   mkdir -p "$log_dir"
   echo "running scenario=$scenario_id agent=$agent -> $run_dir"
+  cleanup_ros_processes
   set +e
   PYTHONPATH="$DLP_ROOT${PYTHONPATH:+:$PYTHONPATH}" timeout "$DURATION" ros2 run parksim simulator_node.py --ros-args \
     -p spawn_controlled_ego:=true \
@@ -202,6 +230,7 @@ run_episode() {
 }
 
 start_qwen_if_needed
+write_run_config
 for background_mode in $BACKGROUND_MODES; do
   for seed in $SEEDS; do
     for agent in $AGENTS; do
@@ -211,5 +240,11 @@ for background_mode in $BACKGROUND_MODES; do
 done
 
 PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" python3 -m parksim.vla.benchmark collect "$OUT_DIR" --root "$ROOT"
+expected_agents_csv="$(printf '%s' "$AGENTS" | tr ' ' ',')"
+validate_args=("$OUT_DIR" --expected-agents "$expected_agents_csv")
+if [[ "${PARKSIM_BENCH_REQUIRE_COMPLETE:-0}" == "1" ]]; then
+  validate_args+=(--require-complete)
+fi
+PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" python3 -m parksim.vla.benchmark validate "${validate_args[@]}"
 
 echo "benchmark_out_dir=$OUT_DIR"

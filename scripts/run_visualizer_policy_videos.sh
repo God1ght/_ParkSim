@@ -245,5 +245,7 @@ cat >> "$OUT_DIR/summary.md" <<'EOF_SUMMARY'
 - `aligned_rule_vs_qwen_vla/alignment.json`: simulation-time alignment metadata.
 EOF_SUMMARY
 
+PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m parksim.vla.video_manifest "$OUT_DIR"
+
 echo "visualizer_video_out_dir=$OUT_DIR"
-find "$OUT_DIR" -maxdepth 2 \( -name '*.mp4' -o -name '*.gif' -o -name 'summary.md' -o -name 'metrics.csv' \) -print | sort
+find "$OUT_DIR" -maxdepth 2 \( -name '*.mp4' -o -name '*.gif' -o -name 'summary.md' -o -name 'metrics.csv' -o -name 'video_manifest.json' \) -print | sort

@@ -40,7 +40,12 @@
     "waiting_time",
     "shield_rejection_count",
     "qwen_fallback_count",
-    "qwen_latency_mean"
+    "qwen_latency_mean",
+    "min_other_distance_m",
+    "near_miss_event_count",
+    "collision_proxy_event_count",
+    "unsafe_occupancy_action_count",
+    "malformed_decision_count"
   ],
   "outputs": [
     "episodes.jsonl",
@@ -48,11 +53,18 @@
     "metrics.json",
     "summary.md",
     "summary.json",
-    "preference_dataset.jsonl"
+    "preference_dataset.jsonl",
+    "run_config.json",
+    "validation.json",
+    "manifest.json",
+    "video_manifest.json"
   ],
   "notes": [
     "All agents share the same lower-level A*/Stanley/parking executor unless the agent is the original rule_based controller.",
     "Qwen-VLA must choose an action_id from valid_actions; safety shield rejects malformed or unsafe choices.",
-    "Preference pairs are derived from completed/path/time/shield/fallback objective scores and are intended for prompt optimization or offline preference tuning."
+    "Preference pairs are derived from completed/path/time/shield/fallback objective scores and are intended for prompt optimization or offline preference tuning.",
+    "Benchmark validation fails on empty or structurally incomplete episode logs so paper tables do not include partial runs.",
+    "Safety metrics are computed from synchronized ego/background traces and decision logs, including near-miss, collision-proxy, TTC, and unsafe occupancy choices.",
+    "Visualizer video artifacts should be paired with video_manifest.json to bind videos, frame counts, simulation-time alignment, and metrics."
   ]
 }
