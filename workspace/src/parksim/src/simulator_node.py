@@ -193,7 +193,7 @@ class SimulatorNode(MPClabNode):
         with open(self.agents_data_path, 'rb') as f:
             self.agents_dict = pickle.load(f)
 
-    def add_vehicle(self, spot_index: int, agent_type: str = 'rule_based'):
+    def add_vehicle(self, spot_index: int, agent_type: str = 'rule_based', is_controlled_ego: bool = False):
 
         self.num_vehicles += 1
 
@@ -202,6 +202,7 @@ class SimulatorNode(MPClabNode):
             "vehicle_id:=%d" % self.num_vehicles,
             "spot_index:=%d" % spot_index,
             "agent_type:=%s" % agent_type,
+            "is_controlled_ego:=%s" % str(bool(is_controlled_ego)).lower(),
             "log_path:=%s" % self.log_path,
         ]
         if agent_type in VLA_AGENT_TYPES:
@@ -220,7 +221,7 @@ class SimulatorNode(MPClabNode):
             subprocess.Popen(command, start_new_session=True)
         )
 
-        self.get_logger().info("A %s vehicle with id = %d is added with spot_index = %d" % (agent_type, self.num_vehicles, spot_index))
+        self.get_logger().info("A %s vehicle with id = %d is added with spot_index = %d controlled_ego=%r" % (agent_type, self.num_vehicles, spot_index, bool(is_controlled_ego)))
     def add_existing_vehicle(self, vehicle_id: int):
 
         self.num_vehicles += 1
@@ -334,7 +335,7 @@ class SimulatorNode(MPClabNode):
             return
         spot_index = int(self.controlled_ego_spot_index if controlled else self.qwen_ego_spot_index)
         agent_type = str(self.controlled_ego_agent_type if controlled else 'qwen_vla').lower()
-        self.add_vehicle(spot_index, agent_type=agent_type)
+        self.add_vehicle(spot_index, agent_type=agent_type, is_controlled_ego=bool(legacy_qwen or controlled))
         if spot_index > 0 and bool(self.controlled_ego_blocks_entrance):
             self._track_entrance_vehicle(self.get_ros_time())
         self.qwen_ego_spawned = True

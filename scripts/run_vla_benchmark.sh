@@ -239,14 +239,20 @@ import json
 import sys
 from pathlib import Path
 
-summary_path = Path(sys.argv[1]) / "vehicle_1_summary.json"
-if not summary_path.exists():
-    raise SystemExit(1)
-try:
-    payload = json.loads(summary_path.read_text())
-except Exception:
-    raise SystemExit(1)
-if payload.get("vehicle_id") == 1 and payload.get("completed") is True:
+log_dir = Path(sys.argv[1])
+completed_fallback = False
+for summary_path in sorted(log_dir.glob("vehicle_*_summary.json")):
+    try:
+        payload = json.loads(summary_path.read_text())
+    except Exception:
+        continue
+    if payload.get("completed") is not True:
+        continue
+    if payload.get("is_controlled_ego") is True:
+        raise SystemExit(0)
+    if payload.get("vehicle_id") == 1:
+        completed_fallback = True
+if completed_fallback:
     raise SystemExit(0)
 raise SystemExit(1)
 EARLY_STOP_CHECK

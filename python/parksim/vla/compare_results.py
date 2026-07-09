@@ -4,7 +4,7 @@ import json
 import math
 import pickle
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import matplotlib
 matplotlib.use("Agg")
@@ -82,15 +82,66 @@ def _latest_vehicle_file(log_dir: Path, suffix: str) -> Optional[Path]:
     return files[0] if files else None
 
 
+def _trace_for_summary(summary_path: Path) -> Path:
+    return summary_path.with_name(summary_path.name.replace("_summary.json", "_trace.jsonl"))
+
+
+def _score_ego_candidate(payload: Dict[str, Any], mode: str) -> int:
+    if payload.get("is_controlled_ego") is True:
+        return 100
+    score = 0
+    if str(payload.get("agent_type", "")).lower() == str(mode).lower():
+        score += 10
+    try:
+        if int(payload.get("spot_index", 0) or 0) > 0:
+            score += 3
+    except Exception:
+        pass
+    if payload.get("completed") is True or payload.get("is_final") is True:
+        score += 1
+    return score
+
+
+def _select_ego_files(log_dir: Path, mode: str) -> Tuple[Path, Path, Dict[str, Any], List[Dict[str, Any]]]:
+    summary_candidates = []
+    for summary_path in sorted(log_dir.glob("vehicle_*_summary.json")):
+        payload = _load_json(summary_path)
+        if not payload:
+            continue
+        score = _score_ego_candidate(payload, mode)
+        summary_candidates.append((score, summary_path, payload))
+    if summary_candidates:
+        summary_candidates.sort(key=lambda item: (-item[0], str(item[1])))
+        _, summary_path, summary = summary_candidates[0]
+        trace_path = _trace_for_summary(summary_path)
+        return trace_path, summary_path, summary, _load_jsonl(trace_path)
+
+    trace_candidates = []
+    for trace_path in sorted(log_dir.glob("vehicle_*_trace.jsonl")):
+        rows = _load_jsonl(trace_path)
+        if not rows:
+            continue
+        final = rows[-1]
+        first = rows[0]
+        score = max(_score_ego_candidate(first, mode), _score_ego_candidate(final, mode))
+        trace_candidates.append((score, trace_path, rows))
+    if trace_candidates:
+        trace_candidates.sort(key=lambda item: (-item[0], str(item[1])))
+        _, trace_path, trace = trace_candidates[0]
+        summary_path = trace_path.with_name(trace_path.name.replace("_trace.jsonl", "_summary.json"))
+        return trace_path, summary_path, _load_json(summary_path), trace
+
+    trace_path = log_dir / "vehicle_1_trace.jsonl"
+    summary_path = log_dir / "vehicle_1_summary.json"
+    return trace_path, summary_path, _load_json(summary_path), _load_jsonl(trace_path)
+
+
 def collect_mode_metrics(experiment_dir: Path, mode: str) -> Dict[str, Any]:
     mode_dir = experiment_dir / mode
     log_dir = mode_dir / "logs"
-    trace_path = _latest_vehicle_file(log_dir, "trace.jsonl") or (log_dir / "vehicle_1_trace.jsonl")
-    summary_path = _latest_vehicle_file(log_dir, "summary.json") or (log_dir / "vehicle_1_summary.json")
+    trace_path, summary_path, summary, trace = _select_ego_files(log_dir, mode)
     decisions_path = log_dir / "qwen_vla_decisions.jsonl"
 
-    trace = _load_jsonl(trace_path)
-    summary = _load_json(summary_path)
     decisions = _load_jsonl(decisions_path)
 
     speeds = [_safe_float(row.get("speed")) for row in trace]
@@ -106,6 +157,8 @@ def collect_mode_metrics(experiment_dir: Path, mode: str) -> Dict[str, Any]:
 
     metrics = {
         "mode": mode,
+        "ego_vehicle_id": int(summary.get("vehicle_id", final.get("vehicle_id", 0)) or 0),
+        "ego_is_controlled": bool(summary.get("is_controlled_ego", final.get("is_controlled_ego", False))),
         "completed": bool(summary.get("completed", bool(final.get("is_final")))) if (summary or final) else False,
         "assigned_spot_index": int(summary.get("spot_index", final.get("spot_index", 0)) or 0),
         "executed_spot_index": int(summary.get("vehicle_spot_index", final.get("vehicle_spot_index", 0)) or 0),
@@ -143,7 +196,7 @@ def write_metrics(experiment_dir: Path, collected: Dict[str, Dict[str, Any]]) ->
     with (experiment_dir / "metrics.json").open("w") as f:
         json.dump(rows, f, indent=2)
     fields = [
-        "mode", "completed", "assigned_spot_index", "executed_spot_index", "selected_spot_index",
+        "mode", "ego_vehicle_id", "ego_is_controlled", "completed", "assigned_spot_index", "executed_spot_index", "selected_spot_index",
         "total_time", "total_non_idle_time", "path_length", "mean_speed", "max_speed",
         "idle_time", "low_speed_time", "brake_time", "waiting_time", "decision_count",
         "qwen_fallback_count", "shield_rejection_count", "qwen_latency_mean", "qwen_latency_max", "first_action_type",

@@ -63,6 +63,7 @@ class VehicleNodeParams(NodeParamTemplate):
         self.agents_data_path = parksim_path('python', 'parksim', 'priorFiles', 'agents_data_0012.pickle')
 
         self.agent_type = 'rule_based'
+        self.is_controlled_ego = False
         self.rl_policy_path = ''
         self.rl_max_steps = 1000
 
@@ -284,6 +285,7 @@ class VehicleNode(MPClabNode):
         self.use_existing_agents = _as_bool(self._get_plain_launch_parameter('use_existing', self.use_existing_agents))
         for name in (
             'agent_type',
+            'is_controlled_ego',
             'rl_policy_path',
             'rl_max_steps',
             'qwen_endpoint',
@@ -301,6 +303,7 @@ class VehicleNode(MPClabNode):
         ):
             object.__setattr__(self, name, self._get_plain_launch_parameter(name, getattr(self, name)))
         self.trace_log_enabled = _as_bool(self.trace_log_enabled)
+        self.is_controlled_ego = _as_bool(self.is_controlled_ego)
 
     def _default_trace_log_path(self):
         return os.path.join(self.log_path, "vehicle_%d_trace.jsonl" % self.vehicle_id)
@@ -320,6 +323,7 @@ class VehicleNode(MPClabNode):
             "wall_time": float(current_time),
             "vehicle_id": int(self.vehicle_id),
             "agent_type": str(self.agent_type),
+            "is_controlled_ego": bool(self.is_controlled_ego),
             "spot_index": int(self.spot_index),
             "task": self.vehicle.current_task,
             "is_final": bool(final),
@@ -350,6 +354,7 @@ class VehicleNode(MPClabNode):
         summary = {
             "vehicle_id": int(self.vehicle_id),
             "agent_type": str(self.agent_type),
+            "is_controlled_ego": bool(self.is_controlled_ego),
             "spot_index": int(self.spot_index),
             "vehicle_spot_index": int(getattr(self.vehicle, "spot_index", 0) or 0),
             "completed": bool(self.vehicle.is_all_done()),

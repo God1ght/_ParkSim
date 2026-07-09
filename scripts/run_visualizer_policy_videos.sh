@@ -33,6 +33,8 @@ ALIGN_DT="${PARKSIM_VIS_ALIGN_DT:-0.1}"
 ALIGN_PANEL_WIDTH="${PARKSIM_VIS_ALIGN_PANEL_WIDTH:-960}"
 VIS_START_DELAY="${PARKSIM_VIS_START_DELAY:-2}"
 VIS_POST_ROLL="${PARKSIM_VIS_POST_ROLL:-2}"
+EARLY_STOP="${PARKSIM_VIS_EARLY_STOP:-1}"
+EARLY_STOP_POLL_SECONDS="${PARKSIM_VIS_EARLY_STOP_POLL_SECONDS:-1}"
 PYTHON_BIN="${PARKSIM_VIS_PYTHON:-/usr/bin/python3}"
 
 if [[ ! -f "$ROS_SETUP" ]]; then
@@ -67,6 +69,14 @@ set -u
 mkdir -p "$OUT_DIR"
 qwen_pid=""
 visualizer_pid=""
+cleanup_simulation_processes() {
+  pkill -TERM -f "$ROOT/workspace/install/parksim/lib/parksim/simulator_node.py" 2>/dev/null || true
+  pkill -TERM -f "$ROOT/workspace/install/parksim/lib/parksim/vehicle_node.py" 2>/dev/null || true
+  sleep 1
+  pkill -KILL -f "$ROOT/workspace/install/parksim/lib/parksim/simulator_node.py" 2>/dev/null || true
+  pkill -KILL -f "$ROOT/workspace/install/parksim/lib/parksim/vehicle_node.py" 2>/dev/null || true
+}
+
 cleanup_ros_processes() {
   pkill -TERM -f "$ROOT/workspace/install/parksim/lib/parksim/simulator_node.py" 2>/dev/null || true
   pkill -TERM -f "$ROOT/workspace/install/parksim/lib/parksim/vehicle_node.py" 2>/dev/null || true
@@ -169,6 +179,49 @@ encode_side_by_side() {
 }
 
 
+controlled_ego_done() {
+  local log_dir="$1"
+  python3 - "$log_dir" <<'EARLY_STOP_CHECK'
+import json
+import sys
+from pathlib import Path
+
+log_dir = Path(sys.argv[1])
+completed_fallback = False
+for summary_path in sorted(log_dir.glob("vehicle_*_summary.json")):
+    try:
+        payload = json.loads(summary_path.read_text())
+    except Exception:
+        continue
+    if payload.get("completed") is not True:
+        continue
+    if payload.get("is_controlled_ego") is True:
+        raise SystemExit(0)
+    if payload.get("vehicle_id") == 1:
+        completed_fallback = True
+if completed_fallback:
+    raise SystemExit(0)
+raise SystemExit(1)
+EARLY_STOP_CHECK
+}
+
+wait_for_early_stop() {
+  local sim_pid="$1"
+  local log_dir="$2"
+  if [[ "$EARLY_STOP" != "1" ]]; then
+    return 1
+  fi
+  while kill -0 "$sim_pid" 2>/dev/null; do
+    if controlled_ego_done "$log_dir" >/dev/null 2>&1; then
+      echo "early_stop controlled ego completed -> $log_dir"
+      cleanup_simulation_processes
+      return 0
+    fi
+    sleep "$EARLY_STOP_POLL_SECONDS"
+  done
+  return 1
+}
+
 run_mode() {
   local mode="$1"
   local run_dir="$OUT_DIR/$mode"
@@ -197,6 +250,7 @@ run_mode() {
   fi
 
   set +e
+  local early_stop_triggered=0
   PYTHONPATH="$DLP_ROOT${PYTHONPATH:+:$PYTHONPATH}" timeout "$DURATION" ros2 run parksim simulator_node.py --ros-args \
     -p spawn_controlled_ego:=true \
     -p controlled_ego_agent_type:="$mode" \
@@ -210,8 +264,16 @@ run_mode() {
     -p log_path:="$log_dir" \
     -p qwen_endpoint:="$QWEN_ENDPOINT" \
     -p qwen_timeout:="$QWEN_TIMEOUT" \
-    > "$sim_log" 2>&1
+    > "$sim_log" 2>&1 &
+  local sim_pid="$!"
+  if wait_for_early_stop "$sim_pid" "$log_dir"; then
+    early_stop_triggered=1
+  fi
+  wait "$sim_pid"
   local status="$?"
+  if [[ "$early_stop_triggered" == "1" ]]; then
+    status=0
+  fi
   set -e
   sleep "$VIS_POST_ROLL"
   if [[ -n "$visualizer_pid" ]] && kill -0 "$visualizer_pid" 2>/dev/null; then
@@ -245,6 +307,7 @@ cat >> "$OUT_DIR/summary.md" <<'EOF_SUMMARY'
 - `rule_vs_qwen_vla.mp4`: side-by-side comparison video aligned by visualizer `sim_time`.
 - `rule_vs_qwen_vla.gif`: side-by-side comparison GIF aligned by visualizer `sim_time`.
 - `aligned_rule_vs_qwen_vla/alignment.json`: simulation-time alignment metadata.
+- Early-stop is controlled by `PARKSIM_VIS_EARLY_STOP`; side-by-side frames remain aligned by visualizer `sim_time`.
 EOF_SUMMARY
 
 PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m parksim.vla.video_manifest "$OUT_DIR"

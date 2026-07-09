@@ -276,6 +276,8 @@ def validate(out_dir: Path, require_complete: bool = False, expected_agents: Opt
     for row in metrics_rows if isinstance(metrics_rows, list) else []:
         if _safe_float(row.get("trace_points")) <= 0:
             problems.append("metric row has no trace points: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
+        if row.get("ego_is_controlled") is not True:
+            problems.append("metric row does not identify controlled ego: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
         if require_complete and not row.get("completed"):
             problems.append("incomplete episode under --require-complete: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
     if expected_agents:
