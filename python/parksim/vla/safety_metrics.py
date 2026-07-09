@@ -42,8 +42,169 @@ def collect_safety_metrics(
     }
     metrics.update(distance_metrics)
     metrics.update(decision_metrics)
+    metrics.update(collect_system_traffic_metrics(log_dir))
     return metrics
 
+
+
+def collect_system_traffic_metrics(
+    log_dir: Path,
+    near_miss_radius: float = 3.0,
+    collision_radius: float = 1.5,
+    intent_conflict_radius: float = 6.0,
+    ttc_horizon: float = 4.0,
+    max_time_gap: float = 0.25,
+) -> Dict[str, Any]:
+    traces: List[Tuple[Path, List[Dict[str, Any]]]] = []
+    roles: Dict[str, str] = {}
+    intent_observable: Dict[str, bool] = {}
+    completed = 0
+    for summary_path in sorted(log_dir.glob("vehicle_*_summary.json")):
+        try:
+            summary = json.loads(summary_path.read_text())
+        except Exception:
+            continue
+        vehicle_id = str(summary.get("vehicle_id", ""))
+        if vehicle_id:
+            roles[vehicle_id] = str(summary.get("vehicle_role") or "unknown")
+            intent_observable[vehicle_id] = bool(summary.get("intent_observable", True))
+        if summary.get("completed") is True:
+            completed += 1
+    for trace_path in sorted(log_dir.glob("vehicle_*_trace.jsonl")):
+        rows = load_jsonl(trace_path)
+        if not rows:
+            continue
+        first = rows[0]
+        vehicle_id = str(first.get("vehicle_id", ""))
+        if vehicle_id:
+            roles.setdefault(vehicle_id, str(first.get("vehicle_role") or "unknown"))
+            intent_observable.setdefault(vehicle_id, bool(first.get("intent_observable", True)))
+        traces.append((trace_path, rows))
+
+    pair_metrics = _pairwise_system_metrics(
+        traces,
+        roles,
+        near_miss_radius=near_miss_radius,
+        collision_radius=collision_radius,
+        intent_conflict_radius=intent_conflict_radius,
+        ttc_horizon=ttc_horizon,
+        max_time_gap=max_time_gap,
+    )
+    traffic_events = load_jsonl(log_dir / "traffic_events.jsonl")
+    schedule = _load_json(log_dir / "traffic_schedule.json")
+    spawned = sum(1 for row in traffic_events if row.get("status") == "spawned")
+    delayed = sum(1 for row in traffic_events if row.get("status") == "delayed")
+    skipped = sum(1 for row in traffic_events if row.get("status") == "skipped")
+    metrics = {
+        "total_vehicle_trace_count": len(traces),
+        "completed_vehicle_count": int(completed),
+        "entering_vehicle_count": sum(1 for role in roles.values() if role in ("rule_entering", "controlled_ego")),
+        "exiting_vehicle_count": sum(1 for role in roles.values() if role == "rule_exiting"),
+        "replay_vehicle_count": sum(1 for role in roles.values() if role == "replay_background"),
+        "hidden_intent_vehicle_count": sum(1 for visible in intent_observable.values() if not visible),
+        "traffic_scheduled_count": len(schedule.get("events", [])) if isinstance(schedule, dict) else 0,
+        "traffic_hidden_event_count": int(schedule.get("hidden_event_count", 0)) if isinstance(schedule, dict) else 0,
+        "traffic_spawned_count": int(spawned),
+        "traffic_delayed_count": int(delayed),
+        "traffic_skipped_count": int(skipped),
+    }
+    metrics.update(pair_metrics)
+    return metrics
+
+
+def _load_json(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
+
+
+def _pairwise_system_metrics(
+    traces: List[Tuple[Path, List[Dict[str, Any]]]],
+    roles: Dict[str, str],
+    near_miss_radius: float,
+    collision_radius: float,
+    intent_conflict_radius: float,
+    ttc_horizon: float,
+    max_time_gap: float,
+) -> Dict[str, Any]:
+    if len(traces) < 2:
+        return {
+            "system_min_distance_m": None,
+            "system_near_miss_event_count": 0,
+            "system_collision_proxy_event_count": 0,
+            "trajectory_conflict_event_count": 0,
+            "mixed_intent_conflict_event_count": 0,
+            "mixed_intent_conflict_time_s": 0.0,
+        }
+    min_distance = float("inf")
+    near_events = 0
+    collision_events = 0
+    trajectory_events = 0
+    mixed_intent_events = 0
+    mixed_intent_time = 0.0
+    for left_idx in range(len(traces)):
+        left_path, left_rows = traces[left_idx]
+        left_id = _vehicle_id_from_rows(left_rows, left_path)
+        for right_idx in range(left_idx + 1, len(traces)):
+            right_path, right_rows = traces[right_idx]
+            right_id = _vehicle_id_from_rows(right_rows, right_path)
+            right_cursor = 0
+            near_active = False
+            collision_active = False
+            trajectory_active = False
+            mixed_active = False
+            for row_idx, left_row in enumerate(left_rows):
+                t = _sync_time(left_row)
+                right_row, right_cursor = _nearest_time_row(right_rows, t, right_cursor)
+                if right_row is None or abs(_sync_time(right_row) - t) > max_time_gap:
+                    continue
+                dt = _row_dt(left_rows, row_idx)
+                distance = _xy_distance(left_row, right_row)
+                min_distance = min(min_distance, distance)
+                near = distance < near_miss_radius
+                collision = distance < collision_radius
+                ttc = _time_to_collision(left_row, right_row, horizon=ttc_horizon, radius=near_miss_radius)
+                trajectory = ttc is not None
+                mixed_intent = _is_mixed_enter_exit_pair(roles.get(left_id, ""), roles.get(right_id, "")) and distance < intent_conflict_radius
+                if near and not near_active:
+                    near_events += 1
+                if collision and not collision_active:
+                    collision_events += 1
+                if trajectory and not trajectory_active:
+                    trajectory_events += 1
+                if mixed_intent:
+                    mixed_intent_time += dt
+                    if not mixed_active:
+                        mixed_intent_events += 1
+                near_active = near
+                collision_active = collision
+                trajectory_active = trajectory
+                mixed_active = mixed_intent
+    return {
+        "system_min_distance_m": round(min_distance, 3) if math.isfinite(min_distance) else None,
+        "system_near_miss_event_count": int(near_events),
+        "system_collision_proxy_event_count": int(collision_events),
+        "trajectory_conflict_event_count": int(trajectory_events),
+        "mixed_intent_conflict_event_count": int(mixed_intent_events),
+        "mixed_intent_conflict_time_s": round(mixed_intent_time, 3),
+    }
+
+
+def _vehicle_id_from_rows(rows: List[Dict[str, Any]], path: Path) -> str:
+    if rows and rows[0].get("vehicle_id") is not None:
+        return str(rows[0].get("vehicle_id"))
+    name = path.name
+    if name.startswith("vehicle_"):
+        return name.split("_")[1]
+    return name
+
+
+def _is_mixed_enter_exit_pair(left_role: str, right_role: str) -> bool:
+    pair = {str(left_role), str(right_role)}
+    return bool(("rule_entering" in pair or "controlled_ego" in pair) and "rule_exiting" in pair)
 
 def _load_other_traces(log_dir: Path, ego_trace_path: Path) -> List[Tuple[Path, List[Dict[str, Any]]]]:
     traces: List[Tuple[Path, List[Dict[str, Any]]]] = []

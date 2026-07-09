@@ -18,6 +18,11 @@ PREFERRED_FIELDS = [
     "near_miss_event_count", "near_miss_time_s", "collision_proxy_event_count", "collision_proxy_time_s",
     "unsafe_occupancy_action_count", "malformed_decision_count", "target_mismatch_decision_count", "missing_reason_code_count",
     "candidate_action_count_mean", "available_candidate_count_mean", "blocked_candidate_count_mean",
+    "total_vehicle_trace_count", "completed_vehicle_count", "entering_vehicle_count", "exiting_vehicle_count",
+    "replay_vehicle_count", "hidden_intent_vehicle_count", "traffic_scheduled_count", "traffic_hidden_event_count",
+    "traffic_spawned_count", "traffic_delayed_count", "traffic_skipped_count", "system_min_distance_m",
+    "system_near_miss_event_count", "system_collision_proxy_event_count", "trajectory_conflict_event_count",
+    "mixed_intent_conflict_event_count", "mixed_intent_conflict_time_s",
     "trace_path", "summary_path", "decisions_path",
 ]
 
@@ -82,6 +87,10 @@ def objective_score(metrics: Dict[str, Any]) -> float:
         + 0.1 * _safe_float(metrics.get("idle_time"))
         + 500.0 * _safe_float(metrics.get("collision_proxy_event_count"))
         + 100.0 * _safe_float(metrics.get("near_miss_event_count"))
+        + 50.0 * _safe_float(metrics.get("system_collision_proxy_event_count"))
+        + 10.0 * _safe_float(metrics.get("system_near_miss_event_count"))
+        + 5.0 * _safe_float(metrics.get("trajectory_conflict_event_count"))
+        + 5.0 * _safe_float(metrics.get("mixed_intent_conflict_event_count"))
         + 100.0 * _safe_float(metrics.get("unsafe_occupancy_action_count"))
         + 20.0 * _safe_float(metrics.get("malformed_decision_count"))
         + 20.0 * _safe_float(metrics.get("target_mismatch_decision_count"))

@@ -53,7 +53,7 @@ The required structured fields are:
 - `ego`: controlled vehicle id, task, pose, speed, current target, braking state, and wait target.
 - `candidate_spots`: nearest selectable parking spaces with `status=available`, coordinates, and distance.
 - `blocked_nearby_spots`: nearby occupied or unknown spots with `central_occupied`, dynamic occupancy, and reasons, included only to explain why they are not valid choices.
-- `nearby_vehicles`: nearby vehicle state and task/progress information.
+- `nearby_vehicles`: nearby vehicle kinematics and observable behavior. Background task/progress/destination are hidden by default unless `reveal_background_intents_to_vla=true`.
 - `central_occupancy` and `effective_occupancy`: raw simulator occupancy and safety-filtered occupancy.
 - `protocol_version`, `prompt_version`, `output_schema`, `reason_codes`, and `hard_constraints`: the reproducible VLA decision contract.
 - `valid_action_ids` and `valid_actions`: the only action ids Qwen is allowed to choose.
@@ -75,6 +75,26 @@ PARKSIM_COMPARE_QWEN_MODE=real ./scripts/run_policy_comparison.sh
 ```
 
 Use `PARKSIM_COMPARE_QWEN_MODE=mock` for a fast CI-style check, `real` to start the local Qwen service, or `external` with `PARKSIM_COMPARE_QWEN_ENDPOINT` for an already running service. The script writes `metrics.json`, `metrics.csv`, `summary.md`, `trajectories.png`, and `metrics.png` under `experiments/qwen_vla_comparison/<timestamp>/`.
+
+## Long-Horizon Human-Mixed Evaluation
+
+Use the long-horizon entrypoint when the simulator should represent a realistic human-machine mixed parking lot rather than a short single-ego benchmark:
+
+```bash
+PARKSIM_LONG_QWEN_MODE=real ./scripts/run_vla_long_horizon_suite.sh
+```
+
+This wraps `run_vla_benchmark.sh` with `traffic_flow_mode=human_mixed_long_horizon`, disables ego early-stop by default, restores a configurable fraction of original static obstacle spots as rule-based exiting vehicles, and generates many entering/exiting tasks over a long horizon. Rule/replay background vehicle intentions are ground truth for evaluation logs only; VLA inputs expose pose, speed, braking, waiting, occupancy, and valid actions, but hide destination, planned route, and task profile by default.
+
+Key overrides:
+
+- `PARKSIM_LONG_DURATION` / `PARKSIM_LONG_HORIZON_SECONDS`: wall-clock simulator timeout and scenario horizon.
+- `PARKSIM_LONG_SPAWN_ENTERING` / `PARKSIM_LONG_SPAWN_EXITING`: requested long-horizon demand volume.
+- `PARKSIM_LONG_RESTORE_OBSTACLES_AS_EXIT_VEHICLES`: convert initial occupied obstacle spots into departure tasks.
+- `PARKSIM_LONG_HIDDEN_INTENT_FRACTION`: fraction of rule-agent intentions hidden from the VLA state.
+- `PARKSIM_LONG_MAX_CONCURRENT_BACKGROUND_VEHICLES`: cap on scheduled background traffic.
+
+Each run writes `traffic_schedule.json`, `traffic_events.jsonl`, vehicle traces with `vehicle_role` and `intent_observable`, and system-level conflict metrics such as `system_near_miss_event_count`, `trajectory_conflict_event_count`, and `mixed_intent_conflict_event_count`.
 
 ## Visualizer Video/GIF Comparison
 

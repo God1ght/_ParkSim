@@ -64,6 +64,11 @@ class VehicleNodeParams(NodeParamTemplate):
 
         self.agent_type = 'rule_based'
         self.is_controlled_ego = False
+        self.vehicle_role = 'background'
+        self.intent_observable = True
+        self.intent_label = ''
+        self.spawn_event_id = ''
+        self.reveal_background_intents_to_vla = False
         self.rl_policy_path = ''
         self.rl_max_steps = 1000
 
@@ -159,6 +164,7 @@ class VehicleNode(MPClabNode):
                 fallback_spot_index=self.spot_index if self.spot_index > 0 else None,
                 periodic_replan=_as_bool(self.qwen_periodic_replan),
                 decision_log_path=str(self.qwen_decision_log_path),
+                reveal_background_intents_to_vla=_as_bool(self.reveal_background_intents_to_vla),
             )
         elif agent_type in VLA_BASELINE_AGENT_TYPES:
             from parksim.vla.agent import BaselineVLAVehicle
@@ -175,6 +181,7 @@ class VehicleNode(MPClabNode):
                 fallback_spot_index=self.spot_index if self.spot_index > 0 else None,
                 periodic_replan=_as_bool(self.qwen_periodic_replan),
                 decision_log_path=str(self.qwen_decision_log_path),
+                reveal_background_intents_to_vla=_as_bool(self.reveal_background_intents_to_vla),
             )
         elif agent_type == 'rl_policy':
             from parksim.rl.agents import RLPolicyAgent
@@ -286,6 +293,11 @@ class VehicleNode(MPClabNode):
         for name in (
             'agent_type',
             'is_controlled_ego',
+            'vehicle_role',
+            'intent_observable',
+            'intent_label',
+            'spawn_event_id',
+            'reveal_background_intents_to_vla',
             'rl_policy_path',
             'rl_max_steps',
             'qwen_endpoint',
@@ -304,6 +316,8 @@ class VehicleNode(MPClabNode):
             object.__setattr__(self, name, self._get_plain_launch_parameter(name, getattr(self, name)))
         self.trace_log_enabled = _as_bool(self.trace_log_enabled)
         self.is_controlled_ego = _as_bool(self.is_controlled_ego)
+        self.intent_observable = _as_bool(self.intent_observable)
+        self.reveal_background_intents_to_vla = _as_bool(self.reveal_background_intents_to_vla)
 
     def _default_trace_log_path(self):
         return os.path.join(self.log_path, "vehicle_%d_trace.jsonl" % self.vehicle_id)
@@ -324,6 +338,10 @@ class VehicleNode(MPClabNode):
             "vehicle_id": int(self.vehicle_id),
             "agent_type": str(self.agent_type),
             "is_controlled_ego": bool(self.is_controlled_ego),
+            "vehicle_role": str(self.vehicle_role),
+            "intent_observable": bool(self.intent_observable),
+            "intent_label": str(self.intent_label),
+            "spawn_event_id": str(self.spawn_event_id),
             "spot_index": int(self.spot_index),
             "task": self.vehicle.current_task,
             "is_final": bool(final),
@@ -355,6 +373,10 @@ class VehicleNode(MPClabNode):
             "vehicle_id": int(self.vehicle_id),
             "agent_type": str(self.agent_type),
             "is_controlled_ego": bool(self.is_controlled_ego),
+            "vehicle_role": str(self.vehicle_role),
+            "intent_observable": bool(self.intent_observable),
+            "intent_label": str(self.intent_label),
+            "spawn_event_id": str(self.spawn_event_id),
             "spot_index": int(self.spot_index),
             "vehicle_spot_index": int(getattr(self.vehicle, "spot_index", 0) or 0),
             "completed": bool(self.vehicle.is_all_done()),

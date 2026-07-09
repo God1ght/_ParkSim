@@ -36,16 +36,21 @@ def encode_occupancy(occupancy: Optional[Iterable[Any]], limit: Optional[int] = 
 
 def encode_nearby_vehicles(vehicle: Any, max_vehicles: int = 8) -> List[Dict[str, Any]]:
     rows = []
+    reveal_intents = bool(getattr(vehicle, "reveal_background_intents_to_vla", False))
     for vehicle_id in sorted(getattr(vehicle, "other_state", {}).keys()):
         state = vehicle.other_state[vehicle_id]
         ego = vehicle.state
         dist = float(np.linalg.norm([state.x.x - ego.x.x, state.x.y - ego.x.y]))
+        task = getattr(vehicle, "other_task", {}).get(vehicle_id)
+        parking_progress = getattr(vehicle, "other_parking_progress", {}).get(vehicle_id)
         rows.append({
             "vehicle_id": int(vehicle_id),
             "distance": dist,
             "state": encode_vehicle_state(state),
-            "task": getattr(vehicle, "other_task", {}).get(vehicle_id),
-            "parking_progress": getattr(vehicle, "other_parking_progress", {}).get(vehicle_id),
+            "intent_observable": bool(reveal_intents),
+            "task": task if reveal_intents else "unknown",
+            "parking_progress": parking_progress if reveal_intents else None,
+            "hidden_intent_fields": [] if reveal_intents else ["task", "parking_progress", "target_or_destination"],
             "is_braking": bool(getattr(vehicle, "other_is_braking", {}).get(vehicle_id, False)),
             "waiting_for": int(getattr(vehicle, "other_waiting_for", {}).get(vehicle_id, 0) or 0),
         })
@@ -76,12 +81,18 @@ def build_vla_state(vehicle: Any, valid_actions: Optional[List[Any]] = None, max
                 "blocked_nearby_spots explain occupied, blocked, or unknown parking spaces",
                 "valid_actions is the complete executable high-level action set",
                 "nearby_vehicles and action features expose dynamic conflict risk",
+                "background human/rule vehicle intent is partially observable by default",
                 "BEV image is visual evidence only; structured valid_actions has priority",
             ],
             "spot_status_sources": [
                 "central_occupancy from simulator static obstacles and rule-based reservations",
                 "dynamic vehicle proximity to parking-space centers",
             ],
+        },
+        "observability_model": {
+            "background_intents_revealed": bool(getattr(vehicle, "reveal_background_intents_to_vla", False)),
+            "available_background_evidence": ["pose", "speed", "braking", "waiting_signal"],
+            "hidden_background_evidence": [] if bool(getattr(vehicle, "reveal_background_intents_to_vla", False)) else ["destination", "planned_route", "task_profile"],
         },
         "world_model": {
             "occupancy_ready": occupancy_ready(vehicle),

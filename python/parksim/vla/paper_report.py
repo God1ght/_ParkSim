@@ -14,6 +14,12 @@ DEFAULT_METRICS = [
     "idle_time",
     "near_miss_event_count",
     "collision_proxy_event_count",
+    "system_near_miss_event_count",
+    "system_collision_proxy_event_count",
+    "trajectory_conflict_event_count",
+    "mixed_intent_conflict_event_count",
+    "traffic_spawned_count",
+    "hidden_intent_vehicle_count",
     "unsafe_occupancy_action_count",
     "target_mismatch_decision_count",
     "missing_reason_code_count",
@@ -25,6 +31,7 @@ DEFAULT_METRICS = [
 HIGHER_IS_BETTER_METRICS = {
     "min_other_distance_m",
     "min_ttc_s",
+    "system_min_distance_m",
 }
 
 STRATIFY_FIELDS = [
@@ -39,6 +46,10 @@ MARKDOWN_TEST_METRICS = [
     "total_non_idle_time",
     "near_miss_event_count",
     "collision_proxy_event_count",
+    "system_near_miss_event_count",
+    "system_collision_proxy_event_count",
+    "trajectory_conflict_event_count",
+    "mixed_intent_conflict_event_count",
     "unsafe_occupancy_action_count",
 ]
 

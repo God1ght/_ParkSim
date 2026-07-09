@@ -204,6 +204,11 @@ def write_metrics(experiment_dir: Path, collected: Dict[str, Dict[str, Any]]) ->
         "collision_proxy_event_count", "collision_proxy_time_s", "min_ttc_s", "unsafe_occupancy_action_count",
         "malformed_decision_count", "target_mismatch_decision_count", "missing_reason_code_count",
         "candidate_action_count_mean", "available_candidate_count_mean",
+        "total_vehicle_trace_count", "completed_vehicle_count", "entering_vehicle_count", "exiting_vehicle_count",
+        "replay_vehicle_count", "hidden_intent_vehicle_count", "traffic_scheduled_count", "traffic_hidden_event_count",
+        "traffic_spawned_count", "traffic_delayed_count", "traffic_skipped_count", "system_min_distance_m",
+        "system_near_miss_event_count", "system_collision_proxy_event_count", "trajectory_conflict_event_count",
+        "mixed_intent_conflict_event_count", "mixed_intent_conflict_time_s",
     ]
     with (experiment_dir / "metrics.csv").open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)

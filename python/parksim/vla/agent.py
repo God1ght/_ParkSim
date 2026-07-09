@@ -37,6 +37,7 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         fallback_spot_index: Optional[int] = None,
         periodic_replan: bool = False,
         decision_log_path: str = "",
+        reveal_background_intents_to_vla: bool = False,
     ):
         vehicle_body = vehicle_body or VehicleBody()
         vehicle_config = vehicle_config or VehicleConfig()
@@ -60,6 +61,7 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         self.fallback_spot_index = fallback_spot_index
         self.periodic_replan = bool(periodic_replan)
         self.decision_log_path = decision_log_path
+        self.reveal_background_intents_to_vla = bool(reveal_background_intents_to_vla)
         self._last_vla_decision_time = float("-inf")
         self._inside_vla_apply = False
         self._latest_solve_time = 0.0

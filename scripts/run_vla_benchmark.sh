@@ -14,6 +14,19 @@ SPOT_INDEX="${PARKSIM_BENCH_SPOT_INDEX:-7}"
 SPAWN_TIME="${PARKSIM_BENCH_SPAWN_TIME:-0.5}"
 SPAWN_ENTERING="${PARKSIM_BENCH_SPAWN_ENTERING:-0}"
 SPAWN_EXITING="${PARKSIM_BENCH_SPAWN_EXITING:-0}"
+TRAFFIC_FLOW_MODE="${PARKSIM_BENCH_TRAFFIC_FLOW_MODE:-legacy}"
+LONG_HORIZON_DURATION="${PARKSIM_BENCH_LONG_HORIZON_DURATION:-${DURATION%s}}"
+RESTORE_OBSTACLES_AS_EXIT_VEHICLES="${PARKSIM_BENCH_RESTORE_OBSTACLES_AS_EXIT_VEHICLES:-false}"
+STATIC_OBSTACLE_EXIT_FRACTION="${PARKSIM_BENCH_STATIC_OBSTACLE_EXIT_FRACTION:-0.35}"
+STATIC_OBSTACLE_EXIT_MAX="${PARKSIM_BENCH_STATIC_OBSTACLE_EXIT_MAX:-40}"
+STATIC_OBSTACLE_EXIT_START_TIME="${PARKSIM_BENCH_STATIC_OBSTACLE_EXIT_START_TIME:-5.0}"
+LONG_HORIZON_ENTER_INTERVAL_MEAN="${PARKSIM_BENCH_LONG_HORIZON_ENTER_INTERVAL_MEAN:-10.0}"
+LONG_HORIZON_EXIT_INTERVAL_MEAN="${PARKSIM_BENCH_LONG_HORIZON_EXIT_INTERVAL_MEAN:-14.0}"
+HUMAN_INTENT_HIDDEN_FRACTION="${PARKSIM_BENCH_HUMAN_INTENT_HIDDEN_FRACTION:-0.75}"
+MAX_CONCURRENT_BACKGROUND_VEHICLES="${PARKSIM_BENCH_MAX_CONCURRENT_BACKGROUND_VEHICLES:-80}"
+DELAYED_SPAWN_RETRY_SECONDS="${PARKSIM_BENCH_DELAYED_SPAWN_RETRY_SECONDS:-2.0}"
+EXIT_SPOT_REUSE_DELAY="${PARKSIM_BENCH_EXIT_SPOT_REUSE_DELAY:-20.0}"
+QWEN_PERIODIC_REPLAN="${PARKSIM_BENCH_QWEN_PERIODIC_REPLAN:-false}"
 CONTROLLED_EGO_BLOCKS_ENTRANCE="${PARKSIM_BENCH_CONTROLLED_EGO_BLOCKS_ENTRANCE:-true}"
 QWEN_MODE="${PARKSIM_BENCH_QWEN_MODE:-mock}"
 QWEN_PORT="${PARKSIM_BENCH_QWEN_PORT:-18087}"
@@ -51,7 +64,7 @@ set -u
 qwen_pid=""
 GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 GIT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown)"
-export ROOT GIT_COMMIT GIT_BRANCH DURATION AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING CONTROLLED_EGO_BLOCKS_ENTRANCE QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT EARLY_STOP EARLY_STOP_POLL_SECONDS EARLY_STOP_GRACE_SECONDS CLEAR_OUT_DIR
+export ROOT GIT_COMMIT GIT_BRANCH DURATION AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING TRAFFIC_FLOW_MODE LONG_HORIZON_DURATION RESTORE_OBSTACLES_AS_EXIT_VEHICLES STATIC_OBSTACLE_EXIT_FRACTION STATIC_OBSTACLE_EXIT_MAX STATIC_OBSTACLE_EXIT_START_TIME LONG_HORIZON_ENTER_INTERVAL_MEAN LONG_HORIZON_EXIT_INTERVAL_MEAN HUMAN_INTENT_HIDDEN_FRACTION MAX_CONCURRENT_BACKGROUND_VEHICLES DELAYED_SPAWN_RETRY_SECONDS EXIT_SPOT_REUSE_DELAY QWEN_PERIODIC_REPLAN CONTROLLED_EGO_BLOCKS_ENTRANCE QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT EARLY_STOP EARLY_STOP_POLL_SECONDS EARLY_STOP_GRACE_SECONDS CLEAR_OUT_DIR
 
 prepare_out_dir() {
   mkdir -p "$OUT_DIR"
@@ -59,7 +72,7 @@ prepare_out_dir() {
   out_abs="$(realpath -m "$OUT_DIR")"
   if [[ "$CLEAR_OUT_DIR" == "1" ]]; then
     case "$out_abs" in
-      "$ROOT"/experiments/qwen_vla_benchmark/*|"$ROOT"/experiments/qwen_vla_paper_suite/*/benchmarks/*)
+      "$ROOT"/experiments/qwen_vla_benchmark/*|"$ROOT"/experiments/qwen_vla_long_horizon/*|"$ROOT"/experiments/qwen_vla_paper_suite/*/benchmarks/*)
         rm -rf "$OUT_DIR/episodes"
         rm -f \
           "$OUT_DIR/episodes.jsonl" \
@@ -100,6 +113,17 @@ payload = {
     "spot_index": os.environ.get("SPOT_INDEX", ""),
     "spawn_entering": os.environ.get("SPAWN_ENTERING", ""),
     "spawn_exiting": os.environ.get("SPAWN_EXITING", ""),
+    "traffic_flow_mode": os.environ.get("TRAFFIC_FLOW_MODE", ""),
+    "long_horizon_duration": os.environ.get("LONG_HORIZON_DURATION", ""),
+    "restore_obstacles_as_exit_vehicles": os.environ.get("RESTORE_OBSTACLES_AS_EXIT_VEHICLES", ""),
+    "static_obstacle_exit_fraction": os.environ.get("STATIC_OBSTACLE_EXIT_FRACTION", ""),
+    "static_obstacle_exit_max": os.environ.get("STATIC_OBSTACLE_EXIT_MAX", ""),
+    "long_horizon_enter_interval_mean": os.environ.get("LONG_HORIZON_ENTER_INTERVAL_MEAN", ""),
+    "long_horizon_exit_interval_mean": os.environ.get("LONG_HORIZON_EXIT_INTERVAL_MEAN", ""),
+    "human_intent_hidden_fraction": os.environ.get("HUMAN_INTENT_HIDDEN_FRACTION", ""),
+    "max_concurrent_background_vehicles": os.environ.get("MAX_CONCURRENT_BACKGROUND_VEHICLES", ""),
+    "exit_spot_reuse_delay": os.environ.get("EXIT_SPOT_REUSE_DELAY", ""),
+    "qwen_periodic_replan": os.environ.get("QWEN_PERIODIC_REPLAN", ""),
     "controlled_ego_blocks_entrance": os.environ.get("CONTROLLED_EGO_BLOCKS_ENTRANCE", ""),
     "qwen_mode": os.environ.get("QWEN_MODE", ""),
     "qwen_endpoint": os.environ.get("QWEN_ENDPOINT", ""),
@@ -318,6 +342,19 @@ run_episode() {
     -p background_mode:="$background_mode" \
     -p spawn_entering:="$SPAWN_ENTERING" \
     -p spawn_exiting:="$SPAWN_EXITING" \
+    -p traffic_flow_mode:="$TRAFFIC_FLOW_MODE" \
+    -p long_horizon_duration:="$LONG_HORIZON_DURATION" \
+    -p restore_obstacles_as_exit_vehicles:="$RESTORE_OBSTACLES_AS_EXIT_VEHICLES" \
+    -p static_obstacle_exit_fraction:="$STATIC_OBSTACLE_EXIT_FRACTION" \
+    -p static_obstacle_exit_max:="$STATIC_OBSTACLE_EXIT_MAX" \
+    -p static_obstacle_exit_start_time:="$STATIC_OBSTACLE_EXIT_START_TIME" \
+    -p long_horizon_enter_interval_mean:="$LONG_HORIZON_ENTER_INTERVAL_MEAN" \
+    -p long_horizon_exit_interval_mean:="$LONG_HORIZON_EXIT_INTERVAL_MEAN" \
+    -p human_intent_hidden_fraction:="$HUMAN_INTENT_HIDDEN_FRACTION" \
+    -p max_concurrent_background_vehicles:="$MAX_CONCURRENT_BACKGROUND_VEHICLES" \
+    -p delayed_spawn_retry_seconds:="$DELAYED_SPAWN_RETRY_SECONDS" \
+    -p exit_spot_reuse_delay:="$EXIT_SPOT_REUSE_DELAY" \
+    -p qwen_periodic_replan:="$QWEN_PERIODIC_REPLAN" \
     -p log_path:="$log_dir" \
     -p qwen_endpoint:="$qwen_endpoint_param" \
     -p qwen_timeout:="$QWEN_TIMEOUT" \

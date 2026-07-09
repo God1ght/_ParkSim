@@ -11,7 +11,23 @@
     spawn_entering: 30
     spawn_exiting: 30
     spawn_interval_mean: 5 # (s)
-    background_mode: "replay" # replay, rule_random, or mixed
+    background_mode: "replay" # replay, rule_random, mixed, or human_mixed
+
+    # Human-machine mixed long-horizon scenario generator. Defaults preserve legacy behavior.
+    traffic_flow_mode: "legacy"
+    long_horizon_duration: 600.0
+    restore_obstacles_as_exit_vehicles: false
+    static_obstacle_exit_fraction: 0.35
+    static_obstacle_exit_max: 40
+    static_obstacle_exit_start_time: 5.0
+    long_horizon_enter_interval_mean: 10.0
+    long_horizon_exit_interval_mean: 14.0
+    human_intent_hidden_fraction: 0.75
+    max_concurrent_background_vehicles: 80
+    delayed_spawn_retry_seconds: 2.0
+    exit_spot_reuse_delay: 20.0
+    entry_vehicle_agent_type: "rule_based"
+    exit_vehicle_agent_type: "rule_based"
 
     # Optional Qwen-VLA ego vehicle for closed-loop demos.
     spawn_qwen_ego: false
