@@ -46,6 +46,20 @@ def _safe_float(value, default=0.0):
         return default
 
 
+def _traffic_vehicle_role(event_type, agent_type):
+    event_type = str(event_type).lower()
+    agent_type = str(agent_type).lower()
+    if agent_type in VLA_AGENT_TYPES:
+        prefix = 'av'
+    elif agent_type == 'rule_based':
+        prefix = 'human_rule'
+    else:
+        prefix = 'human'
+    if event_type == 'exiting':
+        return prefix + '_exiting'
+    return prefix + '_entering'
+
+
 class SimulatorNodeParams(NodeParamTemplate):
     """
     template that stores all parameters needed for the node as well as default values
@@ -84,6 +98,8 @@ class SimulatorNodeParams(NodeParamTemplate):
         self.exit_spot_reuse_delay = 20.0
         self.entry_vehicle_agent_type = 'rule_based'
         self.exit_vehicle_agent_type = 'rule_based'
+        self.entry_vehicle_role = ''
+        self.exit_vehicle_role = ''
 
         self.spawn_qwen_ego = False
         self.qwen_ego_spawn_time = 0.5
@@ -388,6 +404,10 @@ class SimulatorNode(MPClabNode):
             'spawn_entering': _safe_int(self.spawn_entering, 0),
             'spawn_exiting': _safe_int(self.spawn_exiting, 0),
             'restore_obstacles_as_exit_vehicles': _as_bool(self.restore_obstacles_as_exit_vehicles),
+            'entry_vehicle_agent_type': str(self.entry_vehicle_agent_type),
+            'exit_vehicle_agent_type': str(self.exit_vehicle_agent_type),
+            'entry_vehicle_role': str(self.entry_vehicle_role),
+            'exit_vehicle_role': str(self.exit_vehicle_role),
             'human_intent_hidden_fraction': _safe_float(self.human_intent_hidden_fraction, 0.0),
             'events': self.traffic_schedule,
             'hidden_event_count': sum(1 for event in self.traffic_schedule if not event.get('intent_observable', True)),
@@ -509,7 +529,7 @@ class SimulatorNode(MPClabNode):
         self.add_vehicle(
             chosen_spot,
             agent_type=str(self.entry_vehicle_agent_type),
-            vehicle_role='rule_entering',
+            vehicle_role=str(self.entry_vehicle_role) or _traffic_vehicle_role('entering', self.entry_vehicle_agent_type),
             intent_observable=bool(event.get('intent_observable', True)),
             intent_label='enter:spot_%d' % chosen_spot,
             spawn_event_id=str(event.get('event_id', '')),
@@ -537,7 +557,7 @@ class SimulatorNode(MPClabNode):
         self.add_vehicle(
             -1 * chosen_spot,
             agent_type=str(self.exit_vehicle_agent_type),
-            vehicle_role='rule_exiting',
+            vehicle_role=str(self.exit_vehicle_role) or _traffic_vehicle_role('exiting', self.exit_vehicle_agent_type),
             intent_observable=bool(event.get('intent_observable', True)),
             intent_label='exit:spot_%d' % chosen_spot,
             spawn_event_id=str(event.get('event_id', '')),

@@ -1,5 +1,7 @@
 import threading
 
+from parksim.vla.fleet_client import QwenFleetPolicyClient
+from parksim.vla.fleet_schema import VLAFleetContext
 from parksim.vla.qwen_client import QwenPolicyClient
 from parksim.vla.qwen_service import QwenVLAInferenceService, make_handler
 from parksim.vla.schema import VLAActionType, VLACandidateAction, VLAContext
@@ -14,9 +16,10 @@ def main():
     thread.start()
     endpoint = "http://127.0.0.1:%d/v1/chat/completions" % server.server_port
     client = QwenPolicyClient(endpoint=endpoint, timeout=2.0)
+    fleet_client = QwenFleetPolicyClient(endpoint=endpoint, timeout=2.0)
     context = VLAContext(
         instruction="choose action",
-        state={"ego": {"task": None}},
+        state={"ego": {"vehicle_id": 1, "task": None}},
         valid_actions=[
             VLACandidateAction(action_id="wait_2s", action_type=VLAActionType.WAIT, duration=2.0, features={"bundle_cost": 5.0}),
             VLACandidateAction(
@@ -38,6 +41,11 @@ def main():
     )
     try:
         decision = client.decide(context)
+        fleet_response = fleet_client.decide_fleet(VLAFleetContext(
+            instruction="coordinate automated vehicles",
+            state={"cloud_policy_role": "fleet_level_qwen_vla_server"},
+            vehicle_contexts=[context],
+        ))
     finally:
         server.shutdown()
         thread.join(timeout=2.0)
@@ -45,6 +53,7 @@ def main():
     assert decision.target_spot_index == 2, decision
     assert decision.reason_code == "YIELD_TRAFFIC", decision
     assert not decision.used_fallback, decision
+    assert fleet_response.decision_for(1).action_id == "yield_2s_then_cruise_to_spot_2", fleet_response.to_dict()
     print("parksim.vla qwen service smoke ok")
 
 

@@ -15,6 +15,9 @@ SPAWN_TIME="${PARKSIM_BENCH_SPAWN_TIME:-0.5}"
 SPAWN_ENTERING="${PARKSIM_BENCH_SPAWN_ENTERING:-0}"
 SPAWN_EXITING="${PARKSIM_BENCH_SPAWN_EXITING:-0}"
 TRAFFIC_FLOW_MODE="${PARKSIM_BENCH_TRAFFIC_FLOW_MODE:-legacy}"
+FLEET_CONTROL_MODE="${PARKSIM_BENCH_FLEET_CONTROL_MODE:-cloud_av}"
+ENTRY_VEHICLE_AGENT_TYPE="${PARKSIM_BENCH_ENTRY_VEHICLE_AGENT_TYPE:-__agent__}"
+EXIT_VEHICLE_AGENT_TYPE="${PARKSIM_BENCH_EXIT_VEHICLE_AGENT_TYPE:-__agent__}"
 LONG_HORIZON_DURATION="${PARKSIM_BENCH_LONG_HORIZON_DURATION:-${DURATION%s}}"
 RESTORE_OBSTACLES_AS_EXIT_VEHICLES="${PARKSIM_BENCH_RESTORE_OBSTACLES_AS_EXIT_VEHICLES:-false}"
 STATIC_OBSTACLE_EXIT_FRACTION="${PARKSIM_BENCH_STATIC_OBSTACLE_EXIT_FRACTION:-0.35}"
@@ -64,7 +67,7 @@ set -u
 qwen_pid=""
 GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 GIT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown)"
-export ROOT GIT_COMMIT GIT_BRANCH DURATION AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING TRAFFIC_FLOW_MODE LONG_HORIZON_DURATION RESTORE_OBSTACLES_AS_EXIT_VEHICLES STATIC_OBSTACLE_EXIT_FRACTION STATIC_OBSTACLE_EXIT_MAX STATIC_OBSTACLE_EXIT_START_TIME LONG_HORIZON_ENTER_INTERVAL_MEAN LONG_HORIZON_EXIT_INTERVAL_MEAN HUMAN_INTENT_HIDDEN_FRACTION MAX_CONCURRENT_BACKGROUND_VEHICLES DELAYED_SPAWN_RETRY_SECONDS EXIT_SPOT_REUSE_DELAY QWEN_PERIODIC_REPLAN CONTROLLED_EGO_BLOCKS_ENTRANCE QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT EARLY_STOP EARLY_STOP_POLL_SECONDS EARLY_STOP_GRACE_SECONDS CLEAR_OUT_DIR
+export ROOT GIT_COMMIT GIT_BRANCH DURATION AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING TRAFFIC_FLOW_MODE FLEET_CONTROL_MODE ENTRY_VEHICLE_AGENT_TYPE EXIT_VEHICLE_AGENT_TYPE LONG_HORIZON_DURATION RESTORE_OBSTACLES_AS_EXIT_VEHICLES STATIC_OBSTACLE_EXIT_FRACTION STATIC_OBSTACLE_EXIT_MAX STATIC_OBSTACLE_EXIT_START_TIME LONG_HORIZON_ENTER_INTERVAL_MEAN LONG_HORIZON_EXIT_INTERVAL_MEAN HUMAN_INTENT_HIDDEN_FRACTION MAX_CONCURRENT_BACKGROUND_VEHICLES DELAYED_SPAWN_RETRY_SECONDS EXIT_SPOT_REUSE_DELAY QWEN_PERIODIC_REPLAN CONTROLLED_EGO_BLOCKS_ENTRANCE QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT EARLY_STOP EARLY_STOP_POLL_SECONDS EARLY_STOP_GRACE_SECONDS CLEAR_OUT_DIR
 
 prepare_out_dir() {
   mkdir -p "$OUT_DIR"
@@ -114,6 +117,9 @@ payload = {
     "spawn_entering": os.environ.get("SPAWN_ENTERING", ""),
     "spawn_exiting": os.environ.get("SPAWN_EXITING", ""),
     "traffic_flow_mode": os.environ.get("TRAFFIC_FLOW_MODE", ""),
+    "fleet_control_mode": os.environ.get("FLEET_CONTROL_MODE", ""),
+    "entry_vehicle_agent_type": os.environ.get("ENTRY_VEHICLE_AGENT_TYPE", ""),
+    "exit_vehicle_agent_type": os.environ.get("EXIT_VEHICLE_AGENT_TYPE", ""),
     "long_horizon_duration": os.environ.get("LONG_HORIZON_DURATION", ""),
     "restore_obstacles_as_exit_vehicles": os.environ.get("RESTORE_OBSTACLES_AS_EXIT_VEHICLES", ""),
     "static_obstacle_exit_fraction": os.environ.get("STATIC_OBSTACLE_EXIT_FRACTION", ""),
@@ -327,8 +333,22 @@ run_episode() {
   local log_dir="$run_dir/logs"
   local sim_log="$run_dir/simulator.log"
   local qwen_endpoint_param="${QWEN_ENDPOINT:-http://127.0.0.1:0/v1/chat/completions}"
+  local entry_agent="$ENTRY_VEHICLE_AGENT_TYPE"
+  local exit_agent="$EXIT_VEHICLE_AGENT_TYPE"
+  local entry_role=""
+  local exit_role=""
+  if [[ "$FLEET_CONTROL_MODE" == "cloud_av" ]]; then
+    if [[ "$entry_agent" == "__agent__" ]]; then
+      entry_agent="$agent"
+    fi
+    if [[ "$exit_agent" == "__agent__" ]]; then
+      exit_agent="$agent"
+    fi
+    entry_role="av_entering"
+    exit_role="av_exiting"
+  fi
   mkdir -p "$log_dir"
-  echo "running scenario=$scenario_id agent=$agent -> $run_dir"
+  echo "running scenario=$scenario_id agent=$agent fleet_mode=$FLEET_CONTROL_MODE entry_agent=$entry_agent exit_agent=$exit_agent -> $run_dir"
   cleanup_ros_processes
   set +e
   local early_stop_triggered=0
@@ -343,6 +363,10 @@ run_episode() {
     -p spawn_entering:="$SPAWN_ENTERING" \
     -p spawn_exiting:="$SPAWN_EXITING" \
     -p traffic_flow_mode:="$TRAFFIC_FLOW_MODE" \
+    -p entry_vehicle_agent_type:="$entry_agent" \
+    -p exit_vehicle_agent_type:="$exit_agent" \
+    -p entry_vehicle_role:="$entry_role" \
+    -p exit_vehicle_role:="$exit_role" \
     -p long_horizon_duration:="$LONG_HORIZON_DURATION" \
     -p restore_obstacles_as_exit_vehicles:="$RESTORE_OBSTACLES_AS_EXIT_VEHICLES" \
     -p static_obstacle_exit_fraction:="$STATIC_OBSTACLE_EXIT_FRACTION" \

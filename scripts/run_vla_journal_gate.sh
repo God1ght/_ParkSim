@@ -9,4 +9,4 @@ fi
 SUITE_DIR="$1"
 shift
 
-exec env PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}"   python3 -m parksim.vla.paper_gate "$SUITE_DIR" --profile journal --strict "$@"
+exec env PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" python3 -m parksim.vla.paper_gate "$SUITE_DIR" --profile trc --strict "$@"

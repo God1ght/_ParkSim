@@ -1,6 +1,6 @@
 # ParkSim VLA Prototype
 
-This package implements a high-level VLA decision layer for ParkSim. The model chooses task-level actions such as waiting, selecting a parking spot, cruising to a spot, rerouting, or parking. Low-level steering and acceleration remain handled by the existing ParkSim rule-based planner and Stanley controller.
+This package implements a high-level VLA decision layer for ParkSim. In the TR-C paper workflow, Qwen-VLA is treated as a cloud fleet coordinator for automated parking vehicles, while replay/rule-random/mixed vehicles represent human-driven background traffic with partially hidden intent. The model chooses task-level actions such as waiting, selecting a parking spot, cruising to a spot, rerouting, parking, or exiting. Low-level steering and acceleration remain handled by the existing ParkSim rule-based planner and Stanley controller.
 
 The Qwen endpoint is optional for smoke testing. If it is unset or unavailable, the policy falls back to a deterministic valid action so that ROS integration can be tested before a local Qwen-VL service is deployed.
 
@@ -44,7 +44,9 @@ Set `QWEN_MODEL_ID`, `QWEN_MODEL_CACHE`, `QWEN_VLA_PORT`, `QWEN_TORCH_DTYPE`, `Q
 
 ## Qwen Decision Context
 
-Each VLA decision uploads a versioned `ParkSim-Qwen-VLA-Decision-v1` decision packet plus an optional BEV image. Qwen must return only strict JSON with `action_id`, `target_spot_index`, `reason_code`, `reason`, and `confidence`.
+Each Qwen-controlled vehicle uses the shared cloud endpoint. The default runtime packet is `ParkSim-Qwen-VLA-Fleet-Decision-v1`, which asks Qwen to return strict JSON with `fleet_decisions`. Each item contains `vehicle_id`, `action_id`, `target_spot_index`, `priority`, `reason_code`, `reason`, and `confidence`. The older `ParkSim-Qwen-VLA-Decision-v1` single-vehicle packet is retained for compatibility and smoke tests.
+
+The fleet decision packet contains `automated_vehicle_ids`, one `automated_vehicles` entry per AV needing a high-level decision, parking-lot-level state, and optional BEV evidence. Current ROS vehicle nodes trigger requests independently, but all Qwen-VLA AVs share the same cloud service and log fleet packets. The suite runner can set scheduled entering/exiting vehicles to the evaluated agent, so `qwen_vla` means all automated entering/exiting vehicles are served by the same Qwen cloud endpoint; replay/rule vehicles remain non-Qwen human-like traffic.
 
 The required structured fields are:
 
@@ -70,6 +72,8 @@ Bundle-aware baseline agents are available as `bundle_risk_aware`, `conflict_awa
 Audit decision logs with `python -m parksim.vla.decision_audit <benchmark-or-log> --out-dir <audit-dir> --strict`. This is the paper-facing check for protocol version, prompt version, valid action membership, target consistency, reason code coverage, shield rejections, and unsafe applied parking spots.
 
 Use `python -m parksim.vla.paper_gate <suite-dir> --profile pilot --strict` to verify that a suite is structurally valid for pilot evidence. Use `--profile paper` to check paper-scale coverage requirements such as all baseline agents, at least three seeds, full background/density coverage, statistical report outputs, real Qwen health, and zero unsafe applied actions by the reference Qwen-VLA agent.
+
+Use `--profile trc` for Transportation Research Part C oriented evidence. This profile is CSV/JSON-first: it checks fleet efficiency, operational safety, cloud-coordination, mixed-human-traffic, online-cost metrics, real Qwen health, decision audits, video evidence, and open-science manifests. It does not require a TeX manuscript; manuscript writing should be based on the CSV/JSON analysis outputs.
 
 ## Policy comparison artifacts
 
@@ -100,7 +104,7 @@ Key overrides:
 - `PARKSIM_LONG_HIDDEN_INTENT_FRACTION`: fraction of rule-agent intentions hidden from the VLA state.
 - `PARKSIM_LONG_MAX_CONCURRENT_BACKGROUND_VEHICLES`: cap on scheduled background traffic.
 
-Each run writes `traffic_schedule.json`, `traffic_events.jsonl`, vehicle traces with `vehicle_role` and `intent_observable`, and system-level conflict metrics such as `system_near_miss_event_count`, `trajectory_conflict_event_count`, and `mixed_intent_conflict_event_count`. Default long-horizon agents now include `rule_based`, `greedy_nearest`, `greedy_shortest_path`, `risk_aware_rule`, `bundle_risk_aware`, `conflict_aware_bundle`, `reservation_bundle`, `rolling_horizon_bundle`, `centralized_min_cost`, `oracle_intent_bundle`, and `qwen_vla`.
+Each run writes `traffic_schedule.json`, `traffic_events.jsonl`, vehicle traces with `vehicle_role` and `intent_observable`, and system-level conflict metrics such as `system_near_miss_event_count`, `trajectory_conflict_event_count`, and `mixed_intent_conflict_event_count`. Fleet-control runs also write `automated_vehicle_count`, `cloud_served_vehicle_count`, `human_like_vehicle_count`, `cloud_fleet_decision_count`, and `cloud_fleet_vehicle_decision_count` into `metrics.csv` and the aggregated paper CSV files. Default long-horizon agents now include `rule_based`, `greedy_nearest`, `greedy_shortest_path`, `risk_aware_rule`, `bundle_risk_aware`, `conflict_aware_bundle`, `reservation_bundle`, `rolling_horizon_bundle`, `centralized_min_cost`, `oracle_intent_bundle`, and `qwen_vla`.
 
 
 ### Paper Baseline Interpretation

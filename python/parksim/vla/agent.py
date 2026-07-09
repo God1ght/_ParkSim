@@ -13,6 +13,9 @@ from parksim.vla.action_space import apply_candidate_action, build_candidate_act
 from parksim.vla.baselines import make_baseline_decision
 from parksim.vla.bev_encoder import save_bev_png
 from parksim.vla.decision_protocol import build_decision_packet
+from parksim.vla.fleet_client import QwenFleetPolicyClient
+from parksim.vla.fleet_protocol import build_fleet_decision_packet
+from parksim.vla.fleet_schema import fleet_context_for_single_vehicle
 from parksim.vla.qwen_client import QwenPolicyClient
 from parksim.vla.schema import VLAContext, VLADecision
 from parksim.vla.shield import VLASafetyShield
@@ -54,6 +57,7 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
             intent_predictor=None,
         )
         self.qwen_client = QwenPolicyClient(endpoint=qwen_endpoint, model=qwen_model, timeout=qwen_timeout)
+        self.qwen_fleet_client = QwenFleetPolicyClient(endpoint=qwen_endpoint, model=qwen_model, timeout=qwen_timeout)
         self.vla_shield = VLASafetyShield()
         self.decision_period = float(decision_period)
         self.max_candidate_spots = int(max_candidate_spots)
@@ -65,6 +69,8 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         self._last_vla_decision_time = float("-inf")
         self._inside_vla_apply = False
         self._latest_solve_time = 0.0
+        self._last_fleet_context = None
+        self._last_fleet_response = None
 
     def execute_next_task(self):
         if len(self.task_profile) > 0 or self._inside_vla_apply:
@@ -138,6 +144,8 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
             valid_actions=actions,
             bev_image_path=bev_path or None,
         )
+        self._last_fleet_context = None
+        self._last_fleet_response = None
         decision_started = time.time()
         decision = self._decide(context)
         latency_seconds = time.time() - decision_started
@@ -159,23 +167,48 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         return True
 
     def _decide(self, context: VLAContext) -> VLADecision:
-        return self.qwen_client.decide(context)
+        fleet_context = fleet_context_for_single_vehicle(context)
+        fleet_response = self.qwen_fleet_client.decide_fleet(fleet_context)
+        self._last_fleet_context = fleet_context
+        self._last_fleet_response = fleet_response
+        state = context.state if isinstance(context.state, dict) else {}
+        ego = state.get("ego", {}) if isinstance(state, dict) else {}
+        vehicle_id = int(ego.get("vehicle_id", self.vehicle_id))
+        fleet_decision = fleet_response.decision_for(vehicle_id)
+        if fleet_decision is None:
+            fallback = self.qwen_client.decide(context)
+            fallback.used_fallback = True
+            fallback.reason = "fleet response missing this vehicle; " + fallback.reason
+            return fallback
+        return fleet_decision.to_vla_decision()
 
     def _log_decision(self, time_value: float, trigger_reason: str, context: VLAContext, decision: VLADecision, shield_reason: str, action: Any, latency_seconds: float = 0.0) -> None:
         if not self.decision_log_path:
             return
         decision_packet = build_decision_packet(context)
+        fleet_packet = None
+        fleet_response = None
+        if self._last_fleet_context is not None:
+            fleet_packet = build_fleet_decision_packet(self._last_fleet_context)
+        if self._last_fleet_response is not None:
+            fleet_response = self._last_fleet_response.to_dict()
         record = {
             "time": time_value,
             "trigger_reason": trigger_reason,
+            "cloud_decision_scope": "fleet_level_qwen_vla_server",
+            "fleet_vehicle_id": int(self.vehicle_id),
             "protocol_version": decision_packet.get("protocol_version"),
             "prompt_version": decision_packet.get("prompt_version"),
+            "fleet_protocol_version": fleet_packet.get("protocol_version") if fleet_packet else None,
+            "fleet_prompt_version": fleet_packet.get("prompt_version") if fleet_packet else None,
             "valid_action_ids": decision_packet.get("valid_action_ids", []),
             "decision": decision.to_dict(),
             "shield_reason": shield_reason,
             "latency_seconds": float(latency_seconds),
             "applied_action": action.to_dict() if action is not None else None,
             "decision_packet": decision_packet,
+            "fleet_decision_packet": fleet_packet,
+            "fleet_response": fleet_response,
             "context": context.to_dict(),
         }
         path = Path(self.decision_log_path)

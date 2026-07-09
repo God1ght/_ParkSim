@@ -51,6 +51,24 @@ PROFILE_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "max_reference_unsafe_actions": 0.0,
         "max_reference_collision_proxy": 0.0,
     },
+    "trc": {
+        "required_agents": ["rule_based", "greedy_nearest", "greedy_shortest_path", "risk_aware_rule", "bundle_risk_aware", "conflict_aware_bundle", "reservation_bundle", "rolling_horizon_bundle", "centralized_min_cost", "oracle_intent_bundle", "qwen_vla"],
+        "min_agents": 11,
+        "min_seeds": 5,
+        "min_background_modes": 3,
+        "min_density_labels": 5,
+        "min_spawn_profiles": 4,
+        "min_scenarios": 55,
+        "min_rows": 605,
+        "require_real_qwen": True,
+        "require_manuscript": False,
+        "require_video_evidence": True,
+        "require_oracle_upper_bound": True,
+        "require_open_science": True,
+        "require_cloud_fleet": True,
+        "max_reference_unsafe_actions": 0.0,
+        "max_reference_collision_proxy": 0.0,
+    },
 }
 
 REQUIRED_MANUSCRIPT_FILES = [
@@ -71,7 +89,20 @@ REQUIRED_METRIC_COLUMNS = [
     "shield_rejection_count",
     "qwen_fallback_count",
     "qwen_latency_mean",
+    "automated_vehicle_count",
+    "cloud_served_vehicle_count",
+    "human_like_vehicle_count",
+    "cloud_fleet_decision_count",
+    "cloud_fleet_vehicle_decision_count",
 ]
+
+TRC_METRIC_GROUPS = {
+    "fleet_efficiency": ["completed", "path_length", "total_non_idle_time", "waiting_time", "traffic_spawned_count"],
+    "operational_safety": ["system_near_miss_event_count", "system_collision_proxy_event_count", "trajectory_conflict_event_count", "mixed_intent_conflict_event_count"],
+    "cloud_coordination": ["automated_vehicle_count", "cloud_served_vehicle_count", "cloud_fleet_decision_count", "shield_rejection_count", "qwen_fallback_count"],
+    "mixed_human_traffic": ["human_like_vehicle_count", "replay_vehicle_count", "hidden_intent_vehicle_count"],
+    "online_cost": ["qwen_latency_mean"],
+}
 
 REQUIRED_REPORT_FILES = [
     "paper_rows.csv",
@@ -84,6 +115,14 @@ REQUIRED_REPORT_FILES = [
     "paper_summary.md",
     "paper_table.tex",
     "paper_report_manifest.json",
+]
+
+TRC_ANALYSIS_FILES = [
+    "trc_metric_group_summary.csv",
+    "trc_reference_improvements.csv",
+    "trc_stratified_findings.csv",
+    "trc_key_findings.md",
+    "trc_analysis_manifest.json",
 ]
 
 
@@ -218,6 +257,9 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
 
     missing_files = [name for name in REQUIRED_REPORT_FILES if not (resolved_report_dir / name).exists()]
     gate.require("required_report_files", not missing_files, "all paper report artifacts must exist", {"missing": missing_files, "report_dir": str(resolved_report_dir)})
+    if profile == "trc":
+        missing_trc_analysis = [name for name in TRC_ANALYSIS_FILES if not (resolved_report_dir / name).exists()]
+        gate.require("trc_csv_first_analysis_files", not missing_trc_analysis, "TR-C profile requires CSV-first analysis outputs generated from paper_report CSV files", {"missing": missing_trc_analysis, "report_dir": str(resolved_report_dir)})
 
     if bool(config.get("require_manuscript", False)):
         repo_root = Path(__file__).resolve().parents[3]
@@ -231,6 +273,13 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
         metric_columns = set()
     missing_metric_columns = sorted(set(REQUIRED_METRIC_COLUMNS) - metric_columns)
     gate.require("required_metric_columns", not missing_metric_columns, "paper rows must include safety, efficiency, decision, and latency metrics", {"missing": missing_metric_columns})
+    if bool(config.get("require_cloud_fleet", False)):
+        missing_groups: Dict[str, List[str]] = {}
+        for group, columns in TRC_METRIC_GROUPS.items():
+            missing = [column for column in columns if column not in metric_columns]
+            if missing:
+                missing_groups[group] = missing
+        gate.require("trc_csv_metric_groups", not missing_groups, "TR-C CSV-first evidence requires fleet efficiency, safety, coordination, mixed-human-traffic, and online-cost metric groups", {"missing_groups": missing_groups})
 
     agents = set(repro.get("agents") or _csv_values(rows, "agent_type"))
     required_agents = set(config["required_agents"])
@@ -275,6 +324,13 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
     gate.require("qwen_health_ok", qwen_ok, "Qwen health payload must be present and ok", {"qwen": qwen})
     qwen_decision_logs = list(suite_dir.glob("**/qwen_vla_decisions.jsonl"))
     gate.require("qwen_decision_logs", bool(qwen_decision_logs), "Qwen/baseline decision logs must be present for replayable audit", {"log_count": len(qwen_decision_logs)})
+    if bool(config.get("require_cloud_fleet", False)):
+        fleet_protocol_records = 0
+        fleet_vehicle_decisions = 0
+        for row in rows:
+            fleet_protocol_records += int(_safe_float(row.get("cloud_fleet_decision_count")))
+            fleet_vehicle_decisions += int(_safe_float(row.get("cloud_fleet_vehicle_decision_count")))
+        gate.require("cloud_fleet_decision_logs", fleet_protocol_records > 0 and fleet_vehicle_decisions > 0, "TR-C profile requires cloud fleet decision packets and fleet vehicle decisions in CSV evidence", {"cloud_fleet_decision_count": fleet_protocol_records, "cloud_fleet_vehicle_decision_count": fleet_vehicle_decisions})
     decision_audits = list(suite_dir.glob("**/decision_audit.json"))
     gate.require("decision_audit_artifacts", bool(decision_audits), "decision audit artifacts must be present", {"audit_count": len(decision_audits)})
     if bool(config.get("require_video_evidence", False)):
@@ -283,6 +339,21 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
     if bool(config["require_real_qwen"]):
         is_mock = bool(isinstance(qwen_health, dict) and qwen_health.get("mock"))
         gate.require("real_qwen_required", qwen_ok and not is_mock, "paper profile requires real Qwen, not mock mode", {"qwen_health": qwen_health})
+    if bool(config.get("require_open_science", False)):
+        repo_root = Path(__file__).resolve().parents[3]
+        protocol_path = repo_root / "python" / "parksim" / "vla" / "benchmark_protocol.json"
+        missing_open_files = [
+            str(path) for path in [
+                resolved_report_dir / "paper_rows.csv",
+                resolved_report_dir / "paper_reproducibility.json",
+                resolved_report_dir / "paper_report_manifest.json",
+                suite_dir / "suite_config.json",
+                suite_dir / "suite_manifest.json",
+            ]
+            if not path.exists()
+        ]
+        gate.require("open_science_protocol", protocol_path.exists(), "TR-C profile requires an explicit benchmark protocol for transferability and benchmarking", {"path": str(protocol_path)})
+        gate.require("open_science_csv_json_exports", not missing_open_files, "TR-C profile requires reusable CSV/JSON result exports before manuscript writing", {"missing": missing_open_files})
 
     reference_summary = next((row for row in summary_rows if row.get("agent_type") == reference_agent), None)
     if reference_summary:

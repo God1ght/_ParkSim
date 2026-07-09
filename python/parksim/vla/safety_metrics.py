@@ -57,6 +57,7 @@ def collect_system_traffic_metrics(
 ) -> Dict[str, Any]:
     traces: List[Tuple[Path, List[Dict[str, Any]]]] = []
     roles: Dict[str, str] = {}
+    agent_types: Dict[str, str] = {}
     intent_observable: Dict[str, bool] = {}
     completed = 0
     for summary_path in sorted(log_dir.glob("vehicle_*_summary.json")):
@@ -67,6 +68,7 @@ def collect_system_traffic_metrics(
         vehicle_id = str(summary.get("vehicle_id", ""))
         if vehicle_id:
             roles[vehicle_id] = str(summary.get("vehicle_role") or "unknown")
+            agent_types[vehicle_id] = str(summary.get("agent_type") or "unknown")
             intent_observable[vehicle_id] = bool(summary.get("intent_observable", True))
         if summary.get("completed") is True:
             completed += 1
@@ -78,6 +80,7 @@ def collect_system_traffic_metrics(
         vehicle_id = str(first.get("vehicle_id", ""))
         if vehicle_id:
             roles.setdefault(vehicle_id, str(first.get("vehicle_role") or "unknown"))
+            agent_types.setdefault(vehicle_id, str(first.get("agent_type") or "unknown"))
             intent_observable.setdefault(vehicle_id, bool(first.get("intent_observable", True)))
         traces.append((trace_path, rows))
 
@@ -98,9 +101,13 @@ def collect_system_traffic_metrics(
     metrics = {
         "total_vehicle_trace_count": len(traces),
         "completed_vehicle_count": int(completed),
-        "entering_vehicle_count": sum(1 for role in roles.values() if role in ("rule_entering", "controlled_ego")),
-        "exiting_vehicle_count": sum(1 for role in roles.values() if role == "rule_exiting"),
+        "entering_vehicle_count": sum(1 for role in roles.values() if _is_entering_role(role)),
+        "exiting_vehicle_count": sum(1 for role in roles.values() if _is_exiting_role(role)),
+        "automated_vehicle_count": sum(1 for vehicle_id, role in roles.items() if _is_automated_vehicle(role, agent_types.get(vehicle_id, ""))),
+        "cloud_served_vehicle_count": sum(1 for vehicle_id, role in roles.items() if _is_automated_vehicle(role, agent_types.get(vehicle_id, "")) and str(agent_types.get(vehicle_id, "")).lower() == "qwen_vla"),
+        "human_like_vehicle_count": sum(1 for vehicle_id, role in roles.items() if not _is_automated_vehicle(role, agent_types.get(vehicle_id, ""))),
         "replay_vehicle_count": sum(1 for role in roles.values() if role == "replay_background"),
+        "human_rule_vehicle_count": sum(1 for role in roles.values() if str(role).startswith("human_rule_")),
         "hidden_intent_vehicle_count": sum(1 for visible in intent_observable.values() if not visible),
         "traffic_scheduled_count": len(schedule.get("events", [])) if isinstance(schedule, dict) else 0,
         "traffic_hidden_event_count": int(schedule.get("hidden_event_count", 0)) if isinstance(schedule, dict) else 0,
@@ -203,8 +210,43 @@ def _vehicle_id_from_rows(rows: List[Dict[str, Any]], path: Path) -> str:
 
 
 def _is_mixed_enter_exit_pair(left_role: str, right_role: str) -> bool:
-    pair = {str(left_role), str(right_role)}
-    return bool(("rule_entering" in pair or "controlled_ego" in pair) and "rule_exiting" in pair)
+    return bool((_is_entering_role(left_role) and _is_exiting_role(right_role)) or (_is_exiting_role(left_role) and _is_entering_role(right_role)))
+
+
+def _is_entering_role(role: str) -> bool:
+    role = str(role)
+    return role == "controlled_ego" or role.endswith("_entering") or role == "rule_entering"
+
+
+def _is_exiting_role(role: str) -> bool:
+    role = str(role)
+    return role.endswith("_exiting") or role == "rule_exiting"
+
+
+def _is_automated_agent(agent_type: str) -> bool:
+    return str(agent_type).lower() in {
+        "qwen_vla",
+        "greedy_nearest",
+        "greedy_shortest_path",
+        "risk_aware_rule",
+        "bundle_risk_aware",
+        "conflict_aware_bundle",
+        "min_bundle_cost",
+        "reservation_bundle",
+        "rolling_horizon_bundle",
+        "centralized_min_cost",
+        "oracle_intent_bundle",
+        "vla_baseline",
+    }
+
+
+def _is_automated_vehicle(role: str, agent_type: str) -> bool:
+    role = str(role)
+    if role == "controlled_ego" or role.startswith("av_"):
+        return True
+    if role.startswith("human_") or role == "replay_background":
+        return False
+    return _is_automated_agent(agent_type)
 
 def _load_other_traces(log_dir: Path, ego_trace_path: Path) -> List[Tuple[Path, List[Dict[str, Any]]]]:
     traces: List[Tuple[Path, List[Dict[str, Any]]]] = []
@@ -297,7 +339,28 @@ def _decision_safety_metrics(decisions: List[Dict[str, Any]]) -> Dict[str, Any]:
     candidate_counts: List[int] = []
     available_counts: List[int] = []
     occupied_or_unknown_counts: List[int] = []
+    cloud_fleet_decisions = 0
+    cloud_fleet_vehicle_decisions = 0
+    cloud_fleet_missing_self_decisions = 0
     for row in decisions:
+        fleet_packet = row.get("fleet_decision_packet") or {}
+        fleet_response = row.get("fleet_response") or {}
+        if fleet_packet:
+            cloud_fleet_decisions += 1
+            vehicle_ids = set(int(v) for v in fleet_packet.get("automated_vehicle_ids", []) if str(v).lstrip("-").isdigit())
+            fleet_items = fleet_response.get("fleet_decisions", []) if isinstance(fleet_response, dict) else []
+            if isinstance(fleet_items, list):
+                cloud_fleet_vehicle_decisions += len(fleet_items)
+                decided_ids = set()
+                for item in fleet_items:
+                    if not isinstance(item, dict):
+                        continue
+                    try:
+                        decided_ids.add(int(item.get("vehicle_id")))
+                    except Exception:
+                        pass
+                if vehicle_ids and not vehicle_ids.issubset(decided_ids):
+                    cloud_fleet_missing_self_decisions += 1
         action = row.get("applied_action") or {}
         features = action.get("features") or {}
         if action.get("target_spot_index") is not None:
@@ -335,6 +398,9 @@ def _decision_safety_metrics(decisions: List[Dict[str, Any]]) -> Dict[str, Any]:
         "candidate_action_count_mean": _mean(candidate_counts),
         "available_candidate_count_mean": _mean(available_counts),
         "blocked_candidate_count_mean": _mean(occupied_or_unknown_counts),
+        "cloud_fleet_decision_count": int(cloud_fleet_decisions),
+        "cloud_fleet_vehicle_decision_count": int(cloud_fleet_vehicle_decisions),
+        "cloud_fleet_missing_vehicle_decision_count": int(cloud_fleet_missing_self_decisions),
     }
 
 

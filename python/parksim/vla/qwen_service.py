@@ -79,6 +79,34 @@ def valid_actions_from_context(context: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [action for action in actions if isinstance(action, dict) and action.get("action_id")]
 
 
+def is_fleet_context(context: Dict[str, Any]) -> bool:
+    vehicles = context.get("automated_vehicles")
+    vehicle_ids = context.get("automated_vehicle_ids")
+    return isinstance(vehicles, list) or isinstance(vehicle_ids, list)
+
+
+def fleet_vehicles_from_context(context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    vehicles = context.get("automated_vehicles", [])
+    if not isinstance(vehicles, list):
+        return []
+    output: List[Dict[str, Any]] = []
+    for vehicle in vehicles:
+        if not isinstance(vehicle, dict):
+            continue
+        try:
+            vehicle_id = int(vehicle.get("vehicle_id"))
+        except Exception:
+            continue
+        actions = vehicle.get("valid_actions", [])
+        if not isinstance(actions, list):
+            actions = []
+        output.append({
+            "vehicle_id": vehicle_id,
+            "valid_actions": [action for action in actions if isinstance(action, dict) and action.get("action_id")],
+        })
+    return output
+
+
 def choose_fallback_action(actions: Sequence[Dict[str, Any]]) -> Tuple[str, str]:
     if not actions:
         return "", "no valid action was provided"
@@ -211,6 +239,108 @@ def normalize_decision(text: str, actions: Sequence[Dict[str, Any]]) -> Dict[str
     }
 
 
+def normalize_fleet_decisions(text: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    parsed = first_json_object(text)
+    raw_decisions = parsed.get("fleet_decisions") if isinstance(parsed, dict) else None
+    if raw_decisions is None and isinstance(parsed, dict):
+        raw_decisions = parsed.get("decisions")
+    if raw_decisions is None and isinstance(parsed, dict) and parsed.get("action_id") is not None:
+        vehicles = fleet_vehicles_from_context(context)
+        vehicle_id = vehicles[0]["vehicle_id"] if vehicles else -1
+        raw_decisions = [dict(parsed, vehicle_id=vehicle_id)]
+    if not isinstance(raw_decisions, list):
+        raw_decisions = []
+    raw_by_vehicle: Dict[int, Dict[str, Any]] = {}
+    for item in raw_decisions:
+        if not isinstance(item, dict):
+            continue
+        try:
+            raw_by_vehicle[int(item.get("vehicle_id"))] = item
+        except Exception:
+            continue
+
+    output: List[Dict[str, Any]] = []
+    reserved_targets: Dict[int, int] = {}
+    for priority, vehicle in enumerate(fleet_vehicles_from_context(context)):
+        vehicle_id = int(vehicle["vehicle_id"])
+        actions = vehicle["valid_actions"]
+        raw = raw_by_vehicle.get(vehicle_id, {})
+        decision = _normalize_fleet_vehicle_decision(raw, actions, vehicle_id, priority)
+        target = decision.get("target_spot_index")
+        if target is not None:
+            spot = abs(int(target))
+            if spot in reserved_targets:
+                fallback_id, fallback_reason = choose_fallback_action(_actions_without_reserved(actions, reserved_targets))
+                selected = action_by_id(actions, fallback_id)
+                decision = {
+                    "vehicle_id": vehicle_id,
+                    "action_id": fallback_id,
+                    "target_spot_index": action_target(selected),
+                    "priority": priority,
+                    "reason_code": "FALLBACK_OR_RECOVERY",
+                    "reason": "fleet duplicate target %s already assigned to vehicle %s; %s" % (spot, reserved_targets[spot], fallback_reason),
+                    "confidence": 0.0,
+                    "used_fallback": True,
+                }
+                target = decision.get("target_spot_index")
+            if target is not None:
+                reserved_targets[abs(int(target))] = vehicle_id
+        output.append(decision)
+    return {"fleet_decisions": output}
+
+
+def _normalize_fleet_vehicle_decision(raw: Dict[str, Any], actions: Sequence[Dict[str, Any]], vehicle_id: int, priority: int) -> Dict[str, Any]:
+    valid_ids = {str(action.get("action_id")) for action in actions}
+    action_id = str(raw.get("action_id", "")) if isinstance(raw, dict) else ""
+    reason = str(raw.get("reason", "")) if isinstance(raw, dict) else ""
+    reason_code = str(raw.get("reason_code", "")) if isinstance(raw, dict) else ""
+    parsed_target = int_or_none(raw.get("target_spot_index")) if isinstance(raw, dict) else None
+    try:
+        confidence = float(raw.get("confidence", 0.0)) if isinstance(raw, dict) else 0.0
+    except Exception:
+        confidence = 0.0
+    fallback = False
+    if action_id not in valid_ids:
+        fallback_id, fallback_reason = choose_fallback_action(actions)
+        reason = "model output invalid fleet action_id %r for vehicle %s; %s" % (action_id, vehicle_id, fallback_reason)
+        action_id = fallback_id
+        confidence = 0.0
+        fallback = True
+    selected = action_by_id(actions, action_id)
+    selected_target = action_target(selected)
+    if not fallback and parsed_target is not None and selected_target != parsed_target:
+        fallback_id, fallback_reason = choose_fallback_action(actions)
+        reason = "model output fleet target_spot_index %r mismatched action_id %r for vehicle %s; %s" % (parsed_target, action_id, vehicle_id, fallback_reason)
+        action_id = fallback_id
+        selected = action_by_id(actions, action_id)
+        selected_target = action_target(selected)
+        confidence = 0.0
+        fallback = True
+    if not reason_code:
+        reason_code = reason_code_for_action(selected, fallback=fallback)
+    elif fallback:
+        reason_code = "FALLBACK_OR_RECOVERY"
+    return {
+        "vehicle_id": int(vehicle_id),
+        "action_id": action_id,
+        "target_spot_index": selected_target,
+        "priority": int(raw.get("priority", priority) if isinstance(raw, dict) else priority),
+        "reason_code": reason_code,
+        "reason": reason,
+        "confidence": clamp(confidence, 0.0, 1.0),
+        "used_fallback": bool(fallback),
+    }
+
+
+def _actions_without_reserved(actions: Sequence[Dict[str, Any]], reserved_targets: Dict[int, int]) -> List[Dict[str, Any]]:
+    output = []
+    for action in actions:
+        target = action_target(action)
+        if target is None or abs(int(target)) not in reserved_targets:
+            output.append(action)
+    return output or list(actions)
+
+
 def openai_response(model: str, decision: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": "parksim-qwen-vla-%d" % int(time.time() * 1000),
@@ -279,7 +409,7 @@ class QwenVLAInferenceService:
         model_id: str = DEFAULT_MODEL_ID,
         device_map: str = "auto",
         torch_dtype: str = "auto",
-        max_new_tokens: int = 128,
+        max_new_tokens: int = 512,
         mock: bool = False,
     ):
         self.model_id = resolve_model_id(model_id)
@@ -310,6 +440,13 @@ class QwenVLAInferenceService:
 
     def decide(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         context = extract_context(payload)
+        if is_fleet_context(context):
+            if self.mock:
+                return normalize_fleet_decisions("{}", context)
+            self.load()
+            messages = normalize_messages(payload.get("messages", []))
+            output = self._generate(messages)
+            return normalize_fleet_decisions(output, context)
         actions = valid_actions_from_context(context)
         if self.mock:
             action_id, reason = choose_fallback_action(actions)
@@ -394,7 +531,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-id", default=os.environ.get("QWEN_MODEL_ID", DEFAULT_MODEL_ID))
     parser.add_argument("--device-map", default=os.environ.get("QWEN_DEVICE_MAP", "auto"))
     parser.add_argument("--torch-dtype", default=os.environ.get("QWEN_TORCH_DTYPE", "auto"), choices=["auto", "bf16", "fp16"])
-    parser.add_argument("--max-new-tokens", type=int, default=int(os.environ.get("QWEN_MAX_NEW_TOKENS", "128")))
+    parser.add_argument("--max-new-tokens", type=int, default=int(os.environ.get("QWEN_MAX_NEW_TOKENS", "512")))
     parser.add_argument("--mock", action="store_true", help="Serve deterministic valid decisions without loading a model.")
     return parser
 
