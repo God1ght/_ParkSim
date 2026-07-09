@@ -64,7 +64,10 @@
     "paper_paired_delta_summary.csv",
     "paper_summary.md",
     "paper_table.tex",
-    "paper_report_manifest.json"
+    "paper_report_manifest.json",
+    "suite_config.json",
+    "benchmarks.jsonl",
+    "suite_manifest.json"
   ],
   "notes": [
     "All agents share the same lower-level A*/Stanley/parking executor unless the agent is the original rule_based controller.",
@@ -75,6 +78,9 @@
     "Visualizer video artifacts should be paired with video_manifest.json to bind videos, frame counts, simulation-time alignment, and metrics.",
     "Controlled ego vehicles block the entrance spawn gate by default, so random entering vehicles wait until the ego leaves the entrance region instead of spawning on top of it.",
     "Use python -m parksim.vla.paper_report to aggregate multiple validated benchmark directories into mean/std/95CI tables and paired deltas against a reference agent.",
-    "Cross-vehicle safety metrics synchronize traces by wall_time when available; per-vehicle relative time is used only as a fallback."
+    "Cross-vehicle safety metrics synchronize traces by wall_time when available; per-vehicle relative time is used only as a fallback.",
+    "Use scripts/run_vla_paper_suite.sh for paper-scale orchestration across background modes, density levels, seeds, and agents.",
+    "The suite runner delegates each condition to run_vla_benchmark.sh, validates each benchmark directory, and then calls parksim.vla.paper_report for final tables.",
+    "Paper-suite replay mode skips non-empty density configs by default because replay ignores random entering/exiting spawn density."
   ]
 }
