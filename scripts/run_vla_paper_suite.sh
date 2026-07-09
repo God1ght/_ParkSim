@@ -23,6 +23,8 @@ REQUIRE_COMPLETE="${PARKSIM_SUITE_REQUIRE_COMPLETE:-0}"
 REFERENCE_AGENT="${PARKSIM_SUITE_REFERENCE_AGENT:-qwen_vla}"
 REPLAY_ALL_DENSITIES="${PARKSIM_SUITE_REPLAY_ALL_DENSITIES:-0}"
 REPORT_NAME="${PARKSIM_SUITE_REPORT_NAME:-paper_report}"
+GATE_PROFILE="${PARKSIM_SUITE_GATE_PROFILE:-pilot}"
+GATE_STRICT="${PARKSIM_SUITE_GATE_STRICT:-0}"
 RESUME="${PARKSIM_SUITE_RESUME:-1}"
 DRY_RUN="${PARKSIM_SUITE_DRY_RUN:-0}"
 CONTINUE_ON_FAIL="${PARKSIM_SUITE_CONTINUE_ON_FAIL:-0}"
@@ -30,7 +32,9 @@ CONTINUE_ON_FAIL="${PARKSIM_SUITE_CONTINUE_ON_FAIL:-0}"
 mkdir -p "$OUT_DIR/benchmarks" "$OUT_DIR/reports"
 : > "$OUT_DIR/benchmarks.jsonl"
 : > "$OUT_DIR/failures.jsonl"
-rm -f "$OUT_DIR/qwen_health.json" "$OUT_DIR/qwen_service.log"
+if [[ "$RESUME" != "1" ]]; then
+  rm -f "$OUT_DIR/qwen_health.json" "$OUT_DIR/qwen_service.log"
+fi
 
 GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 GIT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown)"
@@ -63,6 +67,8 @@ payload = {
     "require_complete": os.environ.get("REQUIRE_COMPLETE", ""),
     "reference_agent": os.environ.get("REFERENCE_AGENT", ""),
     "replay_all_densities": os.environ.get("REPLAY_ALL_DENSITIES", ""),
+    "gate_profile": os.environ.get("GATE_PROFILE", ""),
+    "gate_strict": os.environ.get("GATE_STRICT", ""),
     "resume": os.environ.get("RESUME", ""),
     "dry_run": os.environ.get("DRY_RUN", ""),
     "continue_on_fail": os.environ.get("CONTINUE_ON_FAIL", ""),
@@ -262,6 +268,12 @@ manifest = {
         "table_tex": str(report_dir / "paper_table.tex"),
         "manifest": str(report_dir / "paper_report_manifest.json"),
     },
+    "paper_gate": {
+        "dir": str(out_dir / "reports" / "paper_gate"),
+        "json": str(out_dir / "reports" / "paper_gate" / "paper_gate.json"),
+        "markdown": str(out_dir / "reports" / "paper_gate" / "paper_gate.md"),
+        "exists": (out_dir / "reports" / "paper_gate" / "paper_gate.json").exists(),
+    },
     "qwen": {
         "mode": os.environ.get("QWEN_MODE", ""),
         "bench_mode": os.environ.get("QWEN_BENCH_MODE", ""),
@@ -280,7 +292,7 @@ print("suite_manifest=%s benchmarks=%d all_valid=%s" % (out_dir / "suite_manifes
 SUITE_MANIFEST_JSON
 }
 
-export ROOT GIT_COMMIT GIT_BRANCH AGENTS SEEDS BACKGROUND_MODES DENSITY_CONFIGS DURATION SPOT_INDEX QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT QWEN_STARTUP_TIMEOUT QWEN_PORT QWEN_BENCH_MODE QWEN_MANAGED QWEN_READY CONTROLLED_EGO_BLOCKS_ENTRANCE REQUIRE_COMPLETE REFERENCE_AGENT REPLAY_ALL_DENSITIES REPORT_NAME RESUME DRY_RUN CONTINUE_ON_FAIL
+export ROOT GIT_COMMIT GIT_BRANCH AGENTS SEEDS BACKGROUND_MODES DENSITY_CONFIGS DURATION SPOT_INDEX QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT QWEN_STARTUP_TIMEOUT QWEN_PORT QWEN_BENCH_MODE QWEN_MANAGED QWEN_READY CONTROLLED_EGO_BLOCKS_ENTRANCE REQUIRE_COMPLETE REFERENCE_AGENT REPLAY_ALL_DENSITIES REPORT_NAME GATE_PROFILE GATE_STRICT RESUME DRY_RUN CONTINUE_ON_FAIL
 write_suite_config
 
 benchmark_dirs=()
@@ -353,8 +365,13 @@ fi
 
 report_dir="$OUT_DIR/reports/$REPORT_NAME"
 PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" python3 -m parksim.vla.paper_report "$report_dir" --inputs "${benchmark_dirs[@]}" --reference-agent "$REFERENCE_AGENT"
+gate_args=("$OUT_DIR" --profile "$GATE_PROFILE")
+if [[ "$GATE_STRICT" == "1" ]]; then
+  gate_args+=(--strict)
+fi
+PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" python3 -m parksim.vla.paper_gate "${gate_args[@]}"
 write_suite_config
 write_suite_manifest
 
 echo "paper_suite_out_dir=$OUT_DIR"
-find "$OUT_DIR" -maxdepth 3 \( -name 'suite_manifest.json' -o -name 'suite_config.json' -o -name 'paper_summary.md' -o -name 'paper_table.tex' -o -name 'paper_report_manifest.json' -o -name 'paper_statistical_tests.csv' -o -name 'paper_stratified_summary.csv' -o -name 'paper_reproducibility.json' -o -name 'qwen_health.json' -o -name 'qwen_service.log' \) -print | sort
+find "$OUT_DIR" -maxdepth 3 \( -name 'suite_manifest.json' -o -name 'suite_config.json' -o -name 'paper_summary.md' -o -name 'paper_table.tex' -o -name 'paper_report_manifest.json' -o -name 'paper_statistical_tests.csv' -o -name 'paper_stratified_summary.csv' -o -name 'paper_reproducibility.json' -o -name 'paper_gate.json' -o -name 'paper_gate.md' -o -name 'qwen_health.json' -o -name 'qwen_service.log' \) -print | sort

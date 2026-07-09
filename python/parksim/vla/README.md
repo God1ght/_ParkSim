@@ -63,6 +63,8 @@ The action enumerator and safety shield both use the same `spot_status` layer. A
 
 Audit decision logs with `python -m parksim.vla.decision_audit <benchmark-or-log> --out-dir <audit-dir> --strict`. This is the paper-facing check for protocol version, prompt version, valid action membership, target consistency, reason code coverage, shield rejections, and unsafe applied parking spots.
 
+Use `python -m parksim.vla.paper_gate <suite-dir> --profile pilot --strict` to verify that a suite is structurally valid for pilot evidence. Use `--profile paper` to check paper-scale coverage requirements such as all baseline agents, at least three seeds, full background/density coverage, statistical report outputs, real Qwen health, and zero unsafe applied actions by the reference Qwen-VLA agent.
+
 ## Policy comparison artifacts
 
 Run a reproducible headless comparison between the baseline rule-based policy and the Qwen-VLA high-level policy:
