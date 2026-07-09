@@ -122,6 +122,29 @@ Baseline & 可观测性 & 作用 \\
 \subsection{统计检验}
 每个场景--种子--agent 组合应生成完整 episode、指标表、决策日志和可视化视频。论文表格建议报告均值、标准差、95\% 置信区间、paired delta、符号检验或 Wilcoxon 近似检验，以及 effect size。Qwen-VLA 的比较对象应优先选择 \texttt{bundle\_risk\_aware}、\texttt{reservation\_bundle}、\texttt{centralized\_min\_cost} 和 \texttt{oracle\_intent\_bundle}，而不是只与最近泊位规则比较。
 
+
+\section{期刊就绪性审计与联动优化}
+从高水平期刊论文标准看，当前工作需要同时满足代码可复现、实验统计充分和论文证据闭环三个条件。表~\ref{tab:readiness} 总结了当前主要不足及其联动优化。
+
+\begin{table*}[htbp]
+\caption{当前不足与联动优化}
+\label{tab:readiness}
+\centering
+\begin{tabular}{p{0.18\linewidth}p{0.33\linewidth}p{0.38\linewidth}}
+\toprule
+维度 & 当前不足 & 联动优化 \\
+\midrule
+代码 & 原 gate 未区分 pilot、paper 与 journal 证据等级 & 新增 \texttt{journal} profile，检查强 baseline、真实 Qwen、论文源文件、视频证据、决策日志和关键指标列。 \\
+实验 & 当前 smoke/pilot 结果不足以支撑显著性结论 & 使用 5 seeds、3 background modes、5 density levels 和多需求结构运行真实 Qwen journal suite；默认 replay 仅保留 empty 密度，因此形成 55 个 paired scenarios 和 605 行指标。 \\
+Baseline & 只与弱规则比较无法证明方法优势 & 将 \texttt{reservation\_bundle}、\texttt{centralized\_min\_cost}、\texttt{oracle\_intent\_bundle} 作为主要对照。 \\
+安全 & 大模型动作合法性需要可审计证据 & 保留 \texttt{valid\_actions}、safety shield、task semantic gating 和 \texttt{decision\_audit.json}。 \\
+论文 & 当前草稿仍缺真实结果表、图和案例分析 & 将 \texttt{paper\_report} 输出的均值、置信区间、paired test、视频案例写入结果章节。 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+当前不可宣称 Qwen-VLA 已经在 paper-scale 上显著优于所有强 baseline；只有在 \texttt{journal} gate 通过并完成真实 Qwen 大规模统计后，才能给出期刊论文级结论。
+
 \section{当前实现状态}
 当前分支已完成以下内容：1）长时段人机混驾交通生成；2）部分可观测状态编码；3）候选 \emph{spot-route-wait} 动作包；4）冻结 Qwen-VLA 高层决策接口；5）安全盾与 fallback；6）强 baseline 注册；7）paper gate 与 benchmark 默认 agent 扩展；8）决策日志、审计、可视化和系统级指标。当前 smoke 与短时长 long-horizon 回归已验证新增 baseline 可启动、可生成候选动作包，并且进场任务不再暴露 \texttt{CRUISE\_TO\_EXIT}。
 

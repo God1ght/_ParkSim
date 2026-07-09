@@ -29,10 +29,49 @@ PROFILE_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "min_scenarios": 27,
         "min_rows": 270,
         "require_real_qwen": True,
+        "require_manuscript": True,
+        "require_video_evidence": False,
+        "require_oracle_upper_bound": True,
+        "max_reference_unsafe_actions": 0.0,
+        "max_reference_collision_proxy": 0.0,
+    },
+    "journal": {
+        "required_agents": ["rule_based", "greedy_nearest", "greedy_shortest_path", "risk_aware_rule", "bundle_risk_aware", "conflict_aware_bundle", "reservation_bundle", "rolling_horizon_bundle", "centralized_min_cost", "oracle_intent_bundle", "qwen_vla"],
+        "min_agents": 11,
+        "min_seeds": 5,
+        "min_background_modes": 3,
+        "min_density_labels": 5,
+        "min_spawn_profiles": 4,
+        "min_scenarios": 55,
+        "min_rows": 605,
+        "require_real_qwen": True,
+        "require_manuscript": True,
+        "require_video_evidence": True,
+        "require_oracle_upper_bound": True,
         "max_reference_unsafe_actions": 0.0,
         "max_reference_collision_proxy": 0.0,
     },
 }
+
+REQUIRED_MANUSCRIPT_FILES = [
+    "docs/qwen_vla_ieee_report_zh.tex",
+    "docs/qwen_vla_ieee_report_zh.md",
+]
+
+REQUIRED_METRIC_COLUMNS = [
+    "objective_score",
+    "path_length",
+    "total_non_idle_time",
+    "waiting_time",
+    "system_near_miss_event_count",
+    "system_collision_proxy_event_count",
+    "trajectory_conflict_event_count",
+    "mixed_intent_conflict_event_count",
+    "unsafe_occupancy_action_count",
+    "shield_rejection_count",
+    "qwen_fallback_count",
+    "qwen_latency_mean",
+]
 
 REQUIRED_REPORT_FILES = [
     "paper_rows.csv",
@@ -146,6 +185,12 @@ def _profile_config(args: argparse.Namespace) -> Dict[str, Any]:
         config["require_real_qwen"] = True
     if args.allow_mock_qwen:
         config["require_real_qwen"] = False
+    if args.require_video_evidence:
+        config["require_video_evidence"] = True
+    if args.skip_video_evidence:
+        config["require_video_evidence"] = False
+    if args.skip_manuscript:
+        config["require_manuscript"] = False
     return config
 
 
@@ -174,11 +219,28 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
     missing_files = [name for name in REQUIRED_REPORT_FILES if not (resolved_report_dir / name).exists()]
     gate.require("required_report_files", not missing_files, "all paper report artifacts must exist", {"missing": missing_files, "report_dir": str(resolved_report_dir)})
 
+    if bool(config.get("require_manuscript", False)):
+        repo_root = Path(__file__).resolve().parents[3]
+        missing_manuscripts = [name for name in REQUIRED_MANUSCRIPT_FILES if not (repo_root / name).exists()]
+        manuscript_sizes = {name: (repo_root / name).stat().st_size if (repo_root / name).exists() else 0 for name in REQUIRED_MANUSCRIPT_FILES}
+        gate.require("manuscript_sources", not missing_manuscripts and all(size > 500 for size in manuscript_sizes.values()), "journal/paper profile requires editable manuscript sources", {"missing": missing_manuscripts, "sizes": manuscript_sizes})
+
+    if rows:
+        metric_columns = set(rows[0].keys())
+    else:
+        metric_columns = set()
+    missing_metric_columns = sorted(set(REQUIRED_METRIC_COLUMNS) - metric_columns)
+    gate.require("required_metric_columns", not missing_metric_columns, "paper rows must include safety, efficiency, decision, and latency metrics", {"missing": missing_metric_columns})
+
     agents = set(repro.get("agents") or _csv_values(rows, "agent_type"))
     required_agents = set(config["required_agents"])
     missing_agents = sorted(required_agents - agents)
     gate.require("required_agents", not missing_agents, "required baseline agents must be present", {"required": sorted(required_agents), "present": sorted(agents), "missing": missing_agents})
     gate.require("min_agents", len(agents) >= int(config["min_agents"]), "agent count must meet profile minimum", {"actual": len(agents), "minimum": config["min_agents"]})
+
+    if bool(config.get("require_oracle_upper_bound", False)):
+        gate.require("oracle_upper_bound_agent", "oracle_intent_bundle" in agents, "oracle intent upper-bound baseline must be present", {"present": sorted(agents)})
+        gate.require("centralized_cost_agent", "centralized_min_cost" in agents, "centralized min-cost baseline must be present", {"present": sorted(agents)})
 
     seeds = set(repro.get("seeds") or _csv_values(rows, "seed"))
     backgrounds = set(repro.get("background_modes") or _csv_values(rows, "background_mode"))
@@ -211,6 +273,13 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
     qwen_health = qwen.get("health") if isinstance(qwen, dict) else None
     qwen_ok = bool(isinstance(qwen_health, dict) and qwen_health.get("ok"))
     gate.require("qwen_health_ok", qwen_ok, "Qwen health payload must be present and ok", {"qwen": qwen})
+    qwen_decision_logs = list(suite_dir.glob("**/qwen_vla_decisions.jsonl"))
+    gate.require("qwen_decision_logs", bool(qwen_decision_logs), "Qwen/baseline decision logs must be present for replayable audit", {"log_count": len(qwen_decision_logs)})
+    decision_audits = list(suite_dir.glob("**/decision_audit.json"))
+    gate.require("decision_audit_artifacts", bool(decision_audits), "decision audit artifacts must be present", {"audit_count": len(decision_audits)})
+    if bool(config.get("require_video_evidence", False)):
+        video_manifests = list(suite_dir.glob("**/video_manifest.json")) + list(resolved_report_dir.glob("**/video_manifest.json"))
+        gate.require("video_evidence", bool(video_manifests), "journal profile requires visualizer video/GIF evidence manifests", {"video_manifest_count": len(video_manifests)})
     if bool(config["require_real_qwen"]):
         is_mock = bool(isinstance(qwen_health, dict) and qwen_health.get("mock"))
         gate.require("real_qwen_required", qwen_ok and not is_mock, "paper profile requires real Qwen, not mock mode", {"qwen_health": qwen_health})
@@ -301,6 +370,9 @@ def main() -> None:
     parser.add_argument("--min-rows", type=int)
     parser.add_argument("--require-real-qwen", action="store_true")
     parser.add_argument("--allow-mock-qwen", action="store_true")
+    parser.add_argument("--require-video-evidence", action="store_true")
+    parser.add_argument("--skip-video-evidence", action="store_true")
+    parser.add_argument("--skip-manuscript", action="store_true")
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args()
 

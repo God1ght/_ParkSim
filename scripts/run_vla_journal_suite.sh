@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Journal-scale defaults are intentionally expensive. Use PARKSIM_SUITE_DRY_RUN=1
+# to inspect the matrix before launching the full experiment.
+export PARKSIM_SUITE_GATE_PROFILE="${PARKSIM_SUITE_GATE_PROFILE:-journal}"
+export PARKSIM_SUITE_GATE_STRICT="${PARKSIM_SUITE_GATE_STRICT:-1}"
+export PARKSIM_SUITE_QWEN_MODE="${PARKSIM_SUITE_QWEN_MODE:-real}"
+export PARKSIM_SUITE_REQUIRE_COMPLETE="${PARKSIM_SUITE_REQUIRE_COMPLETE:-1}"
+export PARKSIM_SUITE_EARLY_STOP="${PARKSIM_SUITE_EARLY_STOP:-0}"
+export PARKSIM_SUITE_SEEDS="${PARKSIM_SUITE_SEEDS:-0 1 2 3 4}"
+export PARKSIM_SUITE_BACKGROUND_MODES="${PARKSIM_SUITE_BACKGROUND_MODES:-rule_random mixed replay}"
+export PARKSIM_SUITE_DENSITY_CONFIGS="${PARKSIM_SUITE_DENSITY_CONFIGS:-empty:0:0 light:2:1 balanced:4:4 dense:8:8 saturated:12:12}"
+export PARKSIM_SUITE_DURATION="${PARKSIM_SUITE_DURATION:-300s}"
+export PARKSIM_SUITE_REPLAY_ALL_DENSITIES="${PARKSIM_SUITE_REPLAY_ALL_DENSITIES:-0}"
+export PARKSIM_SUITE_GATE_REQUIRE_VIDEO="${PARKSIM_SUITE_GATE_REQUIRE_VIDEO:-1}"
+
+exec "$ROOT/scripts/run_vla_paper_suite.sh"
