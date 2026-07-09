@@ -374,12 +374,14 @@ fi
 
 report_dir="$OUT_DIR/reports/$REPORT_NAME"
 PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" python3 -m parksim.vla.paper_report "$report_dir" --inputs "${benchmark_dirs[@]}" --reference-agent "$REFERENCE_AGENT"
+write_suite_config
+write_suite_manifest
+
 gate_args=("$OUT_DIR" --profile "$GATE_PROFILE")
 if [[ "$GATE_STRICT" == "1" ]]; then
   gate_args+=(--strict)
 fi
 PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" python3 -m parksim.vla.paper_gate "${gate_args[@]}"
-write_suite_config
 write_suite_manifest
 
 echo "paper_suite_out_dir=$OUT_DIR"
