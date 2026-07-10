@@ -419,11 +419,15 @@ class RuleBasedStanleyVehicle(AbstractAgent):
 
             for id, other_look_ahead_state in zip(self.nearby_vehicles, other_look_ahead_states):
                 if id not in will_crash_with: # for efficiency
-                    self.motion_predictor.set_ref_pose(self.other_ref_pose[id].x, self.other_ref_pose[id].y, self.other_ref_pose[id].psi)
-                    self.motion_predictor.set_ref_v(self.other_ref_v[id])
-                    self.motion_predictor.set_target_idx(self.other_target_idx[id])
-                    ai, di, _ = self.motion_predictor.solve(other_look_ahead_state, self.other_is_braking[id])
-                    self.motion_predictor.step(other_look_ahead_state, ai, di)
+                    try:
+                        self.motion_predictor.set_ref_pose(self.other_ref_pose[id].x, self.other_ref_pose[id].y, self.other_ref_pose[id].psi)
+                        self.motion_predictor.set_ref_v(self.other_ref_v[id])
+                        self.motion_predictor.set_target_idx(self.other_target_idx[id])
+                        ai, di, _ = self.motion_predictor.solve(other_look_ahead_state, self.other_is_braking[id])
+                        self.motion_predictor.step(other_look_ahead_state, ai, di)
+                    except (IndexError, KeyError, TypeError, ValueError):
+                        # A newly spawned neighbor can publish state before its reference path.
+                        will_crash_with.add(id)
 
 
             # detect crash
