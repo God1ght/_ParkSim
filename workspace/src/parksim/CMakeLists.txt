@@ -57,6 +57,7 @@ install(PROGRAMS
   src/visualizer_node.py
   src/test_vehicle_node.py
   src/simulator_node.py
+  src/fleet_coordinator_node.py
   src/vehicle_node.py
   DESTINATION lib/${PROJECT_NAME}
 )

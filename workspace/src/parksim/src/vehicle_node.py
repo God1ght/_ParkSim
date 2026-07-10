@@ -2,6 +2,7 @@
 
 import json
 import re
+import traceback
 from parksim.controller.stanley_controller import StanleyController
 
 from parksim.controller_types import StanleyParams
@@ -13,7 +14,7 @@ from pathlib import Path
 import os
 import numpy as np
 import pickle
-from std_msgs.msg import Int16MultiArray, Bool
+from std_msgs.msg import Int16MultiArray, Bool, Float32, String
 from parksim.msg import VehicleStateMsg, VehicleInfoMsg
 from parksim.srv import OccupancySrv
 from parksim.pytypes import VehicleState, NodeParamTemplate
@@ -80,6 +81,8 @@ class VehicleNodeParams(NodeParamTemplate):
         self.qwen_periodic_replan = False
         self.qwen_decision_log_path = parksim_path('vehicle_log', 'qwen_vla_decisions.jsonl')
         self.vla_baseline_strategy = 'risk_aware_rule'
+        self.fleet_coordinator_enabled = False
+        self.fleet_run_id = ''
 
         self.write_log = True
         self.log_path = parksim_path('vehicle_log')
@@ -120,6 +123,17 @@ class VehicleNode(MPClabNode):
         # ======== Publishers, Subscribers, Services
         self.state_pub = self.create_publisher(VehicleStateMsg, 'state', 10)
         self.info_pub = self.create_publisher(VehicleInfoMsg, 'info', 10)
+        self.sim_time = 0.0
+        self.have_sim_time = False
+        self.last_sim_time = None
+        self.fleet_paused = False
+        self._fleet_mode_active = False
+        self.fleet_registry_pub = self.create_publisher(String, '/vla/fleet_registry', 10)
+        self.fleet_context_pub = self.create_publisher(String, '/vla/fleet_context', 10)
+        self.sim_time_sub = self.create_subscription(Float32, '/sim_time', self.sim_time_cb, 10)
+        self.fleet_pause_sub = self.create_subscription(Bool, '/vla/fleet_pause', self.fleet_pause_cb, 10)
+        self.fleet_epoch_sub = self.create_subscription(String, '/vla/fleet_epoch', self.fleet_epoch_cb, 10)
+        self.fleet_decisions_sub = self.create_subscription(String, '/vla/fleet_decisions', self.fleet_decisions_cb, 10)
 
         self.sim_status_sub = self.create_subscription(Bool, '/sim_status', self.sim_status_cb, 10)
         self.sim_is_running = True
@@ -148,6 +162,7 @@ class VehicleNode(MPClabNode):
         vehicle_config = VehicleConfig()
 
         agent_type = str(self.agent_type).lower()
+        self._fleet_mode_active = _as_bool(self.fleet_coordinator_enabled) and agent_type == 'qwen_vla'
         if agent_type == 'qwen_vla':
             from parksim.vla.agent import QwenVLAVehicle
 
@@ -165,6 +180,7 @@ class VehicleNode(MPClabNode):
                 periodic_replan=_as_bool(self.qwen_periodic_replan),
                 decision_log_path=str(self.qwen_decision_log_path),
                 reveal_background_intents_to_vla=_as_bool(self.reveal_background_intents_to_vla),
+                fleet_coordinator_enabled=self._fleet_mode_active,
             )
         elif agent_type in VLA_BASELINE_AGENT_TYPES:
             from parksim.vla.agent import BaselineVLAVehicle
@@ -280,8 +296,10 @@ class VehicleNode(MPClabNode):
 
         self.start_time = self.get_ros_time()
         self.start_solving = False
-        self.last_time = self.start_time
+        self.last_sim_time = None
         self.total_non_idle_time = 0
+        if self._fleet_mode_active:
+            self._publish_fleet_registry('register')
 
     def _get_plain_launch_parameter(self, name, default):
         if not self.has_parameter(name):
@@ -313,6 +331,8 @@ class VehicleNode(MPClabNode):
             'qwen_periodic_replan',
             'qwen_decision_log_path',
             'vla_baseline_strategy',
+            'fleet_coordinator_enabled',
+            'fleet_run_id',
             'log_path',
             'trace_log_enabled',
             'trace_log_path',
@@ -323,6 +343,7 @@ class VehicleNode(MPClabNode):
         self.is_controlled_ego = _as_bool(self.is_controlled_ego)
         self.intent_observable = _as_bool(self.intent_observable)
         self.reveal_background_intents_to_vla = _as_bool(self.reveal_background_intents_to_vla)
+        self.fleet_coordinator_enabled = _as_bool(self.fleet_coordinator_enabled)
 
     def _default_trace_log_path(self):
         return os.path.join(self.log_path, "vehicle_%d_trace.jsonl" % self.vehicle_id)
@@ -330,7 +351,8 @@ class VehicleNode(MPClabNode):
     def _default_summary_log_path(self):
         return os.path.join(self.log_path, "vehicle_%d_summary.json" % self.vehicle_id)
 
-    def _append_trace_record(self, current_time, final=False):
+    def _append_trace_record(self, sim_time, wall_time=None, final=False):
+        wall_time = self.get_ros_time() if wall_time is None else float(wall_time)
         if not self.write_log or not self.trace_log_enabled:
             return
         log_dir_path = self.log_path
@@ -338,8 +360,9 @@ class VehicleNode(MPClabNode):
             os.makedirs(log_dir_path, exist_ok=True)
         state = self.vehicle.state
         record = {
-            "time": float(current_time - self.start_time),
-            "wall_time": float(current_time),
+            "sim_time": float(sim_time),
+            "time": float(sim_time),
+            "wall_time": float(wall_time),
             "vehicle_id": int(self.vehicle_id),
             "agent_type": str(self.agent_type),
             "is_controlled_ego": bool(self.is_controlled_ego),
@@ -367,7 +390,7 @@ class VehicleNode(MPClabNode):
         with open(trace_path, 'a') as f:
             f.write(json.dumps(record) + "\n")
 
-    def _write_summary_record(self, current_time):
+    def _write_summary_record(self, sim_time):
         if not self.write_log:
             return
         log_dir_path = self.log_path
@@ -385,7 +408,7 @@ class VehicleNode(MPClabNode):
             "spot_index": int(self.spot_index),
             "vehicle_spot_index": int(getattr(self.vehicle, "spot_index", 0) or 0),
             "completed": bool(self.vehicle.is_all_done()),
-            "total_time": float(current_time - self.start_time),
+            "total_time": float(sim_time),
             "total_non_idle_time": float(self.total_non_idle_time),
             "final_task": self.vehicle.current_task,
             "final_state": {
@@ -402,6 +425,77 @@ class VehicleNode(MPClabNode):
 
     def sim_status_cb(self, msg: Bool):
         self.sim_is_running = msg.data
+
+    def sim_time_cb(self, msg):
+        self.sim_time = float(msg.data)
+        self.have_sim_time = True
+
+    def fleet_pause_cb(self, msg):
+        self.fleet_paused = bool(msg.data)
+
+    def _publish_fleet_registry(self, event):
+        if not self._fleet_mode_active:
+            return
+        message = String()
+        message.data = json.dumps({
+            'run_id': str(self.fleet_run_id),
+            'event': str(event),
+            'vehicle_id': int(self.vehicle_id),
+        })
+        self.fleet_registry_pub.publish(message)
+
+    def fleet_epoch_cb(self, msg):
+        if not self._fleet_mode_active:
+            return
+        try:
+            payload = json.loads(msg.data)
+            epoch_id = int(payload.get('epoch_id'))
+            sim_time = float(payload.get('sim_time'))
+        except (TypeError, ValueError):
+            return
+        run_id = str(payload.get('run_id', ''))
+        if run_id and self.fleet_run_id and run_id != str(self.fleet_run_id):
+            return
+        expected = [int(item) for item in payload.get('expected_vehicle_ids', [])]
+        if expected and int(self.vehicle_id) not in expected:
+            return
+        context = self.vehicle.build_fleet_epoch_context(epoch_id, sim_time)
+        message = String()
+        if context is None:
+            message.data = json.dumps({
+                'run_id': str(self.fleet_run_id),
+                'epoch_id': epoch_id,
+                'sim_time': sim_time,
+                'vehicle_id': int(self.vehicle_id),
+                'ready': False,
+            })
+        else:
+            message.data = json.dumps({
+                'run_id': str(self.fleet_run_id),
+                'epoch_id': epoch_id,
+                'sim_time': sim_time,
+                'vehicle_id': int(self.vehicle_id),
+                'ready': True,
+                'context': context.to_dict(),
+            })
+        self.fleet_context_pub.publish(message)
+
+    def fleet_decisions_cb(self, msg):
+        if not self._fleet_mode_active:
+            return
+        try:
+            payload = json.loads(msg.data)
+            epoch_id = int(payload.get('epoch_id'))
+            sim_time = float(payload.get('sim_time', self.sim_time))
+        except (TypeError, ValueError):
+            return
+        run_id = str(payload.get('run_id', ''))
+        if run_id and self.fleet_run_id and run_id != str(self.fleet_run_id):
+            return
+        for decision in payload.get('fleet_decisions', []) or []:
+            if int(decision.get('vehicle_id', -1)) == int(self.vehicle_id):
+                self.vehicle.apply_fleet_epoch_decision(epoch_id, decision, sim_time)
+                break
 
     def vehicle_state_cb(self, vehicle_id):
         def callback(msg):
@@ -505,43 +599,45 @@ class VehicleNode(MPClabNode):
                 continue
 
     def timer_callback(self):
-        current_time = self.get_ros_time()
+        wall_time = self.get_ros_time()
+        sim_time = float(self.sim_time)
         if self.vehicle.is_all_done():
             self.get_logger().info("Vehicle %d is done. Destroying node." % self.vehicle_id)
-
-            # write logs
+            if self._fleet_mode_active:
+                self._publish_fleet_registry('unregister')
             log_dir_path = self.log_path
             if not os.path.exists(log_dir_path):
                 os.makedirs(log_dir_path, exist_ok=True)
-
-            self._append_trace_record(current_time, final=True)
-            self._write_summary_record(current_time)
+            self._append_trace_record(sim_time, wall_time=wall_time, final=True)
+            self._write_summary_record(sim_time)
             with open(log_dir_path + "/vehicle_%d.log" % self.vehicle_id, 'a') as f:
                 f.writelines(str(self.total_non_idle_time))
                 self.vehicle.logger.clear()
-
             self.destroy_node()
             return
 
         self.update_subs()
-
-        if self.vehicle.current_task != "IDLE":
-            self.total_non_idle_time += current_time - self.last_time
-        self.last_time = current_time
-
-        if self.get_ros_time() - self.start_time > self.warm_start_time:
-            self.start_solving = True
-
-        if self.sim_is_running:
-            if self.start_solving:
-                self.vehicle.solve(time=self.get_ros_time())
-            self._append_trace_record(current_time)
-        elif self.write_log and len(self.vehicle.logger) > 0:
-            # write logs
+        advanced = self.have_sim_time and (
+            self.last_sim_time is None or sim_time > float(self.last_sim_time) + 1e-9
+        )
+        if advanced:
+            previous_sim_time = sim_time if self.last_sim_time is None else float(self.last_sim_time)
+            elapsed = max(0.0, sim_time - previous_sim_time)
+            if self.vehicle.current_task != "IDLE":
+                self.total_non_idle_time += elapsed
+            if sim_time >= float(self.warm_start_time):
+                self.start_solving = True
+            if self._fleet_mode_active:
+                self._publish_fleet_registry('register')
+            if self.sim_is_running and not self.fleet_paused:
+                if self.start_solving:
+                    self.vehicle.solve(time=sim_time)
+                self._append_trace_record(sim_time, wall_time=wall_time)
+            self.last_sim_time = sim_time
+        elif not self.sim_is_running and self.write_log and len(self.vehicle.logger) > 0:
             log_dir_path = self.log_path
             if not os.path.exists(log_dir_path):
                 os.mkdir(log_dir_path)
-
             with open(log_dir_path + "/vehicle_%d.log" % self.vehicle_id, 'a') as f:
                 f.writelines('\n'.join(self.vehicle.logger))
                 self.vehicle.logger.clear()
@@ -549,7 +645,6 @@ class VehicleNode(MPClabNode):
         state_msg = VehicleStateMsg()
         self.populate_msg(state_msg, self.vehicle.state)
         self.state_pub.publish(state_msg)
-
         info_msg = VehicleInfoMsg()
         self.populate_msg(info_msg, self.vehicle.get_info())
         self.info_pub.publish(info_msg)
@@ -568,6 +663,7 @@ def main(args=None):
         print(e)
         print("Vehicle %d node is destroyed cleanly." % vehicle.vehicle_id)
     except Exception:
+        traceback.print_exc()
         print("Unknown exception")
     finally:
         rclpy.shutdown()

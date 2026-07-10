@@ -16,10 +16,14 @@ SPOT_INDEX="${PARKSIM_BENCH_SPOT_INDEX:-7}"
 SPAWN_TIME="${PARKSIM_BENCH_SPAWN_TIME:-0.5}"
 SPAWN_ENTERING="${PARKSIM_BENCH_SPAWN_ENTERING:-0}"
 SPAWN_EXITING="${PARKSIM_BENCH_SPAWN_EXITING:-0}"
+AV_SPAWN_ENTERING="${PARKSIM_BENCH_AV_SPAWN_ENTERING:-0}"
+AV_SPAWN_EXITING="${PARKSIM_BENCH_AV_SPAWN_EXITING:-0}"
+AV_ENTRY_VEHICLE_AGENT_TYPE="${PARKSIM_BENCH_AV_ENTRY_VEHICLE_AGENT_TYPE:-__agent__}"
+AV_EXIT_VEHICLE_AGENT_TYPE="${PARKSIM_BENCH_AV_EXIT_VEHICLE_AGENT_TYPE:-__agent__}"
 TRAFFIC_FLOW_MODE="${PARKSIM_BENCH_TRAFFIC_FLOW_MODE:-legacy}"
 FLEET_CONTROL_MODE="${PARKSIM_BENCH_FLEET_CONTROL_MODE:-cloud_av}"
-ENTRY_VEHICLE_AGENT_TYPE="${PARKSIM_BENCH_ENTRY_VEHICLE_AGENT_TYPE:-__agent__}"
-EXIT_VEHICLE_AGENT_TYPE="${PARKSIM_BENCH_EXIT_VEHICLE_AGENT_TYPE:-__agent__}"
+ENTRY_VEHICLE_AGENT_TYPE="${PARKSIM_BENCH_ENTRY_VEHICLE_AGENT_TYPE:-rule_based}"
+EXIT_VEHICLE_AGENT_TYPE="${PARKSIM_BENCH_EXIT_VEHICLE_AGENT_TYPE:-rule_based}"
 LONG_HORIZON_DURATION="${PARKSIM_BENCH_LONG_HORIZON_DURATION:-${DURATION%s}}"
 RESTORE_OBSTACLES_AS_EXIT_VEHICLES="${PARKSIM_BENCH_RESTORE_OBSTACLES_AS_EXIT_VEHICLES:-false}"
 STATIC_OBSTACLE_EXIT_FRACTION="${PARKSIM_BENCH_STATIC_OBSTACLE_EXIT_FRACTION:-0.35}"
@@ -51,6 +55,7 @@ DELAYED_SPAWN_RETRY_SECONDS="${PARKSIM_BENCH_DELAYED_SPAWN_RETRY_SECONDS:-2.0}"
 EXIT_SPOT_REUSE_DELAY="${PARKSIM_BENCH_EXIT_SPOT_REUSE_DELAY:-20.0}"
 QWEN_PERIODIC_REPLAN="${PARKSIM_BENCH_QWEN_PERIODIC_REPLAN:-false}"
 CONTROLLED_EGO_BLOCKS_ENTRANCE="${PARKSIM_BENCH_CONTROLLED_EGO_BLOCKS_ENTRANCE:-true}"
+SPAWN_CONTROLLED_EGO="${PARKSIM_BENCH_SPAWN_CONTROLLED_EGO:-true}"
 QWEN_MODE="${PARKSIM_BENCH_QWEN_MODE:-mock}"
 QWEN_PORT="${PARKSIM_BENCH_QWEN_PORT:-18087}"
 QWEN_ENDPOINT="${PARKSIM_BENCH_QWEN_ENDPOINT:-}"
@@ -93,6 +98,7 @@ qwen_pid=""
 GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 GIT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown)"
 export ROOT GIT_COMMIT GIT_BRANCH DURATION WALL_TIMEOUT WALL_TIMEOUT_MULTIPLIER AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING TRAFFIC_FLOW_MODE FLEET_CONTROL_MODE ENTRY_VEHICLE_AGENT_TYPE EXIT_VEHICLE_AGENT_TYPE LONG_HORIZON_DURATION RESTORE_OBSTACLES_AS_EXIT_VEHICLES STATIC_OBSTACLE_EXIT_FRACTION STATIC_OBSTACLE_EXIT_MAX STATIC_OBSTACLE_EXIT_START_TIME LONG_HORIZON_ENTER_INTERVAL_MEAN LONG_HORIZON_EXIT_INTERVAL_MEAN HUMAN_INTENT_HIDDEN_FRACTION MAX_CONCURRENT_BACKGROUND_VEHICLES DELAYED_SPAWN_RETRY_SECONDS EXIT_SPOT_REUSE_DELAY QWEN_PERIODIC_REPLAN CONTROLLED_EGO_BLOCKS_ENTRANCE QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT EARLY_STOP EARLY_STOP_POLL_SECONDS EARLY_STOP_GRACE_SECONDS TRAFFIC_COMPLETION_STOP TRAFFIC_COMPLETION_GRACE_SECONDS TRAFFIC_HORIZON_STOP TRAFFIC_HORIZON_OVERRUN_SECONDS TRAFFIC_DRAIN_WALL_GRACE_SECONDS CLEAR_OUT_DIR
+export AV_SPAWN_ENTERING AV_SPAWN_EXITING AV_ENTRY_VEHICLE_AGENT_TYPE AV_EXIT_VEHICLE_AGENT_TYPE SPAWN_CONTROLLED_EGO
 
 prepare_out_dir() {
   mkdir -p "$OUT_DIR"
@@ -180,20 +186,24 @@ RUN_CONFIG_JSON
 cleanup_ros_processes() {
   local simulator_node="$ROOT/workspace/install/parksim/lib/parksim/simulator_node.py"
   local vehicle_node="$ROOT/workspace/install/parksim/lib/parksim/vehicle_node.py"
+  local coordinator_node="$ROOT/workspace/install/parksim/lib/parksim/fleet_coordinator_node.py"
   local launch_patterns=(
     "ros2 run parksim simulator_node.py"
+    "ros2 run parksim fleet_coordinator_node.py"
     "ros2 launch parksim simulator.launch.py"
     "ros2 launch parksim vehicle.launch.py"
   )
 
   pkill -TERM -f "$simulator_node" 2>/dev/null || true
   pkill -TERM -f "$vehicle_node" 2>/dev/null || true
+  pkill -TERM -f "$coordinator_node" 2>/dev/null || true
   for pattern in "${launch_patterns[@]}"; do
     pkill -TERM -f "$pattern" 2>/dev/null || true
   done
   sleep 1
   pkill -KILL -f "$simulator_node" 2>/dev/null || true
   pkill -KILL -f "$vehicle_node" 2>/dev/null || true
+  pkill -KILL -f "$coordinator_node" 2>/dev/null || true
   for pattern in "${launch_patterns[@]}"; do
     pkill -KILL -f "$pattern" 2>/dev/null || true
   done
@@ -565,36 +575,49 @@ run_episode() {
   local agent="$1"
   local seed="$2"
   local background_mode="$3"
-  local scenario_id="${background_mode}_seed${seed}_spot${SPOT_INDEX}_enter${SPAWN_ENTERING}_exit${SPAWN_EXITING}"
+  local scenario_id="${background_mode}_seed${seed}_spot${SPOT_INDEX}_human_enter${SPAWN_ENTERING}_human_exit${SPAWN_EXITING}_av_enter${AV_SPAWN_ENTERING}_av_exit${AV_SPAWN_EXITING}"
   local scenario_dir="$OUT_DIR/episodes/$scenario_id"
   local run_dir="$scenario_dir/$agent"
   local log_dir="$run_dir/logs"
   local sim_log="$run_dir/simulator.log"
   local qwen_endpoint_param="${QWEN_ENDPOINT:-http://127.0.0.1:0/v1/chat/completions}"
+  local fleet_enabled=false
+  local fleet_run_id="$scenario_id-$agent"
+  local fleet_log="$run_dir/fleet_coordinator.log"
+  local fleet_epochs="$run_dir/fleet_epochs.jsonl"
   local entry_agent="$ENTRY_VEHICLE_AGENT_TYPE"
   local exit_agent="$EXIT_VEHICLE_AGENT_TYPE"
-  local entry_role=""
-  local exit_role=""
-  if [[ "$FLEET_CONTROL_MODE" == "cloud_av" ]]; then
-    if [[ "$entry_agent" == "__agent__" ]]; then
-      entry_agent="$agent"
-    fi
-    if [[ "$exit_agent" == "__agent__" ]]; then
-      exit_agent="$agent"
-    fi
-    entry_role="av_entering"
-    exit_role="av_exiting"
+  local av_entry_agent="$AV_ENTRY_VEHICLE_AGENT_TYPE"
+  local av_exit_agent="$AV_EXIT_VEHICLE_AGENT_TYPE"
+  local entry_role="human_entering"
+  local exit_role="human_exiting"
+  local av_entry_role="av_entering"
+  local av_exit_role="av_exiting"
+  if [[ "$av_entry_agent" == "__agent__" ]]; then
+    av_entry_agent="$agent"
+  fi
+  if [[ "$av_exit_agent" == "__agent__" ]]; then
+    av_exit_agent="$agent"
   fi
   mkdir -p "$log_dir"
   echo "running scenario=$scenario_id agent=$agent fleet_mode=$FLEET_CONTROL_MODE entry_agent=$entry_agent exit_agent=$exit_agent sim_duration=$DURATION wall_timeout=$WALL_TIMEOUT -> $run_dir"
   cleanup_ros_processes
+  if [[ "$agent" == "qwen_vla" ]]; then
+    fleet_enabled=true
+    fleet_run_id="$scenario_id-$agent"
+    PYTHONPATH="$DLP_ROOT${PYTHONPATH:+:$PYTHONPATH}" ros2 run parksim fleet_coordinator_node.py --ros-args \
+      -p qwen_endpoint:="$qwen_endpoint_param" -p qwen_timeout:="$QWEN_TIMEOUT" \
+      -p run_id:="$fleet_run_id" -p decision_log_path:="$fleet_epochs" \
+      > "$fleet_log" 2>&1 &
+    sleep 1
+  fi
   set +e
   local early_stop_triggered=0
   local traffic_completion_stop_triggered=0
   local traffic_horizon_stop_triggered=0
   STOP_REASON=""
   PYTHONPATH="$DLP_ROOT${PYTHONPATH:+:$PYTHONPATH}" timeout "$WALL_TIMEOUT" ros2 run parksim simulator_node.py --ros-args \
-    -p spawn_controlled_ego:=true \
+    -p spawn_controlled_ego:="$SPAWN_CONTROLLED_EGO" \
     -p controlled_ego_agent_type:="$agent" \
     -p controlled_ego_spawn_time:="$SPAWN_TIME" \
     -p controlled_ego_spot_index:="$SPOT_INDEX" \
@@ -603,6 +626,12 @@ run_episode() {
     -p background_mode:="$background_mode" \
     -p spawn_entering:="$SPAWN_ENTERING" \
     -p spawn_exiting:="$SPAWN_EXITING" \
+    -p av_spawn_entering:="$AV_SPAWN_ENTERING" \
+    -p av_spawn_exiting:="$AV_SPAWN_EXITING" \
+    -p av_entry_vehicle_agent_type:="$av_entry_agent" \
+    -p av_exit_vehicle_agent_type:="$av_exit_agent" \
+    -p av_entry_vehicle_role:="$av_entry_role" \
+    -p av_exit_vehicle_role:="$av_exit_role" \
     -p traffic_flow_mode:="$TRAFFIC_FLOW_MODE" \
     -p entry_vehicle_agent_type:="$entry_agent" \
     -p exit_vehicle_agent_type:="$exit_agent" \
@@ -623,6 +652,8 @@ run_episode() {
     -p log_path:="$log_dir" \
     -p qwen_endpoint:="$qwen_endpoint_param" \
     -p qwen_timeout:="$QWEN_TIMEOUT" \
+    -p fleet_coordinator_enabled:="$fleet_enabled" \
+    -p fleet_run_id:="$fleet_run_id" \
     > "$sim_log" 2>&1 &
   local sim_pid="$!"
   if wait_for_stop_condition "$sim_pid" "$log_dir"; then

@@ -28,6 +28,8 @@ def build_candidate_actions(
             reason="Yield temporarily and re-evaluate traffic and parking availability.",
         ))
     for spot_index in empty_spot_indices(vehicle, max_spots=max_spots):
+        if not _is_reachable_spot(vehicle, spot_index):
+            continue
         actions.append(VLACandidateAction(
             action_id="cruise_to_spot_%d" % spot_index,
             action_type=VLAActionType.SELECT_SPOT_AND_CRUISE,
@@ -59,6 +61,8 @@ def build_candidate_actions(
             target_spot_index=spot_index,
             reason="Recompute the route to the current target spot.",
         ))
+        if not _is_reachable_spot(vehicle, spot_index):
+            actions.pop()
     if exit_coords is not None and _allow_cruise_to_exit(vehicle):
         actions.append(VLACandidateAction(
             action_id="cruise_to_exit",
@@ -68,6 +72,33 @@ def build_candidate_actions(
         ))
     actions.extend(wait_actions)
     return enrich_candidate_actions(vehicle, actions)
+
+
+def _is_reachable_spot(vehicle: Any, spot_index: int) -> bool:
+    """Accept a cruise bundle only when the directed A* graph has a route."""
+    try:
+        graph = getattr(vehicle, "graph", None)
+        spaces = np.asarray(getattr(vehicle, "parking_spaces", None), dtype=float).reshape((-1, 2))
+        idx = abs(int(spot_index))
+        if graph is None or idx < 0 or idx >= len(spaces):
+            return False
+        start_xy = np.asarray([vehicle.state.x.x, vehicle.state.x.y], dtype=float)
+        start_idx = graph.search(start_xy)
+        is_north = any(idx >= low and idx <= high for low, high in getattr(vehicle, "north_spot_idx_ranges", []))
+        y_offset = -float(getattr(vehicle, "spot_y_offset", 0.0)) if is_north else float(getattr(vehicle, "spot_y_offset", 0.0))
+        target_xy = np.asarray([spaces[idx][0], spaces[idx][1] + y_offset], dtype=float)
+        goal_idx = graph.search(target_xy)
+        if start_idx == goal_idx:
+            return _safe_reached_target(vehicle)
+        from parksim.route_planner.a_star import AStarPlanner
+
+        solution = AStarPlanner(graph.vertices[start_idx], graph.vertices[goal_idx]).solve()
+        if not bool(getattr(solution, "edges", [])):
+            return False
+        x_ref, y_ref, yaw_ref = vehicle.compute_ref_path(solution, spot_index=int(spot_index))
+        return len(x_ref) >= 2 and len(y_ref) >= 2 and len(yaw_ref) >= 2
+    except Exception:
+        return False
 
 
 def choose_default_action(actions: List[VLACandidateAction]) -> Optional[VLACandidateAction]:
@@ -98,7 +129,14 @@ def apply_candidate_action(vehicle: Any, action: VLACandidateAction) -> None:
         vehicle.set_task_profile([VehicleTask(name="CRUISE", v_cruise=getattr(vehicle.vehicle_config, "v_cruise", 5), target_coords=np.asarray(action.target_coords, dtype=float))])
     else:
         raise ValueError("Unsupported VLA action type: %s" % action.action_type)
-    vehicle.execute_next_task()
+    setattr(vehicle, "_vla_execution_recovery_reason", "")
+    try:
+        vehicle.execute_next_task()
+    except Exception as exc:
+        recovery_reason = "executor_recovery:%s" % type(exc).__name__
+        setattr(vehicle, "_vla_execution_recovery_reason", recovery_reason)
+        vehicle.set_task_profile([VehicleTask(name="IDLE", duration=2.0)])
+        vehicle.execute_next_task()
 
 
 def _allow_cruise_to_exit(vehicle: Any) -> bool:

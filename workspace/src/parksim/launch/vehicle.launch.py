@@ -42,6 +42,8 @@ def generate_launch_description():
         DeclareLaunchArgument('qwen_max_candidate_spots', default_value='8'),
         DeclareLaunchArgument('qwen_periodic_replan', default_value='false'),
         DeclareLaunchArgument('qwen_decision_log_path', default_value=''),
+        DeclareLaunchArgument('fleet_coordinator_enabled', default_value='false'),
+        DeclareLaunchArgument('fleet_run_id', default_value=''),
 
         Node(
             package='parksim',
@@ -71,6 +73,8 @@ def generate_launch_description():
                 'qwen_max_candidate_spots': LaunchConfiguration('qwen_max_candidate_spots'),
                 'qwen_periodic_replan': LaunchConfiguration('qwen_periodic_replan'),
                 'qwen_decision_log_path': LaunchConfiguration('qwen_decision_log_path'),
+                'fleet_coordinator_enabled': LaunchConfiguration('fleet_coordinator_enabled'),
+                'fleet_run_id': LaunchConfiguration('fleet_run_id'),
             }],
             output='screen',
             emulate_tty=True

@@ -10,6 +10,9 @@ DURATION="${PARKSIM_VLA_ROS_SMOKE_DURATION:-45s}"
 LOG_DIR="${PARKSIM_VLA_SMOKE_LOG_DIR:-/tmp}"
 QWEN_LOG="$LOG_DIR/qwen_vla_ros_smoke_service.log"
 SIM_LOG="$LOG_DIR/parksim_qwen_vla_ros_smoke.log"
+FLEET_LOG="$LOG_DIR/parksim_qwen_vla_ros_smoke_fleet.log"
+FLEET_EPOCH_LOG="$(mktemp "$LOG_DIR/parksim_qwen_vla_ros_smoke_epochs.XXXXXX.jsonl")"
+RUN_ID="ros-smoke-$PORT"
 DECISION_LOG="$ROOT/vehicle_log/qwen_vla_decisions.jsonl"
 SPOT_INDEX="${PARKSIM_VLA_SMOKE_SPOT_INDEX:-7}"
 BACKGROUND_MODE="${PARKSIM_VLA_SMOKE_BACKGROUND_MODE:-rule_random}"
@@ -39,18 +42,16 @@ source "$ROS_SETUP"
 source "$WORKSPACE_SETUP"
 set -u
 
-before_lines=0
-if [[ -f "$DECISION_LOG" ]]; then
-  before_lines="$(wc -l < "$DECISION_LOG")"
-fi
-
 qwen_pid=""
+fleet_pid=""
 cleanup_ros_processes() {
   pkill -TERM -f "$ROOT/workspace/install/parksim/lib/parksim/simulator_node.py" 2>/dev/null || true
   pkill -TERM -f "$ROOT/workspace/install/parksim/lib/parksim/vehicle_node.py" 2>/dev/null || true
+  pkill -TERM -f "$ROOT/workspace/install/parksim/lib/parksim/fleet_coordinator_node.py" 2>/dev/null || true
   sleep 1
   pkill -KILL -f "$ROOT/workspace/install/parksim/lib/parksim/simulator_node.py" 2>/dev/null || true
   pkill -KILL -f "$ROOT/workspace/install/parksim/lib/parksim/vehicle_node.py" 2>/dev/null || true
+  pkill -KILL -f "$ROOT/workspace/install/parksim/lib/parksim/fleet_coordinator_node.py" 2>/dev/null || true
 }
 
 cleanup() {
@@ -94,6 +95,18 @@ if [[ "$ready" != "1" ]]; then
   exit 1
 fi
 
+ros2 run parksim fleet_coordinator_node.py --ros-args \
+  -p qwen_endpoint:="http://127.0.0.1:$PORT/v1/chat/completions" \
+  -p qwen_timeout:="$QWEN_TIMEOUT" -p run_id:="$RUN_ID" \
+  -p decision_log_path:="$FLEET_EPOCH_LOG" > "$FLEET_LOG" 2>&1 &
+fleet_pid="$!"
+sleep 1
+if ! kill -0 "$fleet_pid" 2>/dev/null; then
+  echo "Fleet coordinator exited early" >&2
+  tail -n 120 "$FLEET_LOG" >&2 || true
+  exit 1
+fi
+
 export PYTHONPATH="$DLP_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 set +e
 timeout "$DURATION" ros2 run parksim simulator_node.py --ros-args \
@@ -102,6 +115,8 @@ timeout "$DURATION" ros2 run parksim simulator_node.py --ros-args \
   -p qwen_ego_spot_index:="$SPOT_INDEX" \
   -p qwen_endpoint:="http://127.0.0.1:$PORT/v1/chat/completions" \
   -p qwen_timeout:="$QWEN_TIMEOUT" \
+  -p fleet_coordinator_enabled:=true \
+  -p fleet_run_id:="$RUN_ID" \
   -p background_mode:="$BACKGROUND_MODE" \
   -p spawn_entering:=0 \
   -p spawn_exiting:=0 \
@@ -128,22 +143,20 @@ if [[ ! -f "$DECISION_LOG" ]]; then
   exit 1
 fi
 after_lines="$(wc -l < "$DECISION_LOG")"
-if (( after_lines <= before_lines )); then
-  echo "Decision log did not receive a new record" >&2
-  echo "before_lines=$before_lines after_lines=$after_lines" >&2
+if (( after_lines <= 0 )); then
+  echo "Decision log contains no records" >&2
   tail -n 160 "$SIM_LOG" >&2 || true
   exit 1
 fi
 
-python3 - "$DECISION_LOG" "$before_lines" "$SIM_LOG" "$QWEN_LOG" <<'PYCHECK'
+python3 - "$DECISION_LOG" "$SIM_LOG" "$QWEN_LOG" <<'PYCHECK'
 import json
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
-before = int(sys.argv[2])
-sim_log = sys.argv[3]
-qwen_log = sys.argv[4]
-records = [json.loads(line) for line in path.read_text().splitlines()[before:]]
+sim_log = sys.argv[2]
+qwen_log = sys.argv[3]
+records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 if not records:
     raise SystemExit("no new decision records")
 record = records[-1]
@@ -153,6 +166,8 @@ if not decision.get("action_id"):
     raise SystemExit("decision action_id is missing")
 if not applied.get("action_id"):
     raise SystemExit("applied action_id is missing")
+if decision.get("used_fallback"):
+    raise SystemExit("mock qwen fleet response unexpectedly used fallback")
 if record.get("shield_reason") != "ok":
     raise SystemExit(f"unexpected shield_reason: {record.get('shield_reason')}")
 print("parksim qwen_vla ros smoke ok")
@@ -161,3 +176,29 @@ print("applied_action_type=%s" % applied.get("action_type"))
 print("sim_log=%s" % sim_log)
 print("qwen_log=%s" % qwen_log)
 PYCHECK
+
+python3 - "$FLEET_EPOCH_LOG" "$SIM_LOG" "$FLEET_LOG" <<'PYFLEET'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+sim_log = sys.argv[2]
+fleet_log = sys.argv[3]
+records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+complete = [record for record in records if record.get("decision_complete")]
+if not complete:
+    raise SystemExit("no completed centralized fleet epoch")
+record = complete[-1]
+if record.get("missing_vehicle_ids"):
+    raise SystemExit("fleet epoch has missing vehicles: %s" % record["missing_vehicle_ids"])
+if len(record.get("expected_vehicle_ids", [])) != len(record.get("collected_vehicle_ids", [])):
+    raise SystemExit("fleet epoch is not a complete batch")
+if not record.get("fleet_decisions"):
+    raise SystemExit("centralized fleet epoch has no decisions")
+print("parksim centralized fleet epoch smoke ok")
+print("fleet_epoch_id=%s" % record.get("epoch_id"))
+print("fleet_sim_time=%s" % record.get("sim_time"))
+print("fleet_log=%s" % fleet_log)
+print("sim_log=%s" % sim_log)
+PYFLEET

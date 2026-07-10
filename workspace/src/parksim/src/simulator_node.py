@@ -74,6 +74,12 @@ class SimulatorNodeParams(NodeParamTemplate):
 
         self.spawn_entering = 3
         self.spawn_exiting = 3
+        self.av_spawn_entering = 0
+        self.av_spawn_exiting = 0
+        self.av_entry_vehicle_agent_type = 'qwen_vla'
+        self.av_exit_vehicle_agent_type = 'qwen_vla'
+        self.av_entry_vehicle_role = 'av_entering'
+        self.av_exit_vehicle_role = 'av_exiting'
         self.y_bound_to_resume_spawning = 70
         self.spawn_interval_mean = 5 # (s)
 
@@ -118,6 +124,8 @@ class SimulatorNodeParams(NodeParamTemplate):
         self.qwen_periodic_replan = False
         self.qwen_decision_log_path = ''
         self.vla_baseline_strategy = 'risk_aware_rule'
+        self.fleet_coordinator_enabled = False
+        self.fleet_run_id = ''
 
         self.write_log = True
         self.log_path = parksim_path('vehicle_log')
@@ -181,9 +189,10 @@ class SimulatorNode(MPClabNode):
         self.keep_spawn_entering = True
 
         self.start_time = self.get_ros_time()
+        self.sim_time = 0.0
 
-        self.last_enter_time = self.start_time
-        self.last_exit_time = self.start_time
+        self.last_enter_time = 0.0
+        self.last_exit_time = 0.0
 
         self.vehicles = []
         # Kept as the most recently allocated dynamic ID for legacy callers.
@@ -213,6 +222,8 @@ class SimulatorNode(MPClabNode):
         # Visualizer publish this status since the button is on GUI
         self.sim_status_sub = self.create_subscription(Bool, '/sim_status', self.sim_status_cb, 10)
         self.sim_is_running = True
+        self.fleet_paused = False
+        self.fleet_pause_sub = self.create_subscription(Bool, '/vla/fleet_pause', self.fleet_pause_cb, 10)
 
         self.occupancy_pub = self.create_publisher(Int16MultiArray, 'occupancy', 10)
 
@@ -222,6 +233,9 @@ class SimulatorNode(MPClabNode):
 
     def sim_status_cb(self, msg: Bool):
         self.sim_is_running = msg.data
+
+    def fleet_pause_cb(self, msg: Bool):
+        self.fleet_paused = bool(msg.data)
 
     def occupancy_srv_callback(self, request, response):
         vehicle_id = request.vehicle_id
@@ -296,6 +310,8 @@ class SimulatorNode(MPClabNode):
                 "qwen_decision_log_path:=%s" % (self.qwen_decision_log_path or os.path.join(self.log_path, "qwen_vla_decisions.jsonl")),
                 "vla_baseline_strategy:=%s" % self.vla_baseline_strategy,
                 "reveal_background_intents_to_vla:=false",
+                "fleet_coordinator_enabled:=%s" % str(bool(self.fleet_coordinator_enabled)).lower(),
+                "fleet_run_id:=%s" % self.fleet_run_id,
             ])
 
         self.vehicles.append(
@@ -386,7 +402,7 @@ class SimulatorNode(MPClabNode):
         return bool(np.random.random() < max(0.0, min(1.0, _safe_float(self.human_intent_hidden_fraction, 0.75))))
 
     def _traffic_time(self):
-        return float(self.get_ros_time() - self.start_time)
+        return float(self.sim_time)
 
     def _append_traffic_event(self, event, status, reason='', vehicle_id=None, spot_index=None):
         if not self.write_log:
@@ -414,6 +430,12 @@ class SimulatorNode(MPClabNode):
             'long_horizon_duration': _safe_float(self.long_horizon_duration, 0.0),
             'spawn_entering': _safe_int(self.spawn_entering, 0),
             'spawn_exiting': _safe_int(self.spawn_exiting, 0),
+            'av_spawn_entering': _safe_int(self.av_spawn_entering, 0),
+            'av_spawn_exiting': _safe_int(self.av_spawn_exiting, 0),
+            'av_entry_vehicle_agent_type': str(self.av_entry_vehicle_agent_type),
+            'av_exit_vehicle_agent_type': str(self.av_exit_vehicle_agent_type),
+            'av_entry_vehicle_role': str(self.av_entry_vehicle_role),
+            'av_exit_vehicle_role': str(self.av_exit_vehicle_role),
             'restore_obstacles_as_exit_vehicles': _as_bool(self.restore_obstacles_as_exit_vehicles),
             'entry_vehicle_agent_type': str(self.entry_vehicle_agent_type),
             'exit_vehicle_agent_type': str(self.exit_vehicle_agent_type),
@@ -490,6 +512,7 @@ class SimulatorNode(MPClabNode):
                 'ground_truth_intent': 'leave_from_occupied_spot',
                 'attempts': 0,
             })
+        self._append_av_demand_events(events)
         events.sort(key=lambda row: (float(row.get('time', 0.0)), str(row.get('event_id', ''))))
         if horizon > 0.0:
             events = [event for event in events if float(event.get('time', 0.0)) <= horizon]
@@ -498,6 +521,27 @@ class SimulatorNode(MPClabNode):
         self._write_traffic_schedule()
         self.get_logger().info('Scheduled human-mixed traffic events=%d hidden_intents=%d' % (
             len(events), sum(1 for event in events if not event.get('intent_observable', True))))
+
+    def _append_av_demand_events(self, events):
+        flows = (
+            ('entering', self.av_spawn_entering, self.long_horizon_enter_interval_mean, 'av_enter', self.av_entry_vehicle_agent_type, self.av_entry_vehicle_role),
+            ('exiting', self.av_spawn_exiting, self.long_horizon_exit_interval_mean, 'av_exit', self.av_exit_vehicle_agent_type, self.av_exit_vehicle_role),
+        )
+        for event_type, count, interval, prefix, agent_type, vehicle_role in flows:
+            for seq, event_time in enumerate(self._cumulative_event_times(count, interval, start=0.0)):
+                events.append({
+                    'event_id': '%s_%03d' % (prefix, seq),
+                    'time': float(event_time),
+                    'event_type': event_type,
+                    'source': 'automated_vehicle_demand',
+                    'actor_class': 'av',
+                    'agent_type': str(agent_type),
+                    'vehicle_role': str(vehicle_role),
+                    'spot_index': None,
+                    'intent_observable': True,
+                    'ground_truth_intent': 'av_%s_task' % event_type,
+                    'attempts': 0,
+                })
 
     def _expire_exit_reservations(self, current_time):
         expired = []
@@ -539,14 +583,14 @@ class SimulatorNode(MPClabNode):
         chosen_spot = int(np.random.choice(empty_spots))
         vehicle_id = self.add_vehicle(
             chosen_spot,
-            agent_type=str(self.entry_vehicle_agent_type),
-            vehicle_role=str(self.entry_vehicle_role) or _traffic_vehicle_role('entering', self.entry_vehicle_agent_type),
+            agent_type=str(event.get('agent_type') or self.entry_vehicle_agent_type),
+            vehicle_role=str(event.get('vehicle_role') or self.entry_vehicle_role) or _traffic_vehicle_role('entering', event.get('agent_type') or self.entry_vehicle_agent_type),
             intent_observable=bool(event.get('intent_observable', True)),
             intent_label='enter:spot_%d' % chosen_spot,
             spawn_event_id=str(event.get('event_id', '')),
         )
         self.occupied[chosen_spot] = True
-        self._track_entrance_vehicle(self.get_ros_time(), vehicle_id)
+        self._track_entrance_vehicle(current_time, vehicle_id)
         event['_done'] = True
         self._append_traffic_event(event, 'spawned', vehicle_id=vehicle_id, spot_index=chosen_spot)
 
@@ -567,13 +611,13 @@ class SimulatorNode(MPClabNode):
         self.exit_reserved_spots[chosen_spot] = current_time + max(0.0, _safe_float(self.exit_spot_reuse_delay, 20.0))
         vehicle_id = self.add_vehicle(
             -1 * chosen_spot,
-            agent_type=str(self.exit_vehicle_agent_type),
-            vehicle_role=str(self.exit_vehicle_role) or _traffic_vehicle_role('exiting', self.exit_vehicle_agent_type),
+            agent_type=str(event.get('agent_type') or self.exit_vehicle_agent_type),
+            vehicle_role=str(event.get('vehicle_role') or self.exit_vehicle_role) or _traffic_vehicle_role('exiting', event.get('agent_type') or self.exit_vehicle_agent_type),
             intent_observable=bool(event.get('intent_observable', True)),
             intent_label='exit:spot_%d' % chosen_spot,
             spawn_event_id=str(event.get('event_id', '')),
         )
-        self.last_exit_time = self.get_ros_time()
+        self.last_exit_time = current_time
         event['_done'] = True
         self._append_traffic_event(event, 'spawned', vehicle_id=vehicle_id, spot_index=chosen_spot)
 
@@ -621,7 +665,7 @@ class SimulatorNode(MPClabNode):
         self.keep_spawn_entering = False
 
     def try_spawn_entering(self):
-        current_time = self.get_ros_time()
+        current_time = self._traffic_time()
 
         if self.spawn_entering_time and current_time - self.last_enter_time > self.spawn_entering_time[0]:
             empty_spots = [i for i in range(len(self.occupied)) if not self.occupied[i]]
@@ -633,7 +677,7 @@ class SimulatorNode(MPClabNode):
             self._track_entrance_vehicle(current_time, vehicle_id)
 
     def try_spawn_exiting(self):
-        current_time = self.get_ros_time()
+        current_time = self._traffic_time()
 
         if self.spawn_exiting_time and current_time - self.last_exit_time > self.spawn_exiting_time[0]:
             departable_spots = [i for i in range(1, len(self.occupied)) if self.occupied[i] and i not in self.blocked_spots]
@@ -646,7 +690,7 @@ class SimulatorNode(MPClabNode):
             self.last_exit_time = current_time
 
     def try_spawn_existing(self):
-        current_time = self.get_ros_time() - self.start_time
+        current_time = self._traffic_time()
         added_vehicles = []
 
         for agent in self.agents_dict:
@@ -658,7 +702,7 @@ class SimulatorNode(MPClabNode):
             del self.agents_dict[added]
 
     def try_spawn_qwen_ego(self):
-        current_time = self.get_ros_time() - self.start_time
+        current_time = self._traffic_time()
         legacy_qwen = bool(self.spawn_qwen_ego)
         controlled = bool(self.spawn_controlled_ego)
         if not (legacy_qwen or controlled) or self.qwen_ego_spawned:
@@ -670,12 +714,13 @@ class SimulatorNode(MPClabNode):
         agent_type = str(self.controlled_ego_agent_type if controlled else 'qwen_vla').lower()
         vehicle_id = self.add_vehicle(spot_index, agent_type=agent_type, is_controlled_ego=bool(legacy_qwen or controlled), vehicle_role='controlled_ego', intent_observable=True, intent_label='controlled:spot_%d' % spot_index, spawn_event_id='controlled_ego')
         if spot_index > 0 and bool(self.controlled_ego_blocks_entrance):
-            self._track_entrance_vehicle(self.get_ros_time(), vehicle_id)
+            self._track_entrance_vehicle(current_time, vehicle_id)
         self.qwen_ego_spawned = True
 
     def timer_callback(self):
 
-        if self.sim_is_running:
+        if self.sim_is_running and not self.fleet_paused:
+            self.sim_time = round(float(self.sim_time) + float(self.timer_period), 9)
             self.try_spawn_qwen_ego()
             mode = str(self.background_mode).lower()
             if mode not in ['replay', 'rule_random', 'mixed', 'human_mixed', 'human_mixed_long_horizon']:
@@ -699,7 +744,7 @@ class SimulatorNode(MPClabNode):
 
         # Publish current simulation time
         time_msg = Float32()
-        time_msg.data = self.get_ros_time() - self.start_time
+        time_msg.data = float(self.sim_time)
         self.sim_time_pub.publish(time_msg)
 
         occupancy_msg = Int16MultiArray()

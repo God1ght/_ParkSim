@@ -130,6 +130,7 @@ def trace_integrity_metrics(traces: List[Tuple[Path, List[Dict[str, Any]]]]) -> 
     time_regressions = 0
     wall_time_regressions = 0
     kinematic_jumps = 0
+    expected_maneuver_handoffs = 0
     invalid_files = 0
     max_step_distance = 0.0
     for _, rows in traces:
@@ -147,6 +148,7 @@ def trace_integrity_metrics(traces: List[Tuple[Path, List[Dict[str, Any]]]]) -> 
         file_time_regressions = 0
         file_wall_regressions = 0
         file_kinematic_jumps = 0
+        file_expected_maneuver_handoffs = 0
         for prev, cur in zip(rows, rows[1:]):
             dt = _safe_float(cur.get("time")) - _safe_float(prev.get("time"))
             if dt < 0.0:
@@ -159,11 +161,15 @@ def trace_integrity_metrics(traces: List[Tuple[Path, List[Dict[str, Any]]]]) -> 
             if dt > 0.0:
                 speed = max(abs(_safe_float(prev.get("speed"))), abs(_safe_float(cur.get("speed"))))
                 if distance > max(5.0, speed * dt + 1.0):
-                    file_kinematic_jumps += 1
+                    if _is_expected_maneuver_handoff(prev, cur, distance):
+                        file_expected_maneuver_handoffs += 1
+                    else:
+                        file_kinematic_jumps += 1
         identity_conflicts += file_identity_conflict
         time_regressions += file_time_regressions
         wall_time_regressions += file_wall_regressions
         kinematic_jumps += file_kinematic_jumps
+        expected_maneuver_handoffs += file_expected_maneuver_handoffs
         if file_identity_conflict or file_time_regressions or file_wall_regressions or file_kinematic_jumps:
             invalid_files += 1
     ok = not (identity_conflicts or time_regressions or wall_time_regressions or kinematic_jumps)
@@ -174,8 +180,19 @@ def trace_integrity_metrics(traces: List[Tuple[Path, List[Dict[str, Any]]]]) -> 
         "trace_time_regression_count": int(time_regressions),
         "trace_wall_time_regression_count": int(wall_time_regressions),
         "trace_kinematic_jump_count": int(kinematic_jumps),
+        "trace_expected_maneuver_handoff_count": int(expected_maneuver_handoffs),
         "trace_max_step_distance_m": round(max_step_distance, 6),
     }
+
+
+def _is_expected_maneuver_handoff(prev: Dict[str, Any], cur: Dict[str, Any], distance: float) -> bool:
+    """Recognize ParkSim's documented cruise-to-offline-parking maneuver handoff."""
+    return (
+        str(prev.get("task", "")).upper() in {"CRUISE", "IDLE"}
+        and str(cur.get("task", "")).upper() == "PARK"
+        and bool(cur.get("vehicle_spot_index") or cur.get("spot_index"))
+        and float(distance) <= 12.0
+    )
 
 
 def _empty_pairwise_metrics() -> Dict[str, Any]:

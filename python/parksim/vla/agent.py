@@ -41,6 +41,7 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         periodic_replan: bool = False,
         decision_log_path: str = "",
         reveal_background_intents_to_vla: bool = False,
+        fleet_coordinator_enabled: bool = False,
     ):
         vehicle_body = vehicle_body or VehicleBody()
         vehicle_config = vehicle_config or VehicleConfig()
@@ -71,8 +72,18 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         self._latest_solve_time = 0.0
         self._last_fleet_context = None
         self._last_fleet_response = None
+        self.fleet_coordinator_enabled = bool(fleet_coordinator_enabled)
+        self._external_fleet_epoch = None
+        self._external_fleet_context = None
+        self._external_fleet_actions = []
+        self._last_fleet_epoch = None
 
     def execute_next_task(self):
+        if self.fleet_coordinator_enabled and not self._inside_vla_apply:
+            if len(self.task_profile) == 0 and self.current_task in (None, "IDLE"):
+                self._hold_for_world_state()
+                return
+            return super().execute_next_task()
         if len(self.task_profile) > 0 or self._inside_vla_apply:
             return super().execute_next_task()
         if self.current_task in (None, "IDLE"):
@@ -87,6 +98,10 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
     def solve(self, time=None):
         time_value = float(time if time is not None else 0.0)
         self._latest_solve_time = time_value
+        if self.fleet_coordinator_enabled:
+            if len(self.task_profile) == 0 and self.current_task in (None, "IDLE"):
+                self._hold_for_world_state()
+            return super().solve(time=time)
         if self._should_replan(time_value):
             if occupancy_ready(self):
                 self._make_and_apply_vla_decision(time_value=time_value, reason="scheduled high-level decision")
@@ -114,6 +129,98 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
             super().execute_next_task()
         finally:
             self._inside_vla_apply = False
+
+    def build_fleet_epoch_context(self, epoch_id: int, sim_time: float) -> Optional[VLAContext]:
+        """Build one immutable high-level decision context for a central epoch."""
+        if not self.fleet_coordinator_enabled or self.is_all_done():
+            return None
+        actions = build_candidate_actions(
+            self,
+            max_spots=self.max_candidate_spots,
+            exit_coords=self.entrance_coords,
+        )
+        if not actions:
+            return None
+        state = build_vla_state(self, valid_actions=actions, max_spots=max(self.max_candidate_spots, 8))
+        context = VLAContext(
+            instruction=(
+                "Choose one high-level action from valid_actions for this automated vehicle. "
+                "The cloud coordinator combines this context with every other AV before "
+                "making a fleet-level reservation, priority, and route-bundle decision. "
+                "Occupied, unknown, blocked, and reserved parking spots are never selectable. "
+                "Human/replay vehicle intent is partially observable; use uncertainty and "
+                "observable motion only. Do not output low-level control."
+            ),
+            state=state,
+            valid_actions=actions,
+        )
+        self._external_fleet_epoch = int(epoch_id)
+        self._external_fleet_context = context
+        self._external_fleet_actions = actions
+        self._last_fleet_context = None
+        self._last_fleet_response = None
+        return context
+
+    def apply_fleet_epoch_decision(self, epoch_id: int, payload: dict, sim_time: float) -> bool:
+        """Apply the coordinator-approved bundle without a vehicle HTTP call."""
+        if not self.fleet_coordinator_enabled:
+            return False
+        if int(epoch_id) != int(self._external_fleet_epoch or -1):
+            return False
+        actions = list(self._external_fleet_actions or [])
+        decision = VLADecision(
+            action_id=str(payload.get("action_id", "")),
+            target_spot_index=payload.get("target_spot_index"),
+            reason_code=str(payload.get("reason_code", "")),
+            reason=str(payload.get("reason", "")),
+            confidence=float(payload.get("confidence", 0.0) or 0.0),
+            raw_response=json.dumps(payload.get("raw_response", "")),
+            used_fallback=bool(payload.get("used_fallback", False)),
+        )
+        ok, action, shield_reason = self.vla_shield.validate(decision, actions, vehicle=self)
+        if not ok or action is None:
+            action = choose_default_action(actions)
+            if action is None:
+                return False
+            decision = VLADecision(
+                action_id=action.action_id,
+                target_spot_index=action.target_spot_index,
+                reason="single-vehicle fallback after fleet shield rejection: " + shield_reason,
+                reason_code="FALLBACK_OR_RECOVERY",
+                used_fallback=True,
+            )
+        self.priority = int(payload.get("priority", getattr(self, "priority", 0)) or 0)
+        applied_shield_reason = str(payload.get("shield_reason", shield_reason))
+        self._inside_vla_apply = True
+        try:
+            apply_candidate_action(self, action)
+        finally:
+            self._inside_vla_apply = False
+        recovery_reason = str(getattr(self, "_vla_execution_recovery_reason", "") or "")
+        if recovery_reason:
+            recovery_action = next((candidate for candidate in actions if candidate.action_id.startswith("wait_")), None)
+            if recovery_action is not None:
+                action = recovery_action
+                decision = VLADecision(
+                    action_id=action.action_id,
+                    target_spot_index=None,
+                    reason="fallback after executor path recovery",
+                    reason_code="EXECUTOR_PATH_RECOVERY",
+                    used_fallback=True,
+                )
+            applied_shield_reason = recovery_reason
+        self._last_vla_decision_time = float(sim_time)
+        self._last_fleet_epoch = int(epoch_id)
+        self._log_decision(
+            sim_time,
+            "synchronized fleet epoch %d" % int(epoch_id),
+            self._external_fleet_context,
+            decision,
+            applied_shield_reason,
+            action,
+            0.0,
+        )
+        return True
 
     def _make_and_apply_vla_decision(self, time_value: float, reason: str) -> bool:
         actions = build_candidate_actions(
@@ -194,9 +301,12 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
             fleet_response = self._last_fleet_response.to_dict()
         record = {
             "time": time_value,
+            "sim_time": float(time_value),
             "trigger_reason": trigger_reason,
             "cloud_decision_scope": "fleet_level_qwen_vla_server",
             "fleet_vehicle_id": int(self.vehicle_id),
+            "fleet_epoch": self._last_fleet_epoch,
+            "fleet_decision_mode": "synchronized_fleet_epoch" if self.fleet_coordinator_enabled else "legacy_single_vehicle_trigger",
             "protocol_version": decision_packet.get("protocol_version"),
             "prompt_version": decision_packet.get("prompt_version"),
             "fleet_protocol_version": fleet_packet.get("protocol_version") if fleet_packet else None,

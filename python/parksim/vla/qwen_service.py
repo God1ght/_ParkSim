@@ -341,6 +341,31 @@ def _actions_without_reserved(actions: Sequence[Dict[str, Any]], reserved_target
     return output or list(actions)
 
 
+def mock_fleet_decisions(context: Dict[str, Any]) -> Dict[str, Any]:
+    """Return valid deterministic fleet decisions for protocol-only tests."""
+    output: List[Dict[str, Any]] = []
+    reserved_targets: Dict[int, int] = {}
+    for priority, vehicle in enumerate(fleet_vehicles_from_context(context)):
+        vehicle_id = int(vehicle["vehicle_id"])
+        actions = _actions_without_reserved(vehicle["valid_actions"], reserved_targets)
+        action_id, reason = choose_fallback_action(actions)
+        selected = action_by_id(actions, action_id)
+        target = action_target(selected)
+        if target is not None:
+            reserved_targets[abs(int(target))] = vehicle_id
+        output.append({
+            "vehicle_id": vehicle_id,
+            "action_id": action_id,
+            "target_spot_index": target,
+            "priority": priority,
+            "reason_code": reason_code_for_action(selected),
+            "reason": "mock qwen service: " + reason,
+            "confidence": 1.0 if action_id else 0.0,
+            "used_fallback": False,
+        })
+    return {"fleet_decisions": output}
+
+
 def _actions_without_cloud_reservations(actions: Sequence[Dict[str, Any]], reservations: Dict[int, Dict[str, Any]], vehicle_id: int) -> List[Dict[str, Any]]:
     output = []
     for action in actions:
@@ -457,7 +482,7 @@ class QwenVLAInferenceService:
         context = extract_context(payload)
         if is_fleet_context(context):
             if self.mock:
-                return self._apply_cross_request_reservations(normalize_fleet_decisions("{}", context), context)
+                return self._apply_cross_request_reservations(mock_fleet_decisions(context), context)
             self.load()
             messages = normalize_messages(payload.get("messages", []))
             output = self._generate(messages)

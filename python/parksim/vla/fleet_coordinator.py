@@ -1,0 +1,202 @@
+"""Synchronized cloud-fleet decision epochs independent of ROS transport."""
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Set
+
+from parksim.vla.fleet_client import QwenFleetPolicyClient
+from parksim.vla.fleet_schema import VLAFleetContext
+from parksim.vla.fleet_shield import VLAFleetSafetyShield
+from parksim.vla.schema import VLACandidateAction, VLAContext
+
+
+def _as_int(value: Any, default: Optional[int] = None) -> Optional[int]:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def context_from_packet(packet: Dict[str, Any]) -> VLAContext:
+    row = packet.get("context", packet)
+    if not isinstance(row, dict):
+        raise ValueError("fleet context must be a JSON object")
+    actions: List[VLACandidateAction] = []
+    for item in row.get("valid_actions", []) or []:
+        if not isinstance(item, dict):
+            continue
+        actions.append(VLACandidateAction(
+            action_id=str(item.get("action_id", "")),
+            action_type=str(item.get("action_type", "")),
+            target_spot_index=_as_int(item.get("target_spot_index")),
+            target_coords=item.get("target_coords"),
+            duration=item.get("duration"),
+            route_id=item.get("route_id"),
+            reason=str(item.get("reason", "")),
+            features=dict(item.get("features") or {}),
+        ))
+    return VLAContext(
+        instruction=str(row.get("instruction", "")),
+        state=dict(row.get("state") or {}),
+        valid_actions=actions,
+        bev_image_path=row.get("bev_image_path"),
+        protocol_version=str(row.get("protocol_version") or "ParkSim-Qwen-VLA-Decision-v1"),
+        prompt_version=str(row.get("prompt_version") or "qwen-vla-high-level-policy-v1"),
+    )
+
+
+@dataclass
+class FleetEpoch:
+    epoch_id: int
+    sim_time: float
+    expected_vehicle_ids: List[int]
+    started_wall_time: float
+    contexts: Dict[int, VLAContext] = field(default_factory=dict)
+
+
+class FleetEpochCoordinator:
+    """Collect one AV context per epoch, then call and validate one fleet policy."""
+
+    def __init__(self, decision_period: float = 3.0) -> None:
+        self.decision_period = max(0.1, float(decision_period))
+        self.registered_vehicle_ids: Set[int] = set()
+        self.next_epoch_sim_time = 0.0
+        self.epoch_counter = 0
+        self.active_epoch: Optional[FleetEpoch] = None
+
+    def register(self, vehicle_id: int) -> None:
+        self.registered_vehicle_ids.add(int(vehicle_id))
+
+    def unregister(self, vehicle_id: int) -> None:
+        vehicle_id = int(vehicle_id)
+        self.registered_vehicle_ids.discard(vehicle_id)
+        if self.active_epoch is not None:
+            self.active_epoch.expected_vehicle_ids = [
+                item for item in self.active_epoch.expected_vehicle_ids if item != vehicle_id
+            ]
+            self.active_epoch.contexts.pop(vehicle_id, None)
+
+    def should_start(self, sim_time: float) -> bool:
+        return (
+            self.active_epoch is None
+            and bool(self.registered_vehicle_ids)
+            and float(sim_time) + 1e-9 >= self.next_epoch_sim_time
+        )
+
+    def start(self, sim_time: float, wall_time: float) -> Optional[FleetEpoch]:
+        if not self.should_start(sim_time):
+            return None
+        self.epoch_counter += 1
+        self.active_epoch = FleetEpoch(
+            epoch_id=self.epoch_counter,
+            sim_time=float(sim_time),
+            expected_vehicle_ids=sorted(self.registered_vehicle_ids),
+            started_wall_time=float(wall_time),
+        )
+        self.next_epoch_sim_time = float(sim_time) + self.decision_period
+        return self.active_epoch
+
+    def accept_context(self, packet: Dict[str, Any]) -> bool:
+        epoch = self.active_epoch
+        if epoch is None:
+            return False
+        epoch_id = _as_int(packet.get("epoch_id"))
+        vehicle_id = _as_int(packet.get("vehicle_id"))
+        if epoch_id != epoch.epoch_id or vehicle_id not in epoch.expected_vehicle_ids:
+            return False
+        if not bool(packet.get("ready", True)):
+            return False
+        context = context_from_packet(packet)
+        ego = context.state.get("ego", {}) if isinstance(context.state, dict) else {}
+        if _as_int(ego.get("vehicle_id")) != vehicle_id or not context.valid_actions:
+            return False
+        epoch.contexts[vehicle_id] = context
+        return True
+
+    def is_complete(self) -> bool:
+        epoch = self.active_epoch
+        return epoch is not None and set(epoch.expected_vehicle_ids).issubset(epoch.contexts)
+
+    def timed_out(self, wall_time: float, timeout: float) -> bool:
+        epoch = self.active_epoch
+        return epoch is not None and float(wall_time) - epoch.started_wall_time >= max(0.0, float(timeout))
+
+    def finalize(
+        self,
+        client: QwenFleetPolicyClient,
+        shield: Optional[VLAFleetSafetyShield] = None,
+        run_id: str = "",
+    ) -> Dict[str, Any]:
+        epoch = self.active_epoch
+        if epoch is None:
+            raise RuntimeError("no active fleet epoch")
+        shield = shield or VLAFleetSafetyShield()
+        collected_ids = sorted(epoch.contexts)
+        missing_ids = [item for item in epoch.expected_vehicle_ids if item not in epoch.contexts]
+        fleet_context = VLAFleetContext(
+            instruction=(
+                "Act as the synchronized cloud VLA coordinator for the entire mixed "
+                "human-autonomous parking lot. Return one executable high-level action "
+                "for every automated vehicle in this decision epoch."
+            ),
+            state=self._fleet_state(epoch, run_id, missing_ids),
+            vehicle_contexts=[epoch.contexts[item] for item in collected_ids],
+        )
+        result: Dict[str, Any] = {
+            "run_id": str(run_id),
+            "epoch_id": epoch.epoch_id,
+            "sim_time": epoch.sim_time,
+            "expected_vehicle_ids": list(epoch.expected_vehicle_ids),
+            "collected_vehicle_ids": collected_ids,
+            "missing_vehicle_ids": missing_ids,
+            "decision_scope": "synchronized_fleet_epoch",
+            "decision_complete": not missing_ids,
+            "fleet_context": fleet_context.to_dict(),
+            "fleet_decisions": [],
+        }
+        if collected_ids:
+            response = client.decide_fleet(fleet_context)
+            checked = shield.validate(response, fleet_context)
+            result["raw_fleet_response"] = response.to_dict()
+            for vehicle_id in collected_ids:
+                ok, action, reason, decision = checked[vehicle_id]
+                result["fleet_decisions"].append({
+                    **decision.to_dict(),
+                    "vehicle_id": int(vehicle_id),
+                    "shield_ok": bool(ok),
+                    "shield_reason": str(reason),
+                    "action_bundle": action.to_dict() if action is not None else None,
+                })
+        else:
+            result["raw_fleet_response"] = {"fleet_decisions": [], "raw_response": ""}
+        self.active_epoch = None
+        return result
+
+    @staticmethod
+    def _fleet_state(epoch: FleetEpoch, run_id: str, missing_ids: List[int]) -> Dict[str, Any]:
+        humans: Dict[int, Dict[str, Any]] = {}
+        av_states: List[Dict[str, Any]] = []
+        for vehicle_id in sorted(epoch.contexts):
+            state = epoch.contexts[vehicle_id].state
+            ego = dict(state.get("ego") or {})
+            ego["vehicle_id"] = int(vehicle_id)
+            av_states.append(ego)
+            for row in state.get("nearby_vehicles", []) or []:
+                if not isinstance(row, dict):
+                    continue
+                other_id = _as_int(row.get("vehicle_id"))
+                if other_id is not None:
+                    humans[other_id] = dict(row)
+        return {
+            "cloud_policy_role": "fleet_level_qwen_vla_server",
+            "decision_scope": "synchronized_fleet_epoch",
+            "run_id": str(run_id),
+            "sim_time": float(epoch.sim_time),
+            "epoch_id": int(epoch.epoch_id),
+            "registered_av_ids": list(epoch.expected_vehicle_ids),
+            "context_received_av_ids": sorted(epoch.contexts),
+            "context_missing_av_ids": list(missing_ids),
+            "automated_vehicle_states": av_states,
+            "observable_human_vehicle_states": list(humans.values()),
+            "human_intent_model": "partially_observable_replay_rule_random_mixed",
+            "sim_time_alignment": "cloud latency is logged while simulator advancement is paused",
+        }
+
