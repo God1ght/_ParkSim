@@ -24,6 +24,9 @@ PREFERRED_FIELDS = [
     "cloud_fleet_vehicle_decision_count", "cloud_fleet_missing_vehicle_decision_count",
     "traffic_scheduled_count", "traffic_hidden_event_count",
     "traffic_spawned_count", "traffic_delayed_count", "traffic_skipped_count", "system_min_distance_m",
+    "trace_integrity_ok", "trace_integrity_invalid_file_count", "trace_identity_conflict_count",
+    "trace_time_regression_count", "trace_wall_time_regression_count", "trace_kinematic_jump_count",
+    "trace_max_step_distance_m",
     "system_near_miss_event_count", "system_collision_proxy_event_count", "trajectory_conflict_event_count",
     "mixed_intent_conflict_event_count", "mixed_intent_conflict_time_s",
     "trace_path", "summary_path", "decisions_path",
@@ -132,7 +135,7 @@ def write_metrics(out_dir: Path, rows: List[Dict[str, Any]]) -> None:
     if not rows:
         (out_dir / "metrics.csv").write_text("")
         return
-    extra = sorted(key for row in rows for key in row if key not in PREFERRED_FIELDS)
+    extra = sorted({key for row in rows for key in row if key not in PREFERRED_FIELDS})
     fields = PREFERRED_FIELDS + extra
     with (out_dir / "metrics.csv").open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
@@ -309,6 +312,18 @@ def validate(out_dir: Path, require_complete: bool = False, expected_agents: Opt
             problems.append("incomplete episode under --require-complete: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
         if fleet_count > 1 and _safe_float(row.get("automated_vehicle_completion_rate")) <= 0.0:
             problems.append("fleet episode has no completed automated vehicles: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
+        if row.get("trace_integrity_ok") is not True:
+            problems.append(
+                "trace integrity failed for %s/%s: identity=%d time=%d wall=%d jump=%d"
+                % (
+                    row.get("scenario_id"),
+                    row.get("agent_type"),
+                    int(_safe_float(row.get("trace_identity_conflict_count"))),
+                    int(_safe_float(row.get("trace_time_regression_count"))),
+                    int(_safe_float(row.get("trace_wall_time_regression_count"))),
+                    int(_safe_float(row.get("trace_kinematic_jump_count"))),
+                )
+            )
     if expected_agents:
         expected = set(expected_agents)
         for scenario_id, agents in by_scenario.items():

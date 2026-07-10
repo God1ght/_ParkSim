@@ -94,6 +94,12 @@ REQUIRED_METRIC_COLUMNS = [
     "human_like_vehicle_count",
     "cloud_fleet_decision_count",
     "cloud_fleet_vehicle_decision_count",
+    "trace_integrity_ok",
+    "trace_integrity_invalid_file_count",
+    "trace_identity_conflict_count",
+    "trace_time_regression_count",
+    "trace_wall_time_regression_count",
+    "trace_kinematic_jump_count",
 ]
 
 TRC_METRIC_GROUPS = {
@@ -102,6 +108,7 @@ TRC_METRIC_GROUPS = {
     "cloud_coordination": ["automated_vehicle_count", "cloud_served_vehicle_count", "cloud_fleet_decision_count", "shield_rejection_count", "qwen_fallback_count"],
     "mixed_human_traffic": ["human_like_vehicle_count", "replay_vehicle_count", "hidden_intent_vehicle_count"],
     "online_cost": ["qwen_latency_mean"],
+    "data_integrity": ["trace_integrity_ok", "trace_integrity_invalid_file_count", "trace_identity_conflict_count", "trace_time_regression_count", "trace_wall_time_regression_count", "trace_kinematic_jump_count"],
 }
 
 REQUIRED_REPORT_FILES = [
@@ -180,6 +187,12 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except Exception:
         return default
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _csv_values(rows: Iterable[Dict[str, str]], key: str) -> Set[str]:
@@ -273,6 +286,17 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
         metric_columns = set()
     missing_metric_columns = sorted(set(REQUIRED_METRIC_COLUMNS) - metric_columns)
     gate.require("required_metric_columns", not missing_metric_columns, "paper rows must include safety, efficiency, decision, and latency metrics", {"missing": missing_metric_columns})
+    invalid_integrity_rows = [
+        "%s/%s" % (row.get("scenario_id"), row.get("agent_type"))
+        for row in rows
+        if not _as_bool(row.get("trace_integrity_ok"))
+    ]
+    gate.require(
+        "trace_integrity",
+        not invalid_integrity_rows,
+        "every paper row must pass trace identity, monotonic-time, and kinematic-jump checks",
+        {"invalid_rows": invalid_integrity_rows[:50], "invalid_count": len(invalid_integrity_rows)},
+    )
     if bool(config.get("require_cloud_fleet", False)):
         missing_groups: Dict[str, List[str]] = {}
         for group, columns in TRC_METRIC_GROUPS.items():

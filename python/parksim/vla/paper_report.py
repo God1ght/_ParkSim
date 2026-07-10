@@ -38,12 +38,19 @@ DEFAULT_METRICS = [
     "shield_rejection_count",
     "qwen_fallback_count",
     "qwen_latency_mean",
+    "trace_integrity_ok",
+    "trace_integrity_invalid_file_count",
+    "trace_identity_conflict_count",
+    "trace_time_regression_count",
+    "trace_wall_time_regression_count",
+    "trace_kinematic_jump_count",
 ]
 
 HIGHER_IS_BETTER_METRICS = {
     "min_other_distance_m",
     "min_ttc_s",
     "system_min_distance_m",
+    "trace_integrity_ok",
 }
 
 STRATIFY_FIELDS = [

@@ -106,6 +106,8 @@ Key overrides:
 
 Each run writes `traffic_schedule.json`, `traffic_events.jsonl`, vehicle traces with `vehicle_role` and `intent_observable`, and system-level conflict metrics such as `system_near_miss_event_count`, `trajectory_conflict_event_count`, and `mixed_intent_conflict_event_count`. Fleet-control runs also write `automated_vehicle_count`, `cloud_served_vehicle_count`, `human_like_vehicle_count`, `cloud_fleet_decision_count`, and `cloud_fleet_vehicle_decision_count` into `metrics.csv` and the aggregated paper CSV files. Default long-horizon agents now include `rule_based`, `greedy_nearest`, `greedy_shortest_path`, `risk_aware_rule`, `bundle_risk_aware`, `conflict_aware_bundle`, `reservation_bundle`, `rolling_horizon_bundle`, `centralized_min_cost`, `oracle_intent_bundle`, and `qwen_vla`.
 
+Mixed/replay runs reserve every DLP replay vehicle ID before launching controlled or scheduled vehicles. Dynamic IDs are allocated above the replay-ID range, so a replay vehicle and an AV cannot share a ROS namespace or `vehicle_<id>_trace.jsonl`. Each benchmark also exports `trace_integrity_ok`, identity-conflict, time-regression, wall-time-regression, and kinematic-jump counts. Any nonzero integrity violation fails validation and is excluded from paper aggregation.
+
 
 ### Paper Baseline Interpretation
 

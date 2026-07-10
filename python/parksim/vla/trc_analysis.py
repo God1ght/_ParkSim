@@ -21,6 +21,11 @@ LOWER_IS_BETTER = {
     "shield_rejection_count",
     "qwen_fallback_count",
     "qwen_latency_mean",
+    "trace_integrity_invalid_file_count",
+    "trace_identity_conflict_count",
+    "trace_time_regression_count",
+    "trace_wall_time_regression_count",
+    "trace_kinematic_jump_count",
 }
 
 METRIC_GROUPS = {
@@ -29,6 +34,7 @@ METRIC_GROUPS = {
     "cloud_coordination": ["shield_rejection_count", "qwen_fallback_count", "cloud_fleet_missing_vehicle_decision_count"],
     "mixed_traffic_scale": ["automated_vehicle_count", "cloud_served_vehicle_count", "human_like_vehicle_count", "hidden_intent_vehicle_count"],
     "online_cost": ["qwen_latency_mean", "cloud_fleet_decision_count", "cloud_fleet_vehicle_decision_count"],
+    "data_integrity": ["trace_integrity_ok", "trace_integrity_invalid_file_count", "trace_identity_conflict_count", "trace_time_regression_count", "trace_wall_time_regression_count", "trace_kinematic_jump_count"],
 }
 
 

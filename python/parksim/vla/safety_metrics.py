@@ -84,15 +84,19 @@ def collect_system_traffic_metrics(
             intent_observable.setdefault(vehicle_id, bool(first.get("intent_observable", True)))
         traces.append((trace_path, rows))
 
-    pair_metrics = _pairwise_system_metrics(
-        traces,
-        roles,
-        near_miss_radius=near_miss_radius,
-        collision_radius=collision_radius,
-        intent_conflict_radius=intent_conflict_radius,
-        ttc_horizon=ttc_horizon,
-        max_time_gap=max_time_gap,
-    )
+    integrity_metrics = trace_integrity_metrics(traces)
+    if integrity_metrics["trace_integrity_ok"]:
+        pair_metrics = _pairwise_system_metrics(
+            traces,
+            roles,
+            near_miss_radius=near_miss_radius,
+            collision_radius=collision_radius,
+            intent_conflict_radius=intent_conflict_radius,
+            ttc_horizon=ttc_horizon,
+            max_time_gap=max_time_gap,
+        )
+    else:
+        pair_metrics = _empty_pairwise_metrics()
     traffic_events = load_jsonl(log_dir / "traffic_events.jsonl")
     schedule = _load_json(log_dir / "traffic_schedule.json")
     spawned = sum(1 for row in traffic_events if row.get("status") == "spawned")
@@ -116,8 +120,73 @@ def collect_system_traffic_metrics(
         "traffic_skipped_count": int(skipped),
     }
     metrics.update(_fleet_completion_metrics(log_dir))
+    metrics.update(integrity_metrics)
     metrics.update(pair_metrics)
     return metrics
+
+
+def trace_integrity_metrics(traces: List[Tuple[Path, List[Dict[str, Any]]]]) -> Dict[str, Any]:
+    identity_conflicts = 0
+    time_regressions = 0
+    wall_time_regressions = 0
+    kinematic_jumps = 0
+    invalid_files = 0
+    max_step_distance = 0.0
+    for _, rows in traces:
+        identities = {
+            (
+                str(row.get("vehicle_id")),
+                str(row.get("spawn_event_id")),
+                str(row.get("vehicle_role")),
+                str(row.get("agent_type")),
+                bool(row.get("is_controlled_ego", False)),
+            )
+            for row in rows
+        }
+        file_identity_conflict = max(0, len(identities) - 1)
+        file_time_regressions = 0
+        file_wall_regressions = 0
+        file_kinematic_jumps = 0
+        for prev, cur in zip(rows, rows[1:]):
+            dt = _safe_float(cur.get("time")) - _safe_float(prev.get("time"))
+            if dt < 0.0:
+                file_time_regressions += 1
+            if prev.get("wall_time") is not None and cur.get("wall_time") is not None:
+                if _safe_float(cur.get("wall_time")) < _safe_float(prev.get("wall_time")):
+                    file_wall_regressions += 1
+            distance = _xy_distance(prev, cur)
+            max_step_distance = max(max_step_distance, distance)
+            if dt > 0.0:
+                speed = max(abs(_safe_float(prev.get("speed"))), abs(_safe_float(cur.get("speed"))))
+                if distance > max(5.0, speed * dt + 1.0):
+                    file_kinematic_jumps += 1
+        identity_conflicts += file_identity_conflict
+        time_regressions += file_time_regressions
+        wall_time_regressions += file_wall_regressions
+        kinematic_jumps += file_kinematic_jumps
+        if file_identity_conflict or file_time_regressions or file_wall_regressions or file_kinematic_jumps:
+            invalid_files += 1
+    ok = not (identity_conflicts or time_regressions or wall_time_regressions or kinematic_jumps)
+    return {
+        "trace_integrity_ok": bool(ok),
+        "trace_integrity_invalid_file_count": int(invalid_files),
+        "trace_identity_conflict_count": int(identity_conflicts),
+        "trace_time_regression_count": int(time_regressions),
+        "trace_wall_time_regression_count": int(wall_time_regressions),
+        "trace_kinematic_jump_count": int(kinematic_jumps),
+        "trace_max_step_distance_m": round(max_step_distance, 6),
+    }
+
+
+def _empty_pairwise_metrics() -> Dict[str, Any]:
+    return {
+        "system_min_distance_m": None,
+        "system_near_miss_event_count": 0,
+        "system_collision_proxy_event_count": 0,
+        "trajectory_conflict_event_count": 0,
+        "mixed_intent_conflict_event_count": 0,
+        "mixed_intent_conflict_time_s": 0.0,
+    }
 
 
 def _fleet_completion_metrics(log_dir: Path) -> Dict[str, Any]:
@@ -257,14 +326,7 @@ def _pairwise_system_metrics(
     max_time_gap: float,
 ) -> Dict[str, Any]:
     if len(traces) < 2:
-        return {
-            "system_min_distance_m": None,
-            "system_near_miss_event_count": 0,
-            "system_collision_proxy_event_count": 0,
-            "trajectory_conflict_event_count": 0,
-            "mixed_intent_conflict_event_count": 0,
-            "mixed_intent_conflict_time_s": 0.0,
-        }
+        return _empty_pairwise_metrics()
     min_distance = float("inf")
     near_events = 0
     collision_events = 0
