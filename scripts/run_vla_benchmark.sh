@@ -109,7 +109,7 @@ prepare_out_dir() {
   out_abs="$(realpath -m "$OUT_DIR")"
   if [[ "$CLEAR_OUT_DIR" == "1" ]]; then
     case "$out_abs" in
-      "$ROOT"/experiments/qwen_vla_benchmark/*|"$ROOT"/experiments/qwen_vla_long_horizon/*|"$ROOT"/experiments/qwen_vla_paper_suite/*/benchmarks/*)
+      "$ROOT"/experiments/qwen_vla_benchmark/*|"$ROOT"/experiments/qwen_vla_long_horizon/*|"$ROOT"/experiments/qwen_vla_paper_suite/*/benchmarks/*|"$ROOT"/experiments/qwen_vla_cloud_fleet_suite/*/benchmarks/*)
         rm -rf "$OUT_DIR/episodes"
         rm -f \
           "$OUT_DIR/episodes.jsonl" \
