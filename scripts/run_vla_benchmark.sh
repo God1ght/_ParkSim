@@ -172,11 +172,25 @@ RUN_CONFIG_JSON
 }
 
 cleanup_ros_processes() {
-  pkill -TERM -f "$ROOT/workspace/install/parksim/lib/parksim/simulator_node.py" 2>/dev/null || true
-  pkill -TERM -f "$ROOT/workspace/install/parksim/lib/parksim/vehicle_node.py" 2>/dev/null || true
+  local simulator_node="$ROOT/workspace/install/parksim/lib/parksim/simulator_node.py"
+  local vehicle_node="$ROOT/workspace/install/parksim/lib/parksim/vehicle_node.py"
+  local launch_patterns=(
+    "ros2 run parksim simulator_node.py"
+    "ros2 launch parksim simulator.launch.py"
+    "ros2 launch parksim vehicle.launch.py"
+  )
+
+  pkill -TERM -f "$simulator_node" 2>/dev/null || true
+  pkill -TERM -f "$vehicle_node" 2>/dev/null || true
+  for pattern in "${launch_patterns[@]}"; do
+    pkill -TERM -f "$pattern" 2>/dev/null || true
+  done
   sleep 1
-  pkill -KILL -f "$ROOT/workspace/install/parksim/lib/parksim/simulator_node.py" 2>/dev/null || true
-  pkill -KILL -f "$ROOT/workspace/install/parksim/lib/parksim/vehicle_node.py" 2>/dev/null || true
+  pkill -KILL -f "$simulator_node" 2>/dev/null || true
+  pkill -KILL -f "$vehicle_node" 2>/dev/null || true
+  for pattern in "${launch_patterns[@]}"; do
+    pkill -KILL -f "$pattern" 2>/dev/null || true
+  done
 }
 
 cleanup() {
