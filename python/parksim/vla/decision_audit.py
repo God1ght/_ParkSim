@@ -97,7 +97,8 @@ def audit_record(record: Dict[str, Any], log_path: Path) -> Tuple[List[str], Dic
 
     shield_reason = str(record.get("shield_reason") or "")
     if shield_reason and shield_reason != "ok":
-        failures.append("shield_rejection")
+        if not shield_reason.startswith("executor_recovery:"):
+            failures.append("shield_rejection")
 
     applied = record.get("applied_action") or {}
     features = applied.get("features") or {}
@@ -118,6 +119,7 @@ def audit_logs(logs: List[Path]) -> Dict[str, Any]:
     decision_records = 0
     protocol_versions: Dict[str, int] = {}
     prompt_versions: Dict[str, int] = {}
+    executor_recovery_count = 0
 
     for log_path in logs:
         for record in load_jsonl(log_path):
@@ -131,6 +133,8 @@ def audit_logs(logs: List[Path]) -> Dict[str, Any]:
             if prompt:
                 prompt_versions[prompt] = prompt_versions.get(prompt, 0) + 1
             failures, failure_row = audit_record(record, log_path)
+            if str(record.get("shield_reason") or "").startswith("executor_recovery:"):
+                executor_recovery_count += 1
             for failure in failures:
                 counts[failure] = counts.get(failure, 0) + 1
             if failures:
@@ -145,6 +149,7 @@ def audit_logs(logs: List[Path]) -> Dict[str, Any]:
         "failure_type_counts": {key: value for key, value in sorted(counts.items()) if value},
         "protocol_versions": protocol_versions,
         "prompt_versions": prompt_versions,
+        "executor_recovery_count": int(executor_recovery_count),
         "logs": [str(path) for path in logs],
         "failures": failure_rows,
     }

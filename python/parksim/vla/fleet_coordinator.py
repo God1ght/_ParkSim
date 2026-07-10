@@ -1,7 +1,9 @@
 """Synchronized cloud-fleet decision epochs independent of ROS transport."""
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
+from parksim.vla.fleet_bev import save_fleet_bev_png
 from parksim.vla.fleet_client import QwenFleetPolicyClient
 from parksim.vla.fleet_schema import VLAFleetContext
 from parksim.vla.fleet_shield import VLAFleetSafetyShield
@@ -55,8 +57,9 @@ class FleetEpoch:
 class FleetEpochCoordinator:
     """Collect one AV context per epoch, then call and validate one fleet policy."""
 
-    def __init__(self, decision_period: float = 3.0) -> None:
+    def __init__(self, decision_period: float = 3.0, bev_output_dir: str = "") -> None:
         self.decision_period = max(0.1, float(decision_period))
+        self.bev_output_dir = str(bev_output_dir or "")
         self.registered_vehicle_ids: Set[int] = set()
         self.next_epoch_sim_time = 0.0
         self.epoch_counter = 0
@@ -131,6 +134,16 @@ class FleetEpochCoordinator:
         shield = shield or VLAFleetSafetyShield()
         collected_ids = sorted(epoch.contexts)
         missing_ids = [item for item in epoch.expected_vehicle_ids if item not in epoch.contexts]
+        contexts = [epoch.contexts[item] for item in collected_ids]
+        fleet_bev_path = None
+        if contexts and self.bev_output_dir:
+            try:
+                fleet_bev_path = save_fleet_bev_png(
+                    contexts,
+                    str(Path(self.bev_output_dir) / ("fleet_epoch_%05d.png" % epoch.epoch_id)),
+                )
+            except Exception:
+                fleet_bev_path = None
         fleet_context = VLAFleetContext(
             instruction=(
                 "Act as the synchronized cloud VLA coordinator for the entire mixed "
@@ -138,7 +151,8 @@ class FleetEpochCoordinator:
                 "for every automated vehicle in this decision epoch."
             ),
             state=self._fleet_state(epoch, run_id, missing_ids),
-            vehicle_contexts=[epoch.contexts[item] for item in collected_ids],
+            vehicle_contexts=contexts,
+            bev_image_path=fleet_bev_path,
         )
         result: Dict[str, Any] = {
             "run_id": str(run_id),
@@ -150,6 +164,7 @@ class FleetEpochCoordinator:
             "decision_scope": "synchronized_fleet_epoch",
             "decision_complete": not missing_ids,
             "fleet_context": fleet_context.to_dict(),
+            "fleet_bev_path": fleet_bev_path,
             "fleet_decisions": [],
         }
         if collected_ids:

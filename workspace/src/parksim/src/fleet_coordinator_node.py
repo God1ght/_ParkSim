@@ -31,12 +31,13 @@ class FleetCoordinatorNode(Node):
             model=str(self.get_parameter("qwen_model").value),
             timeout=float(self.get_parameter("qwen_timeout").value),
         )
+        self.decision_log_path = str(self.get_parameter("decision_log_path").value) or "fleet_epochs.jsonl"
         self.coordinator = FleetEpochCoordinator(
-            decision_period=float(self.get_parameter("decision_period").value)
+            decision_period=float(self.get_parameter("decision_period").value),
+            bev_output_dir=os.path.join(os.path.dirname(self.decision_log_path) or ".", "fleet_bev"),
         )
         self.shield = VLAFleetSafetyShield()
         self.sim_time = None
-        self.decision_log_path = str(self.get_parameter("decision_log_path").value) or "fleet_epochs.jsonl"
 
         self.pause_pub = self.create_publisher(Bool, "/vla/fleet_pause", 10)
         self.epoch_pub = self.create_publisher(String, "/vla/fleet_epoch", 10)

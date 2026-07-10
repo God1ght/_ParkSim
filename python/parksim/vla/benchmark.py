@@ -26,7 +26,7 @@ PREFERRED_FIELDS = [
     "traffic_spawned_count", "traffic_delayed_count", "traffic_skipped_count", "system_min_distance_m",
     "trace_integrity_ok", "trace_integrity_invalid_file_count", "trace_identity_conflict_count",
     "trace_time_regression_count", "trace_wall_time_regression_count", "trace_kinematic_jump_count",
-    "trace_max_step_distance_m",
+    "trace_expected_maneuver_handoff_count", "trace_max_step_distance_m",
     "system_near_miss_event_count", "system_collision_proxy_event_count", "trajectory_conflict_event_count",
     "mixed_intent_conflict_event_count", "mixed_intent_conflict_time_s",
     "trace_path", "summary_path", "decisions_path",
@@ -306,11 +306,11 @@ def validate(out_dir: Path, require_complete: bool = False, expected_agents: Opt
         if _safe_float(row.get("trace_points")) <= 0:
             problems.append("metric row has no trace points: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
         fleet_count = _safe_float(row.get("automated_vehicle_count"))
-        if row.get("ego_is_controlled") is not True and fleet_count <= 1:
-            problems.append("metric row does not identify controlled ego: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
+        if row.get("ego_is_controlled") is not True and fleet_count <= 0:
+            problems.append("metric row identifies neither a controlled ego nor an automated fleet: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
         if require_complete and fleet_count <= 1 and not row.get("completed"):
             problems.append("incomplete episode under --require-complete: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
-        if fleet_count > 1 and _safe_float(row.get("automated_vehicle_completion_rate")) <= 0.0:
+        if require_complete and fleet_count > 1 and _safe_float(row.get("automated_vehicle_completion_rate")) <= 0.0:
             problems.append("fleet episode has no completed automated vehicles: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
         if row.get("trace_integrity_ok") is not True:
             problems.append(
