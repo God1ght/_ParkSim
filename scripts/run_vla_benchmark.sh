@@ -7,6 +7,8 @@ WORKSPACE_SETUP="${WORKSPACE_SETUP:-$ROOT/workspace/install/setup.bash}"
 DLP_ROOT="${PARKSIM_DLP_ROOT:-/media/step/data/Parking_Yccc7/_dlp_dataset}"
 OUT_DIR="${PARKSIM_BENCH_OUT_DIR:-$ROOT/experiments/qwen_vla_benchmark/$(date +%Y%m%d_%H%M%S)}"
 DURATION="${PARKSIM_BENCH_DURATION:-90s}"
+WALL_TIMEOUT="${PARKSIM_BENCH_WALL_TIMEOUT:-}"
+WALL_TIMEOUT_MULTIPLIER="${PARKSIM_BENCH_WALL_TIMEOUT_MULTIPLIER:-4}"
 AGENTS="${PARKSIM_BENCH_AGENTS:-rule_based greedy_nearest greedy_shortest_path risk_aware_rule bundle_risk_aware conflict_aware_bundle reservation_bundle rolling_horizon_bundle centralized_min_cost oracle_intent_bundle qwen_vla}"
 SEEDS="${PARKSIM_BENCH_SEEDS:-0 1 2}"
 BACKGROUND_MODES="${PARKSIM_BENCH_BACKGROUND_MODES:-rule_random}"
@@ -27,6 +29,24 @@ LONG_HORIZON_ENTER_INTERVAL_MEAN="${PARKSIM_BENCH_LONG_HORIZON_ENTER_INTERVAL_ME
 LONG_HORIZON_EXIT_INTERVAL_MEAN="${PARKSIM_BENCH_LONG_HORIZON_EXIT_INTERVAL_MEAN:-14.0}"
 HUMAN_INTENT_HIDDEN_FRACTION="${PARKSIM_BENCH_HUMAN_INTENT_HIDDEN_FRACTION:-0.75}"
 MAX_CONCURRENT_BACKGROUND_VEHICLES="${PARKSIM_BENCH_MAX_CONCURRENT_BACKGROUND_VEHICLES:-80}"
+if [[ -z "$WALL_TIMEOUT" ]]; then
+  WALL_TIMEOUT="$(python3 - "$DURATION" "$WALL_TIMEOUT_MULTIPLIER" <<'WALL_TIMEOUT_PY'
+import math
+import re
+import sys
+raw_duration = sys.argv[1]
+multiplier = float(sys.argv[2])
+match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([a-zA-Z]*)", raw_duration)
+if not match:
+    raise SystemExit(f"Unsupported PARKSIM_BENCH_DURATION: {raw_duration}")
+value = float(match.group(1))
+unit = match.group(2) or "s"
+if unit != "s":
+    raise SystemExit(f"Only second-based durations are supported for wall-time expansion: {raw_duration}")
+print(f"{int(math.ceil(value * multiplier))}s")
+WALL_TIMEOUT_PY
+)"
+fi
 DELAYED_SPAWN_RETRY_SECONDS="${PARKSIM_BENCH_DELAYED_SPAWN_RETRY_SECONDS:-2.0}"
 EXIT_SPOT_REUSE_DELAY="${PARKSIM_BENCH_EXIT_SPOT_REUSE_DELAY:-20.0}"
 QWEN_PERIODIC_REPLAN="${PARKSIM_BENCH_QWEN_PERIODIC_REPLAN:-false}"
@@ -67,7 +87,7 @@ set -u
 qwen_pid=""
 GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 GIT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown)"
-export ROOT GIT_COMMIT GIT_BRANCH DURATION AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING TRAFFIC_FLOW_MODE FLEET_CONTROL_MODE ENTRY_VEHICLE_AGENT_TYPE EXIT_VEHICLE_AGENT_TYPE LONG_HORIZON_DURATION RESTORE_OBSTACLES_AS_EXIT_VEHICLES STATIC_OBSTACLE_EXIT_FRACTION STATIC_OBSTACLE_EXIT_MAX STATIC_OBSTACLE_EXIT_START_TIME LONG_HORIZON_ENTER_INTERVAL_MEAN LONG_HORIZON_EXIT_INTERVAL_MEAN HUMAN_INTENT_HIDDEN_FRACTION MAX_CONCURRENT_BACKGROUND_VEHICLES DELAYED_SPAWN_RETRY_SECONDS EXIT_SPOT_REUSE_DELAY QWEN_PERIODIC_REPLAN CONTROLLED_EGO_BLOCKS_ENTRANCE QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT EARLY_STOP EARLY_STOP_POLL_SECONDS EARLY_STOP_GRACE_SECONDS CLEAR_OUT_DIR
+export ROOT GIT_COMMIT GIT_BRANCH DURATION WALL_TIMEOUT WALL_TIMEOUT_MULTIPLIER AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING TRAFFIC_FLOW_MODE FLEET_CONTROL_MODE ENTRY_VEHICLE_AGENT_TYPE EXIT_VEHICLE_AGENT_TYPE LONG_HORIZON_DURATION RESTORE_OBSTACLES_AS_EXIT_VEHICLES STATIC_OBSTACLE_EXIT_FRACTION STATIC_OBSTACLE_EXIT_MAX STATIC_OBSTACLE_EXIT_START_TIME LONG_HORIZON_ENTER_INTERVAL_MEAN LONG_HORIZON_EXIT_INTERVAL_MEAN HUMAN_INTENT_HIDDEN_FRACTION MAX_CONCURRENT_BACKGROUND_VEHICLES DELAYED_SPAWN_RETRY_SECONDS EXIT_SPOT_REUSE_DELAY QWEN_PERIODIC_REPLAN CONTROLLED_EGO_BLOCKS_ENTRANCE QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT EARLY_STOP EARLY_STOP_POLL_SECONDS EARLY_STOP_GRACE_SECONDS CLEAR_OUT_DIR
 
 prepare_out_dir() {
   mkdir -p "$OUT_DIR"
@@ -110,6 +130,8 @@ payload = {
     "git_commit": os.environ.get("GIT_COMMIT", ""),
     "git_branch": os.environ.get("GIT_BRANCH", ""),
     "duration": os.environ.get("DURATION", ""),
+    "wall_timeout": os.environ.get("WALL_TIMEOUT", ""),
+    "wall_timeout_multiplier": os.environ.get("WALL_TIMEOUT_MULTIPLIER", ""),
     "agents": os.environ.get("AGENTS", "").split(),
     "seeds": os.environ.get("SEEDS", "").split(),
     "background_modes": os.environ.get("BACKGROUND_MODES", "").split(),
@@ -348,11 +370,11 @@ run_episode() {
     exit_role="av_exiting"
   fi
   mkdir -p "$log_dir"
-  echo "running scenario=$scenario_id agent=$agent fleet_mode=$FLEET_CONTROL_MODE entry_agent=$entry_agent exit_agent=$exit_agent -> $run_dir"
+  echo "running scenario=$scenario_id agent=$agent fleet_mode=$FLEET_CONTROL_MODE entry_agent=$entry_agent exit_agent=$exit_agent sim_duration=$DURATION wall_timeout=$WALL_TIMEOUT -> $run_dir"
   cleanup_ros_processes
   set +e
   local early_stop_triggered=0
-  PYTHONPATH="$DLP_ROOT${PYTHONPATH:+:$PYTHONPATH}" timeout "$DURATION" ros2 run parksim simulator_node.py --ros-args \
+  PYTHONPATH="$DLP_ROOT${PYTHONPATH:+:$PYTHONPATH}" timeout "$WALL_TIMEOUT" ros2 run parksim simulator_node.py --ros-args \
     -p spawn_controlled_ego:=true \
     -p controlled_ego_agent_type:="$agent" \
     -p controlled_ego_spawn_time:="$SPAWN_TIME" \
