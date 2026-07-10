@@ -248,6 +248,10 @@ def _fleet_completion_metrics(log_dir: Path) -> Dict[str, Any]:
     automated_ids = {vehicle_id for vehicle_id in vehicle_ids if _is_automated_vehicle(roles.get(vehicle_id, ""), agent_types.get(vehicle_id, ""))}
     cloud_ids = {vehicle_id for vehicle_id in automated_ids if str(agent_types.get(vehicle_id, "")).lower() == "qwen_vla"}
     human_like_ids = vehicle_ids - automated_ids
+    deadlock_release_count = sum(
+        int(_safe_float(rows[-1].get("deadlock_release_count")))
+        for rows in trace_by_id.values() if rows
+    )
     result = {
         "automated_vehicle_count": len(automated_ids),
         "completed_automated_vehicle_count": _completed_count(automated_ids, completed_by_id),
@@ -262,6 +266,7 @@ def _fleet_completion_metrics(log_dir: Path) -> Dict[str, Any]:
         "controlled_ego_summary_count": len(controlled_summary_ids),
         "controlled_ego_trace_count": len(controlled_trace_ids),
         "controlled_ego_completed_count": _completed_count(controlled_summary_ids | controlled_trace_ids, completed_by_id),
+        "system_deadlock_release_count": deadlock_release_count,
         "controlled_ego_trace_points": sum(len(trace_by_id.get(vehicle_id, [])) for vehicle_id in (controlled_summary_ids | controlled_trace_ids)),
     }
     result.update(_fleet_operational_metrics("automated", automated_ids, trace_by_id, summaries))

@@ -87,6 +87,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.priority = 0 # priority for going after braking
         self.waiting_for: int = 0 # vehicle waiting for before we go. We start indexing vehicles from 1, so 0 means no vehicle
         self.waiting_for_unparker = False # need special handling for waiting for unparker
+        self.deadlock_release_count = 0 # number of multi-vehicle yield cycles explicitly released
 
         self.logger = deque(maxlen=100)
 
@@ -660,6 +661,27 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                 self.nearby_vehicles.add(id)
             
 
+    def has_wait_cycle(self, max_hops: int = 12) -> bool:
+        """Return true only when this vehicle belongs to a multi-vehicle yield cycle."""
+        try:
+            next_vehicle = int(self.waiting_for or 0)
+        except (TypeError, ValueError):
+            return False
+        if next_vehicle <= 0:
+            return False
+        visited = {self.vehicle_id}
+        for _ in range(max_hops):
+            if next_vehicle == self.vehicle_id:
+                return len(visited) > 2
+            if next_vehicle <= 0 or next_vehicle in visited:
+                return False
+            visited.add(next_vehicle)
+            try:
+                next_vehicle = int(self.other_waiting_for.get(next_vehicle, 0) or 0)
+            except (TypeError, ValueError):
+                return False
+        return False
+
     def solve(self, time=None):
         """
         Having other_vehicle_objects here is just to mimic the ROS service to change values of the other vehicle. Should use this to acquire information
@@ -757,6 +779,10 @@ class RuleBasedStanleyVehicle(AbstractAgent):
                             # you should go
                             # TODO: this line could be an issue if the vehicles aren't checked in a loop (since either could go)
                             # But for now, since it is checked in a loop, once a vehicle is set to waiting, the other vehicle is guaranteed to be checked before this vehicle is checked again
+                            should_unbrake = True
+                        elif self.has_wait_cycle():
+                            # Break only closed yield cycles; normal yielding remains unchanged.
+                            self.deadlock_release_count += 1
                             should_unbrake = True
 
                     if should_unbrake:

@@ -382,6 +382,7 @@ class VehicleNode(MPClabNode):
             "steering": float(state.u.u_steer),
             "is_braking": bool(getattr(self.vehicle, "is_braking", False)),
             "waiting_for": int(getattr(self.vehicle, "waiting_for", 0) or 0),
+            "deadlock_release_count": int(getattr(self.vehicle, "deadlock_release_count", 0) or 0),
             "target_idx": int(getattr(self.vehicle, "target_idx", 0) or 0),
             "vehicle_spot_index": int(getattr(self.vehicle, "spot_index", 0) or 0),
         }
@@ -410,6 +411,7 @@ class VehicleNode(MPClabNode):
             "completed": bool(self.vehicle.is_all_done()),
             "total_time": float(sim_time),
             "total_non_idle_time": float(self.total_non_idle_time),
+            "deadlock_release_count": int(getattr(self.vehicle, "deadlock_release_count", 0) or 0),
             "final_task": self.vehicle.current_task,
             "final_state": {
                 "x": float(state.x.x),
