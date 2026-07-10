@@ -33,6 +33,12 @@ class VLAFleetSafetyShield:
                 valid_actions,
                 vehicle=vehicle_lookup.get(vehicle_id),
             )
+            if ok and action is not None:
+                guarded_action = _progress_guard_action(action, valid_actions, set(reserved_targets.keys()))
+                if guarded_action is not None:
+                    action = guarded_action
+                    decision = _guarded_decision(vehicle_id, decision, action)
+                    reason = "progress guard replaced low-risk over-waiting with executable progress"
             if ok and action is not None and _is_spot_action(action):
                 spot = abs(int(action.target_spot_index))
                 if spot in reserved_targets:
@@ -90,3 +96,58 @@ def _action_by_id(actions: List[VLACandidateAction], action_id: str) -> Optional
 
 def _is_spot_action(action: VLACandidateAction) -> bool:
     return action.action_type in (VLAActionType.SELECT_SPOT_AND_CRUISE, VLAActionType.PARK, VLAActionType.REROUTE) and action.target_spot_index is not None
+
+
+def _progress_guard_action(
+    selected: VLACandidateAction,
+    actions: List[VLACandidateAction],
+    reserved_targets: set,
+) -> Optional[VLACandidateAction]:
+    """Do not let a language-model WAIT override an obviously safe progress bundle."""
+    if selected.action_type != VLAActionType.WAIT:
+        return None
+    candidates = []
+    for action in actions:
+        if action.action_type not in (VLAActionType.SELECT_SPOT_AND_CRUISE, VLAActionType.PARK, VLAActionType.CRUISE_TO_EXIT):
+            continue
+        if _is_spot_action(action) and abs(int(action.target_spot_index)) in reserved_targets:
+            continue
+        features = action.features if isinstance(action.features, dict) else {}
+        if _float_feature(features, "conflict_risk", 1.0) > 0.15:
+            continue
+        if _float_feature(features, "conflict_vehicle_count", 1.0) > 0.0:
+            continue
+        candidates.append(action)
+    if not candidates:
+        return None
+    return min(candidates, key=_progress_rank)
+
+
+def _guarded_decision(vehicle_id: int, previous: VLAFleetDecision, action: VLACandidateAction) -> VLAFleetDecision:
+    reason_code = "EXIT_READY" if action.action_type == VLAActionType.CRUISE_TO_EXIT else "PARK_AVAILABLE"
+    return VLAFleetDecision(
+        vehicle_id=vehicle_id,
+        action_id=action.action_id,
+        target_spot_index=action.target_spot_index,
+        priority=previous.priority,
+        reason_code=reason_code,
+        reason="progress_guard: selected safe lower-cost progress action after model WAIT",
+        confidence=previous.confidence,
+        used_fallback=previous.used_fallback,
+    )
+
+
+def _progress_rank(action: VLACandidateAction) -> Tuple[float, float, str]:
+    features = action.features if isinstance(action.features, dict) else {}
+    return (
+        _float_feature(features, "bundle_cost", float("inf")),
+        _float_feature(features, "estimated_time_s", float("inf")),
+        action.action_id,
+    )
+
+
+def _float_feature(features: Dict[str, Any], key: str, default: float) -> float:
+    try:
+        return float(features.get(key, default))
+    except Exception:
+        return default
