@@ -282,7 +282,8 @@ append_episode() {
   local sim_log="$9"
   local early_stop_triggered="${10:-0}"
   local traffic_completion_stop_triggered="${11:-0}"
-  python3 - "$file" "$scenario_id" "$scenario_dir" "$agent" "$seed" "$background_mode" "$SPOT_INDEX" "$SPAWN_ENTERING" "$SPAWN_EXITING" "$run_dir" "$log_dir" "$sim_log" "$EARLY_STOP" "$early_stop_triggered" "$DURATION" "$TRAFFIC_COMPLETION_STOP" "$traffic_completion_stop_triggered" <<'EPISODE_JSON'
+  local traffic_horizon_stop_triggered="${12:-0}"
+  python3 - "$file" "$scenario_id" "$scenario_dir" "$agent" "$seed" "$background_mode" "$SPOT_INDEX" "$SPAWN_ENTERING" "$SPAWN_EXITING" "$run_dir" "$log_dir" "$sim_log" "$EARLY_STOP" "$early_stop_triggered" "$DURATION" "$TRAFFIC_COMPLETION_STOP" "$traffic_completion_stop_triggered" "$TRAFFIC_HORIZON_STOP" "$traffic_horizon_stop_triggered" "$TRAFFIC_HORIZON_OVERRUN_SECONDS" <<'EPISODE_JSON'
 import json
 import sys
 path = sys.argv[1]
