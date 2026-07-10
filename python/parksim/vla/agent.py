@@ -139,7 +139,7 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         # at a later simulation-aligned epoch after occupancy has propagated.
         if not occupancy_ready(self):
             return None
-        if self._has_active_low_level_maneuver():
+        if self._has_active_low_level_maneuver() and not self._active_maneuver_replan_due(sim_time):
             return None
         actions = build_candidate_actions(
             self,
@@ -336,6 +336,11 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
     def _has_active_low_level_maneuver(self) -> bool:
         """Cloud policy may choose tasks only at stable task boundaries."""
         return str(self.current_task or "").upper() in ("UNPARK", "CRUISE", "PARK")
+
+    def _active_maneuver_replan_due(self, sim_time: float) -> bool:
+        """Allow recovery only after a cloud-issued maneuver has outlived one epoch."""
+        last_decision = float(self._last_vla_decision_time)
+        return bool(np.isfinite(last_decision) and float(sim_time) - last_decision >= self.decision_period)
 
 class BaselineVLAVehicle(QwenVLAVehicle):
     """Deterministic high-level VLA baseline over the same action interface."""

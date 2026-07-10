@@ -42,6 +42,7 @@ def _fleet_context_requires_known_occupancy():
     vehicle = DummyVehicle()
     vehicle.fleet_coordinator_enabled = True
     vehicle.max_candidate_spots = 2
+    vehicle.decision_period = 3.0
     vehicle.entrance_coords = np.asarray([14.38, 76.21], dtype=float)
     vehicle._external_fleet_epoch = None
     vehicle._external_fleet_context = None
@@ -50,11 +51,17 @@ def _fleet_context_requires_known_occupancy():
     vehicle._last_fleet_response = None
     vehicle.is_all_done = lambda: False
     vehicle._has_active_low_level_maneuver = lambda: False
+    vehicle._active_maneuver_replan_due = lambda sim_time: QwenVLAVehicle._active_maneuver_replan_due(vehicle, sim_time)
 
     vehicle.occupancy = []
     assert QwenVLAVehicle.build_fleet_epoch_context(vehicle, epoch_id=1, sim_time=0.0) is None
     vehicle.occupancy = [1, 0, 0]
     assert QwenVLAVehicle.build_fleet_epoch_context(vehicle, epoch_id=2, sim_time=1.0) is not None
+    vehicle._has_active_low_level_maneuver = lambda: True
+    vehicle._last_vla_decision_time = float("-inf")
+    assert QwenVLAVehicle.build_fleet_epoch_context(vehicle, epoch_id=3, sim_time=2.0) is None
+    vehicle._last_vla_decision_time = 0.0
+    assert QwenVLAVehicle.build_fleet_epoch_context(vehicle, epoch_id=4, sim_time=4.0) is not None
 
 
 def main():
