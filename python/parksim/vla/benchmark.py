@@ -312,6 +312,11 @@ def validate(out_dir: Path, require_complete: bool = False, expected_agents: Opt
             problems.append("incomplete episode under --require-complete: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
         if require_complete and fleet_count > 1 and _safe_float(row.get("automated_vehicle_completion_rate")) <= 0.0:
             problems.append("fleet episode has no completed automated vehicles: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
+        if require_complete and fleet_count > 1 and _safe_float(row.get("automated_vehicle_completion_rate")) < 1.0:
+            problems.append(
+                "fleet episode has incomplete automated vehicles: %s/%s completed=%s total=%s rate=%s"
+                % (row.get("scenario_id"), row.get("agent_type"), row.get("completed_automated_vehicle_count"), row.get("automated_vehicle_count"), row.get("automated_vehicle_completion_rate"))
+            )
         if row.get("trace_integrity_ok") is not True:
             problems.append(
                 "trace integrity failed for %s/%s: identity=%d time=%d wall=%d jump=%d"
@@ -339,6 +344,7 @@ def validate(out_dir: Path, require_complete: bool = False, expected_agents: Opt
         "scenario_count": len(by_scenario),
         "expected_agents": expected_agents,
         "require_complete": bool(require_complete),
+        "required_automated_vehicle_completion_rate": 1.0 if require_complete else None,
     }
     _write_json(out_dir / "validation.json", result)
     return result

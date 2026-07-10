@@ -15,6 +15,7 @@ FLEET_DECISION_PERIOD="${PARKSIM_CLOUD_SUITE_FLEET_DECISION_PERIOD:-15.0}"
 REQUIRE_COMPLETE="${PARKSIM_CLOUD_SUITE_REQUIRE_COMPLETE:-1}"
 REPORT_NAME="${PARKSIM_CLOUD_SUITE_REPORT_NAME:-cloud_fleet_report}"
 CONTINUE_ON_FAIL="${PARKSIM_CLOUD_SUITE_CONTINUE_ON_FAIL:-1}"
+TRAFFIC_HORIZON_OVERRUN_SECONDS="${PARKSIM_CLOUD_SUITE_TRAFFIC_HORIZON_OVERRUN_SECONDS:-180}"
 
 AGENTS="${AGENTS//,/ }"
 mkdir -p "$OUT_DIR/benchmarks"
@@ -27,7 +28,7 @@ if [[ "$AGENTS" == *qwen_vla* && -z "$QWEN_ENDPOINT" ]]; then
 fi
 
 git_commit="$(git -C "$ROOT" rev-parse HEAD)"
-export git_commit AGENTS SEEDS BACKGROUND_MODES DENSITIES DURATION WALL_TIMEOUT QWEN_ENDPOINT QWEN_TIMEOUT FLEET_DECISION_PERIOD REQUIRE_COMPLETE
+export git_commit AGENTS SEEDS BACKGROUND_MODES DENSITIES DURATION WALL_TIMEOUT QWEN_ENDPOINT QWEN_TIMEOUT FLEET_DECISION_PERIOD REQUIRE_COMPLETE TRAFFIC_HORIZON_OVERRUN_SECONDS
 python3 - "$OUT_DIR/suite_config.json" <<'PYCONFIG'
 import json
 import os
@@ -46,6 +47,7 @@ payload = {
     "qwen_timeout": os.environ["QWEN_TIMEOUT"],
     "fleet_decision_period": os.environ["FLEET_DECISION_PERIOD"],
     "require_complete": os.environ["REQUIRE_COMPLETE"],
+    "traffic_horizon_overrun_seconds": os.environ["TRAFFIC_HORIZON_OVERRUN_SECONDS"],
 }
 with open(sys.argv[1], "w") as handle:
     json.dump(payload, handle, indent=2)
@@ -118,6 +120,7 @@ for background_mode in $BACKGROUND_MODES; do
     PARKSIM_BENCH_EARLY_STOP=0 \
     PARKSIM_BENCH_TRAFFIC_COMPLETION_STOP=1 \
     PARKSIM_BENCH_TRAFFIC_HORIZON_STOP=1 \
+    PARKSIM_BENCH_TRAFFIC_HORIZON_OVERRUN_SECONDS="$TRAFFIC_HORIZON_OVERRUN_SECONDS" \
       "$ROOT/scripts/run_vla_benchmark.sh"
     status="$?"
     set -e
