@@ -64,6 +64,10 @@ def build_candidate_actions(
         if not _is_reachable_spot(vehicle, spot_index):
             actions.pop()
     if exit_coords is not None and _allow_cruise_to_exit(vehicle):
+        actions = [
+            action for action in actions
+            if action.action_type not in (VLAActionType.SELECT_SPOT_AND_CRUISE, VLAActionType.PARK, VLAActionType.REROUTE)
+        ]
         actions.append(VLACandidateAction(
             action_id="cruise_to_exit",
             action_type=VLAActionType.CRUISE_TO_EXIT,
@@ -102,7 +106,7 @@ def _is_reachable_spot(vehicle: Any, spot_index: int) -> bool:
 
 
 def choose_default_action(actions: List[VLACandidateAction]) -> Optional[VLACandidateAction]:
-    for preferred in (VLAActionType.SELECT_SPOT_AND_CRUISE, VLAActionType.PARK, VLAActionType.REROUTE, VLAActionType.WAIT):
+    for preferred in (VLAActionType.SELECT_SPOT_AND_CRUISE, VLAActionType.PARK, VLAActionType.REROUTE, VLAActionType.CRUISE_TO_EXIT, VLAActionType.WAIT):
         for action in actions:
             if action.action_type == preferred:
                 return action
