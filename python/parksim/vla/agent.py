@@ -134,6 +134,11 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         """Build one immutable high-level decision context for a central epoch."""
         if not self.fleet_coordinator_enabled or self.is_all_done():
             return None
+        # A cloud epoch must never ask Qwen to choose from an all-unknown lot.
+        # Returning None causes the ROS coordinator to defer this AV and retry
+        # at a later simulation-aligned epoch after occupancy has propagated.
+        if not occupancy_ready(self):
+            return None
         if self._has_active_low_level_maneuver():
             return None
         actions = build_candidate_actions(
