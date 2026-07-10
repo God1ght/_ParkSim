@@ -63,6 +63,12 @@ def build_candidate_actions(
         ))
         if not _is_reachable_spot(vehicle, spot_index):
             actions.pop()
+    if _has_committed_parking_target(vehicle):
+        committed_spot = abs(int(vehicle.spot_index))
+        actions = [
+            action for action in actions
+            if action.target_spot_index is None or int(action.target_spot_index) == committed_spot
+        ]
     if exit_coords is not None and _allow_cruise_to_exit(vehicle):
         actions = [
             action for action in actions
@@ -154,6 +160,15 @@ def _allow_cruise_to_exit(vehicle: Any) -> bool:
         return int(getattr(vehicle, "spot_index", 0) or 0) < 0
     except Exception:
         return False
+
+
+def _has_committed_parking_target(vehicle: Any) -> bool:
+    try:
+        if int(getattr(vehicle, "spot_index", 0) or 0) <= 0:
+            return False
+    except Exception:
+        return False
+    return str(getattr(vehicle, "current_task", "") or "").upper() in ("CRUISE", "PARK")
 
 
 def _safe_reached_target(vehicle: Any) -> bool:
