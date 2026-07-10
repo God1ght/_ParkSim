@@ -38,7 +38,7 @@ class VLAFleetSafetyShield:
                 if guarded_action is not None:
                     action = guarded_action
                     decision = _guarded_decision(vehicle_id, decision, action)
-                    reason = "progress guard replaced low-risk over-waiting with executable progress"
+                    reason = "risk-progress guard replaced a dominated model choice with executable progress"
             if ok and action is not None and _is_spot_action(action):
                 spot = abs(int(action.target_spot_index))
                 if spot in reserved_targets:
@@ -103,8 +103,12 @@ def _progress_guard_action(
     actions: List[VLACandidateAction],
     reserved_targets: set,
 ) -> Optional[VLACandidateAction]:
-    """Do not let a language-model WAIT override an obviously safe progress bundle."""
-    if selected.action_type != VLAActionType.WAIT:
+    """Prefer a non-conflicting progress bundle over WAIT or a dominated risky choice."""
+    selected_features = selected.features if isinstance(selected.features, dict) else {}
+    selected_risk = _float_feature(selected_features, "conflict_risk", 1.0)
+    selected_conflicts = _float_feature(selected_features, "conflict_vehicle_count", 1.0)
+    is_wait = selected.action_type == VLAActionType.WAIT
+    if not is_wait and selected_risk <= 0.15 and selected_conflicts <= 0.0:
         return None
     candidates = []
     for action in actions:
@@ -131,7 +135,7 @@ def _guarded_decision(vehicle_id: int, previous: VLAFleetDecision, action: VLACa
         target_spot_index=action.target_spot_index,
         priority=previous.priority,
         reason_code=reason_code,
-        reason="progress_guard: selected safe lower-cost progress action after model WAIT",
+        reason="risk_progress_guard: selected safe lower-cost progress action",
         confidence=previous.confidence,
         used_fallback=previous.used_fallback,
     )
