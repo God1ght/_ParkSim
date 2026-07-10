@@ -61,6 +61,8 @@ EARLY_STOP_POLL_SECONDS="${PARKSIM_BENCH_EARLY_STOP_POLL_SECONDS:-1}"
 EARLY_STOP_GRACE_SECONDS="${PARKSIM_BENCH_EARLY_STOP_GRACE_SECONDS:-2}"
 TRAFFIC_COMPLETION_STOP="${PARKSIM_BENCH_TRAFFIC_COMPLETION_STOP:-1}"
 TRAFFIC_COMPLETION_GRACE_SECONDS="${PARKSIM_BENCH_TRAFFIC_COMPLETION_GRACE_SECONDS:-5}"
+TRAFFIC_HORIZON_STOP="${PARKSIM_BENCH_TRAFFIC_HORIZON_STOP:-1}"
+TRAFFIC_HORIZON_OVERRUN_SECONDS="${PARKSIM_BENCH_TRAFFIC_HORIZON_OVERRUN_SECONDS:-180}"
 CLEAR_OUT_DIR="${PARKSIM_BENCH_CLEAR_OUT_DIR:-1}"
 
 # ROS Foxy on Ubuntu 20.04 is built against system Python 3.8.
@@ -89,7 +91,7 @@ set -u
 qwen_pid=""
 GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 GIT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown)"
-export ROOT GIT_COMMIT GIT_BRANCH DURATION WALL_TIMEOUT WALL_TIMEOUT_MULTIPLIER AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING TRAFFIC_FLOW_MODE FLEET_CONTROL_MODE ENTRY_VEHICLE_AGENT_TYPE EXIT_VEHICLE_AGENT_TYPE LONG_HORIZON_DURATION RESTORE_OBSTACLES_AS_EXIT_VEHICLES STATIC_OBSTACLE_EXIT_FRACTION STATIC_OBSTACLE_EXIT_MAX STATIC_OBSTACLE_EXIT_START_TIME LONG_HORIZON_ENTER_INTERVAL_MEAN LONG_HORIZON_EXIT_INTERVAL_MEAN HUMAN_INTENT_HIDDEN_FRACTION MAX_CONCURRENT_BACKGROUND_VEHICLES DELAYED_SPAWN_RETRY_SECONDS EXIT_SPOT_REUSE_DELAY QWEN_PERIODIC_REPLAN CONTROLLED_EGO_BLOCKS_ENTRANCE QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT EARLY_STOP EARLY_STOP_POLL_SECONDS EARLY_STOP_GRACE_SECONDS TRAFFIC_COMPLETION_STOP TRAFFIC_COMPLETION_GRACE_SECONDS CLEAR_OUT_DIR
+export ROOT GIT_COMMIT GIT_BRANCH DURATION WALL_TIMEOUT WALL_TIMEOUT_MULTIPLIER AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING TRAFFIC_FLOW_MODE FLEET_CONTROL_MODE ENTRY_VEHICLE_AGENT_TYPE EXIT_VEHICLE_AGENT_TYPE LONG_HORIZON_DURATION RESTORE_OBSTACLES_AS_EXIT_VEHICLES STATIC_OBSTACLE_EXIT_FRACTION STATIC_OBSTACLE_EXIT_MAX STATIC_OBSTACLE_EXIT_START_TIME LONG_HORIZON_ENTER_INTERVAL_MEAN LONG_HORIZON_EXIT_INTERVAL_MEAN HUMAN_INTENT_HIDDEN_FRACTION MAX_CONCURRENT_BACKGROUND_VEHICLES DELAYED_SPAWN_RETRY_SECONDS EXIT_SPOT_REUSE_DELAY QWEN_PERIODIC_REPLAN CONTROLLED_EGO_BLOCKS_ENTRANCE QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT EARLY_STOP EARLY_STOP_POLL_SECONDS EARLY_STOP_GRACE_SECONDS TRAFFIC_COMPLETION_STOP TRAFFIC_COMPLETION_GRACE_SECONDS TRAFFIC_HORIZON_STOP TRAFFIC_HORIZON_OVERRUN_SECONDS CLEAR_OUT_DIR
 
 prepare_out_dir() {
   mkdir -p "$OUT_DIR"
@@ -163,6 +165,8 @@ payload = {
     "early_stop_grace_seconds": os.environ.get("EARLY_STOP_GRACE_SECONDS", ""),
     "traffic_completion_stop": os.environ.get("TRAFFIC_COMPLETION_STOP", ""),
     "traffic_completion_grace_seconds": os.environ.get("TRAFFIC_COMPLETION_GRACE_SECONDS", ""),
+    "traffic_horizon_stop": os.environ.get("TRAFFIC_HORIZON_STOP", ""),
+    "traffic_horizon_overrun_seconds": os.environ.get("TRAFFIC_HORIZON_OVERRUN_SECONDS", ""),
     "clear_out_dir": os.environ.get("CLEAR_OUT_DIR", ""),
 }
 with open(sys.argv[1], "w") as f:
@@ -299,6 +303,9 @@ record = {
     "duration_limit": sys.argv[15],
     "traffic_completion_stop_enabled": sys.argv[16] == "1",
     "traffic_completion_stop_triggered": sys.argv[17] == "1",
+    "traffic_horizon_stop_enabled": sys.argv[18] == "1",
+    "traffic_horizon_stop_triggered": sys.argv[19] == "1",
+    "traffic_horizon_overrun_seconds": float(sys.argv[20]),
 }
 with open(path, "a") as f:
     f.write(json.dumps(record) + "\n")
@@ -390,6 +397,64 @@ raise SystemExit(0)
 TRAFFIC_COMPLETION_CHECK
 }
 
+traffic_horizon_exceeded() {
+  local log_dir="$1"
+  python3 - "$log_dir" "$LONG_HORIZON_DURATION" "$TRAFFIC_HORIZON_OVERRUN_SECONDS" <<'TRAFFIC_HORIZON_CHECK'
+import json
+import re
+import sys
+from pathlib import Path
+
+def parse_seconds(raw):
+    text = str(raw).strip()
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([a-zA-Z]*)", text)
+    if not match:
+        return float(text)
+    value = float(match.group(1))
+    unit = match.group(2) or "s"
+    if unit != "s":
+        raise ValueError(f"unsupported duration unit: {raw}")
+    return value
+
+log_dir = Path(sys.argv[1])
+try:
+    horizon = parse_seconds(sys.argv[2])
+    overrun = float(sys.argv[3])
+except Exception:
+    raise SystemExit(1)
+schedule_path = log_dir / "traffic_schedule.json"
+events_path = log_dir / "traffic_events.jsonl"
+if not events_path.exists():
+    raise SystemExit(1)
+if schedule_path.exists():
+    try:
+        payload = json.loads(schedule_path.read_text())
+        times = [float(event.get("time", 0.0)) for event in payload.get("events", []) if isinstance(event, dict)]
+        if times:
+            horizon = max(horizon, max(times))
+    except Exception:
+        pass
+threshold = horizon + overrun
+max_sim_time = None
+try:
+    for line in events_path.read_text().splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        sim_time = row.get("sim_time")
+        if sim_time is None:
+            continue
+        sim_time = float(sim_time)
+        max_sim_time = sim_time if max_sim_time is None else max(max_sim_time, sim_time)
+except Exception:
+    raise SystemExit(1)
+if max_sim_time is not None and max_sim_time >= threshold:
+    print(json.dumps({"max_sim_time": max_sim_time, "threshold": threshold}))
+    raise SystemExit(0)
+raise SystemExit(1)
+TRAFFIC_HORIZON_CHECK
+}
+
 wait_for_stop_condition() {
   local sim_pid="$1"
   local log_dir="$2"
@@ -405,6 +470,13 @@ wait_for_stop_condition() {
     if [[ "$TRAFFIC_COMPLETION_STOP" == "1" ]] && traffic_episode_complete "$log_dir" >/dev/null 2>&1; then
       STOP_REASON="traffic_completion"
       echo "completion_stop all scheduled traffic and vehicle traces completed -> $log_dir"
+      sleep "$TRAFFIC_COMPLETION_GRACE_SECONDS"
+      cleanup_ros_processes
+      return 0
+    fi
+    if [[ "$TRAFFIC_HORIZON_STOP" == "1" ]] && traffic_horizon_exceeded "$log_dir" >/dev/null 2>&1; then
+      STOP_REASON="traffic_horizon"
+      echo "traffic_horizon_stop exceeded long-horizon evaluation window -> $log_dir"
       sleep "$TRAFFIC_COMPLETION_GRACE_SECONDS"
       cleanup_ros_processes
       return 0
@@ -448,6 +520,24 @@ with open(sys.argv[1], "w") as f:
 COMPLETION_STOP_MARKER
 }
 
+write_traffic_horizon_stop_marker() {
+  local run_dir="$1"
+  local triggered="$2"
+  python3 - "$run_dir/traffic_horizon_stop.json" "$TRAFFIC_HORIZON_STOP" "$triggered" "$TRAFFIC_HORIZON_OVERRUN_SECONDS" "$LONG_HORIZON_DURATION" <<'TRAFFIC_HORIZON_MARKER'
+import json
+import sys
+payload = {
+    "enabled": sys.argv[2] == "1",
+    "triggered": sys.argv[3] == "1",
+    "overrun_seconds": float(sys.argv[4]),
+    "long_horizon_duration": sys.argv[5],
+    "reason": "traffic demand exceeded evaluation horizon before all vehicles finished" if sys.argv[3] == "1" else "not triggered",
+}
+with open(sys.argv[1], "w") as f:
+    json.dump(payload, f, indent=2)
+TRAFFIC_HORIZON_MARKER
+}
+
 run_episode() {
   local agent="$1"
   local seed="$2"
@@ -478,6 +568,7 @@ run_episode() {
   set +e
   local early_stop_triggered=0
   local traffic_completion_stop_triggered=0
+  local traffic_horizon_stop_triggered=0
   STOP_REASON=""
   PYTHONPATH="$DLP_ROOT${PYTHONPATH:+:$PYTHONPATH}" timeout "$WALL_TIMEOUT" ros2 run parksim simulator_node.py --ros-args \
     -p spawn_controlled_ego:=true \
@@ -516,6 +607,8 @@ run_episode() {
       early_stop_triggered=1
     elif [[ "$STOP_REASON" == "traffic_completion" ]]; then
       traffic_completion_stop_triggered=1
+    elif [[ "$STOP_REASON" == "traffic_horizon" ]]; then
+      traffic_horizon_stop_triggered=1
     fi
   fi
   wait "$sim_pid"
@@ -524,7 +617,8 @@ run_episode() {
   cleanup_ros_processes
   write_early_stop_marker "$run_dir" "$early_stop_triggered"
   write_completion_stop_marker "$run_dir" "$traffic_completion_stop_triggered"
-  if [[ "$early_stop_triggered" == "1" || "$traffic_completion_stop_triggered" == "1" ]]; then
+  write_traffic_horizon_stop_marker "$run_dir" "$traffic_horizon_stop_triggered"
+  if [[ "$early_stop_triggered" == "1" || "$traffic_completion_stop_triggered" == "1" || "$traffic_horizon_stop_triggered" == "1" ]]; then
     status=0
   fi
   if [[ "$status" != "0" && "$status" != "124" ]]; then
@@ -537,7 +631,7 @@ run_episode() {
     tail -n 160 "$sim_log" >&2 || true
     exit 1
   fi
-  append_episode "$OUT_DIR/episodes.jsonl" "$scenario_id" "$scenario_dir" "$agent" "$seed" "$background_mode" "$run_dir" "$log_dir" "$sim_log" "$early_stop_triggered" "$traffic_completion_stop_triggered"
+  append_episode "$OUT_DIR/episodes.jsonl" "$scenario_id" "$scenario_dir" "$agent" "$seed" "$background_mode" "$run_dir" "$log_dir" "$sim_log" "$early_stop_triggered" "$traffic_completion_stop_triggered" "$traffic_horizon_stop_triggered"
 }
 
 prepare_out_dir
