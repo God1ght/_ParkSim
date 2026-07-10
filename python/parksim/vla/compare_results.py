@@ -163,6 +163,8 @@ def collect_mode_metrics(experiment_dir: Path, mode: str) -> Dict[str, Any]:
     decisions_path = log_dir / "qwen_vla_decisions.jsonl"
 
     decisions = _load_jsonl(decisions_path)
+    fleet_epochs_path = mode_dir / "fleet_epochs.jsonl"
+    fleet_epochs = _load_jsonl(fleet_epochs_path)
 
     speeds = [_safe_float(row.get("speed")) for row in trace]
     steering = [_safe_float(row.get("steering")) for row in trace]
@@ -171,6 +173,10 @@ def collect_mode_metrics(experiment_dir: Path, mode: str) -> Dict[str, Any]:
     first = trace[0] if trace else {}
 
     qwen_latencies = [_safe_float(row.get("latency_seconds")) for row in decisions]
+    fleet_latencies = [_safe_float(row.get("latency_seconds")) for row in fleet_epochs]
+    fleet_batch_waits = [_safe_float(row.get("batch_wait_seconds")) for row in fleet_epochs]
+    if fleet_latencies:
+        qwen_latencies = fleet_latencies
     applied_actions = [row.get("applied_action") or {} for row in decisions]
     selected_spots = [action.get("target_spot_index") for action in applied_actions if action.get("target_spot_index") is not None]
     action_types = [action.get("action_type") for action in applied_actions if action.get("action_type")]
@@ -203,12 +209,16 @@ def collect_mode_metrics(experiment_dir: Path, mode: str) -> Dict[str, Any]:
         "shield_rejection_count": sum(1 for row in decisions if row.get("shield_reason") != "ok"),
         "qwen_latency_mean": _mean(qwen_latencies),
         "qwen_latency_max": max(qwen_latencies, default=0.0),
+        "qwen_batch_wait_mean": _mean(fleet_batch_waits),
+        "qwen_batch_wait_max": max(fleet_batch_waits, default=0.0),
+        "cloud_fleet_deferred_vehicle_count": sum(len(row.get("deferred_vehicle_ids") or []) for row in fleet_epochs),
         "first_action_type": action_types[0] if action_types else None,
         "final_x": _safe_float((summary.get("final_state") or {}).get("x"), _safe_float(final.get("x"))),
         "final_y": _safe_float((summary.get("final_state") or {}).get("y"), _safe_float(final.get("y"))),
         "trace_path": str(trace_path),
         "summary_path": str(summary_path),
         "decisions_path": str(decisions_path) if decisions_path.exists() else "",
+        "fleet_epochs_path": str(fleet_epochs_path) if fleet_epochs_path.exists() else "",
     }
     metrics.update(collect_safety_metrics(log_dir, trace_path, trace, decisions))
     return {"metrics": metrics, "trace": trace, "summary": summary, "decisions": decisions}
