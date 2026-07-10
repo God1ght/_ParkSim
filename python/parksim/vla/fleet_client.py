@@ -29,6 +29,12 @@ class QwenFleetPolicyClient:
         try:
             with request.urlopen(req, timeout=self.timeout) as resp:
                 body = resp.read().decode("utf-8", errors="replace")
+        except error.HTTPError as exc:
+            try:
+                detail = exc.read().decode("utf-8", errors="replace")
+            except Exception:
+                detail = str(exc)
+            return self._fallback(context, reason="qwen fleet request failed: http %s: %s" % (exc.code, detail[:400]))
         except (error.URLError, TimeoutError, OSError) as exc:
             return self._fallback(context, reason="qwen fleet request failed: %s" % exc)
         response = self._parse_response(body, context)
