@@ -8,7 +8,13 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 DEFAULT_METRICS = [
     "completed",
+    "automated_vehicle_completion_rate",
+    "cloud_served_vehicle_completion_rate",
     "objective_score",
+    "fleet_total_automated_path_length",
+    "fleet_total_automated_waiting_time",
+    "fleet_total_automated_non_idle_time",
+    "fleet_mean_automated_total_time",
     "path_length",
     "total_non_idle_time",
     "idle_time",
@@ -242,6 +248,7 @@ def summarize(rows: List[Dict[str, Any]], metrics: List[str]) -> List[Dict[str, 
         item: Dict[str, Any] = {"agent_type": agent, "episodes": len(group)}
         item["scenario_count"] = len({row.get("pair_key") for row in group})
         item["success_rate_mean"] = _mean(1.0 if row.get("completed") else 0.0 for row in group)
+        item["fleet_success_rate_mean"] = _mean(_safe_float(row.get("automated_vehicle_completion_rate"), 1.0 if row.get("completed") else 0.0) for row in group)
         for metric in metrics:
             if metric == "completed":
                 continue

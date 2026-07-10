@@ -7,6 +7,9 @@ from typing import Any, Dict, Iterable, List, Optional
 
 LOWER_IS_BETTER = {
     "objective_score",
+    "fleet_total_automated_path_length",
+    "fleet_total_automated_waiting_time",
+    "fleet_total_automated_non_idle_time",
     "path_length",
     "total_non_idle_time",
     "waiting_time",
@@ -21,7 +24,7 @@ LOWER_IS_BETTER = {
 }
 
 METRIC_GROUPS = {
-    "fleet_efficiency": ["objective_score", "path_length", "total_non_idle_time", "waiting_time"],
+    "fleet_efficiency": ["objective_score", "automated_vehicle_completion_rate", "fleet_total_automated_path_length", "fleet_total_automated_waiting_time", "fleet_total_automated_non_idle_time"],
     "operational_safety": ["system_near_miss_event_count", "system_collision_proxy_event_count", "trajectory_conflict_event_count", "mixed_intent_conflict_event_count", "unsafe_occupancy_action_count"],
     "cloud_coordination": ["shield_rejection_count", "qwen_fallback_count", "cloud_fleet_missing_vehicle_decision_count"],
     "mixed_traffic_scale": ["automated_vehicle_count", "cloud_served_vehicle_count", "human_like_vehicle_count", "hidden_intent_vehicle_count"],

@@ -82,12 +82,15 @@ def _format_metric(value: Any) -> str:
 
 
 def objective_score(metrics: Dict[str, Any]) -> float:
-    incomplete_penalty = 0.0 if metrics.get("completed") else 1000.0
+    automated_count = _safe_float(metrics.get("automated_vehicle_count"))
+    automated_completed = _safe_float(metrics.get("completed_automated_vehicle_count"))
+    incomplete_automated = max(0.0, automated_count - automated_completed)
+    incomplete_penalty = 250.0 * incomplete_automated if automated_count > 1 else (0.0 if metrics.get("completed") else 1000.0)
     return (
         incomplete_penalty
-        + _safe_float(metrics.get("path_length"))
-        + 0.2 * _safe_float(metrics.get("total_non_idle_time"))
-        + 0.1 * _safe_float(metrics.get("idle_time"))
+        + _safe_float(metrics.get("fleet_total_automated_path_length"), _safe_float(metrics.get("path_length")))
+        + 0.2 * _safe_float(metrics.get("fleet_total_automated_non_idle_time"), _safe_float(metrics.get("total_non_idle_time")))
+        + 0.1 * _safe_float(metrics.get("fleet_total_automated_idle_time"), _safe_float(metrics.get("idle_time")))
         + 500.0 * _safe_float(metrics.get("collision_proxy_event_count"))
         + 100.0 * _safe_float(metrics.get("near_miss_event_count"))
         + 50.0 * _safe_float(metrics.get("system_collision_proxy_event_count"))
@@ -168,7 +171,12 @@ def aggregate_by_agent(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "mean_target_mismatch_decisions": _mean(_safe_float(row.get("target_mismatch_decision_count")) for row in group),
             "mean_missing_reason_code": _mean(_safe_float(row.get("missing_reason_code_count")) for row in group),
             "mean_automated_vehicle_count": _mean(_safe_float(row.get("automated_vehicle_count")) for row in group),
+            "mean_automated_vehicle_completion_rate": _mean(_safe_float(row.get("automated_vehicle_completion_rate")) for row in group),
+            "mean_fleet_total_automated_path_length": _mean(_safe_float(row.get("fleet_total_automated_path_length")) for row in group),
+            "mean_fleet_total_automated_waiting_time": _mean(_safe_float(row.get("fleet_total_automated_waiting_time")) for row in group),
+            "mean_fleet_total_automated_non_idle_time": _mean(_safe_float(row.get("fleet_total_automated_non_idle_time")) for row in group),
             "mean_cloud_served_vehicle_count": _mean(_safe_float(row.get("cloud_served_vehicle_count")) for row in group),
+            "mean_cloud_served_vehicle_completion_rate": _mean(_safe_float(row.get("cloud_served_vehicle_completion_rate")) for row in group),
             "mean_human_like_vehicle_count": _mean(_safe_float(row.get("human_like_vehicle_count")) for row in group),
             "mean_cloud_fleet_decisions": _mean(_safe_float(row.get("cloud_fleet_decision_count")) for row in group),
             "mean_objective_score": _mean(_safe_float(row.get("objective_score")) for row in group),
@@ -294,10 +302,13 @@ def validate(out_dir: Path, require_complete: bool = False, expected_agents: Opt
     for row in metrics_rows if isinstance(metrics_rows, list) else []:
         if _safe_float(row.get("trace_points")) <= 0:
             problems.append("metric row has no trace points: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
-        if row.get("ego_is_controlled") is not True:
+        fleet_count = _safe_float(row.get("automated_vehicle_count"))
+        if row.get("ego_is_controlled") is not True and fleet_count <= 1:
             problems.append("metric row does not identify controlled ego: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
-        if require_complete and not row.get("completed"):
+        if require_complete and fleet_count <= 1 and not row.get("completed"):
             problems.append("incomplete episode under --require-complete: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
+        if fleet_count > 1 and _safe_float(row.get("automated_vehicle_completion_rate")) <= 0.0:
+            problems.append("fleet episode has no completed automated vehicles: %s/%s" % (row.get("scenario_id"), row.get("agent_type")))
     if expected_agents:
         expected = set(expected_agents)
         for scenario_id, agents in by_scenario.items():

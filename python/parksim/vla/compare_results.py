@@ -110,8 +110,28 @@ def _select_ego_files(log_dir: Path, mode: str) -> Tuple[Path, Path, Dict[str, A
             continue
         score = _score_ego_candidate(payload, mode)
         summary_candidates.append((score, summary_path, payload))
+    controlled_trace_candidates = []
+    for trace_path in sorted(log_dir.glob("vehicle_*_trace.jsonl")):
+        rows = _load_jsonl(trace_path)
+        if not rows:
+            continue
+        first = rows[0]
+        final = rows[-1]
+        if first.get("is_controlled_ego") is True or final.get("is_controlled_ego") is True:
+            score = max(_score_ego_candidate(first, mode), _score_ego_candidate(final, mode))
+            controlled_trace_candidates.append((score, trace_path, rows))
     if summary_candidates:
         summary_candidates.sort(key=lambda item: (-item[0], str(item[1])))
+        if summary_candidates[0][0] >= 100:
+            _, summary_path, summary = summary_candidates[0]
+            trace_path = _trace_for_summary(summary_path)
+            return trace_path, summary_path, summary, _load_jsonl(trace_path)
+    if controlled_trace_candidates:
+        controlled_trace_candidates.sort(key=lambda item: (-item[0], str(item[1])))
+        _, trace_path, trace = controlled_trace_candidates[0]
+        summary_path = trace_path.with_name(trace_path.name.replace("_trace.jsonl", "_summary.json"))
+        return trace_path, summary_path, _load_json(summary_path), trace
+    if summary_candidates:
         _, summary_path, summary = summary_candidates[0]
         trace_path = _trace_for_summary(summary_path)
         return trace_path, summary_path, summary, _load_jsonl(trace_path)
@@ -159,6 +179,9 @@ def collect_mode_metrics(experiment_dir: Path, mode: str) -> Dict[str, Any]:
         "mode": mode,
         "ego_vehicle_id": int(summary.get("vehicle_id", final.get("vehicle_id", 0)) or 0),
         "ego_is_controlled": bool(summary.get("is_controlled_ego", final.get("is_controlled_ego", False))),
+        "metric_scope": "controlled_ego" if bool(summary.get("is_controlled_ego", final.get("is_controlled_ego", False))) else "fleet_member",
+        "representative_vehicle_role": str(summary.get("vehicle_role", final.get("vehicle_role", first.get("vehicle_role", ""))) or ""),
+        "representative_agent_type": str(summary.get("agent_type", final.get("agent_type", first.get("agent_type", ""))) or ""),
         "completed": bool(summary.get("completed", bool(final.get("is_final")))) if (summary or final) else False,
         "assigned_spot_index": int(summary.get("spot_index", final.get("spot_index", 0)) or 0),
         "executed_spot_index": int(summary.get("vehicle_spot_index", final.get("vehicle_spot_index", 0)) or 0),

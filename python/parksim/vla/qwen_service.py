@@ -341,6 +341,19 @@ def _actions_without_reserved(actions: Sequence[Dict[str, Any]], reserved_target
     return output or list(actions)
 
 
+def _actions_without_cloud_reservations(actions: Sequence[Dict[str, Any]], reservations: Dict[int, Dict[str, Any]], vehicle_id: int) -> List[Dict[str, Any]]:
+    output = []
+    for action in actions:
+        target = action_target(action)
+        if target is None:
+            output.append(action)
+            continue
+        owner = reservations.get(abs(int(target)))
+        if owner is None or int(owner.get("vehicle_id", -1)) == int(vehicle_id):
+            output.append(action)
+    return output or list(actions)
+
+
 def openai_response(model: str, decision: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": "parksim-qwen-vla-%d" % int(time.time() * 1000),
@@ -419,6 +432,8 @@ class QwenVLAInferenceService:
         self.mock = bool(mock)
         self.model = None
         self.processor = None
+        self._target_reservations: Dict[int, Dict[str, Any]] = {}
+        self._reservation_ttl_seconds = 180.0
 
     def load(self) -> None:
         if self.mock or self.model is not None:
@@ -442,11 +457,11 @@ class QwenVLAInferenceService:
         context = extract_context(payload)
         if is_fleet_context(context):
             if self.mock:
-                return normalize_fleet_decisions("{}", context)
+                return self._apply_cross_request_reservations(normalize_fleet_decisions("{}", context), context)
             self.load()
             messages = normalize_messages(payload.get("messages", []))
             output = self._generate(messages)
-            return normalize_fleet_decisions(output, context)
+            return self._apply_cross_request_reservations(normalize_fleet_decisions(output, context), context)
         actions = valid_actions_from_context(context)
         if self.mock:
             action_id, reason = choose_fallback_action(actions)
@@ -462,6 +477,55 @@ class QwenVLAInferenceService:
         messages = normalize_messages(payload.get("messages", []))
         output = self._generate(messages)
         return normalize_decision(output, actions)
+
+    def _apply_cross_request_reservations(self, response: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        now = time.time()
+        self._expire_reservations(now)
+        vehicles = {int(row["vehicle_id"]): row for row in fleet_vehicles_from_context(context)}
+        output: List[Dict[str, Any]] = []
+        for raw_decision in response.get("fleet_decisions", []):
+            if not isinstance(raw_decision, dict):
+                continue
+            decision = dict(raw_decision)
+            vehicle_id = int(decision.get("vehicle_id", -1))
+            actions = vehicles.get(vehicle_id, {"valid_actions": []}).get("valid_actions", [])
+            selected = action_by_id(actions, decision.get("action_id", ""))
+            target = action_target(selected)
+            if target is None:
+                target = int_or_none(decision.get("target_spot_index"))
+            if target is not None:
+                spot = abs(int(target))
+                owner = self._target_reservations.get(spot)
+                if owner and int(owner.get("vehicle_id", -1)) != vehicle_id:
+                    fallback_actions = _actions_without_cloud_reservations(actions, self._target_reservations, vehicle_id)
+                    fallback_id, fallback_reason = choose_fallback_action(fallback_actions)
+                    fallback_selected = action_by_id(actions, fallback_id)
+                    decision.update({
+                        "action_id": fallback_id,
+                        "target_spot_index": action_target(fallback_selected),
+                        "priority": int(decision.get("priority", len(output)) or len(output)),
+                        "reason_code": "FALLBACK_OR_RECOVERY",
+                        "reason": "cloud reservation conflict: spot %s already reserved by vehicle %s; %s" % (spot, owner.get("vehicle_id"), fallback_reason),
+                        "confidence": 0.0,
+                        "used_fallback": True,
+                    })
+                    target = action_target(fallback_selected)
+                if target is not None:
+                    self._target_reservations[abs(int(target))] = {"vehicle_id": vehicle_id, "expires_at": now + self._reservation_ttl_seconds}
+            else:
+                self._release_vehicle_reservations(vehicle_id)
+            output.append(decision)
+        return {"fleet_decisions": output}
+
+    def _expire_reservations(self, now: float) -> None:
+        for spot, owner in list(self._target_reservations.items()):
+            if float(owner.get("expires_at", 0.0)) <= now:
+                del self._target_reservations[spot]
+
+    def _release_vehicle_reservations(self, vehicle_id: int) -> None:
+        for spot, owner in list(self._target_reservations.items()):
+            if int(owner.get("vehicle_id", -1)) == int(vehicle_id):
+                del self._target_reservations[spot]
 
     def _generate(self, messages: List[Dict[str, Any]]) -> str:
         if self.model is None or self.processor is None:

@@ -115,8 +115,127 @@ def collect_system_traffic_metrics(
         "traffic_delayed_count": int(delayed),
         "traffic_skipped_count": int(skipped),
     }
+    metrics.update(_fleet_completion_metrics(log_dir))
     metrics.update(pair_metrics)
     return metrics
+
+
+def _fleet_completion_metrics(log_dir: Path) -> Dict[str, Any]:
+    roles: Dict[str, str] = {}
+    agent_types: Dict[str, str] = {}
+    intent_observable: Dict[str, bool] = {}
+    completed_by_id: Dict[str, bool] = {}
+    summaries: Dict[str, Dict[str, Any]] = {}
+    trace_by_id: Dict[str, List[Dict[str, Any]]] = {}
+    controlled_summary_ids = set()
+    controlled_trace_ids = set()
+    for summary_path in sorted(log_dir.glob("vehicle_*_summary.json")):
+        summary = _load_json(summary_path)
+        vehicle_id = str(summary.get("vehicle_id", ""))
+        if not vehicle_id:
+            continue
+        summaries[vehicle_id] = summary
+        roles[vehicle_id] = str(summary.get("vehicle_role") or "unknown")
+        agent_types[vehicle_id] = str(summary.get("agent_type") or "unknown")
+        intent_observable[vehicle_id] = bool(summary.get("intent_observable", True))
+        completed_by_id[vehicle_id] = bool(summary.get("completed") is True)
+        if summary.get("is_controlled_ego") is True:
+            controlled_summary_ids.add(vehicle_id)
+    for trace_path in sorted(log_dir.glob("vehicle_*_trace.jsonl")):
+        rows = load_jsonl(trace_path)
+        if not rows:
+            continue
+        first = rows[0]
+        final = rows[-1]
+        vehicle_id = str(first.get("vehicle_id", final.get("vehicle_id", "")))
+        if not vehicle_id:
+            continue
+        trace_by_id[vehicle_id] = rows
+        roles.setdefault(vehicle_id, str(first.get("vehicle_role") or final.get("vehicle_role") or "unknown"))
+        agent_types.setdefault(vehicle_id, str(first.get("agent_type") or final.get("agent_type") or "unknown"))
+        intent_observable.setdefault(vehicle_id, bool(first.get("intent_observable", True)))
+        if final.get("is_final") is True:
+            completed_by_id[vehicle_id] = True
+        if first.get("is_controlled_ego") is True or final.get("is_controlled_ego") is True:
+            controlled_trace_ids.add(vehicle_id)
+    vehicle_ids = set(roles.keys()) | set(agent_types.keys()) | set(trace_by_id.keys())
+    automated_ids = {vehicle_id for vehicle_id in vehicle_ids if _is_automated_vehicle(roles.get(vehicle_id, ""), agent_types.get(vehicle_id, ""))}
+    cloud_ids = {vehicle_id for vehicle_id in automated_ids if str(agent_types.get(vehicle_id, "")).lower() == "qwen_vla"}
+    human_like_ids = vehicle_ids - automated_ids
+    result = {
+        "automated_vehicle_count": len(automated_ids),
+        "completed_automated_vehicle_count": _completed_count(automated_ids, completed_by_id),
+        "automated_vehicle_completion_rate": _completion_rate(automated_ids, completed_by_id),
+        "cloud_served_vehicle_count": len(cloud_ids),
+        "completed_cloud_served_vehicle_count": _completed_count(cloud_ids, completed_by_id),
+        "cloud_served_vehicle_completion_rate": _completion_rate(cloud_ids, completed_by_id),
+        "human_like_vehicle_count": len(human_like_ids),
+        "completed_human_like_vehicle_count": _completed_count(human_like_ids, completed_by_id),
+        "human_like_vehicle_completion_rate": _completion_rate(human_like_ids, completed_by_id),
+        "completed_vehicle_count": _completed_count(vehicle_ids, completed_by_id),
+        "controlled_ego_summary_count": len(controlled_summary_ids),
+        "controlled_ego_trace_count": len(controlled_trace_ids),
+        "controlled_ego_completed_count": _completed_count(controlled_summary_ids | controlled_trace_ids, completed_by_id),
+        "controlled_ego_trace_points": sum(len(trace_by_id.get(vehicle_id, [])) for vehicle_id in (controlled_summary_ids | controlled_trace_ids)),
+    }
+    result.update(_fleet_operational_metrics("automated", automated_ids, trace_by_id, summaries))
+    result.update(_fleet_operational_metrics("cloud_served", cloud_ids, trace_by_id, summaries))
+    result.update(_fleet_operational_metrics("human_like", human_like_ids, trace_by_id, summaries))
+    return result
+
+
+def _completed_count(vehicle_ids: set, completed_by_id: Dict[str, bool]) -> int:
+    return sum(1 for vehicle_id in vehicle_ids if completed_by_id.get(str(vehicle_id), False))
+
+
+def _completion_rate(vehicle_ids: set, completed_by_id: Dict[str, bool]) -> float:
+    return _completed_count(vehicle_ids, completed_by_id) / len(vehicle_ids) if vehicle_ids else 0.0
+
+
+def _fleet_operational_metrics(prefix: str, vehicle_ids: set, trace_by_id: Dict[str, List[Dict[str, Any]]], summaries: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    traces = [trace_by_id[str(vehicle_id)] for vehicle_id in vehicle_ids if str(vehicle_id) in trace_by_id]
+    path_lengths = [_trace_path_length(rows) for rows in traces]
+    waiting_times = [_trace_interval(rows, lambda row: int(row.get("waiting_for", 0) or 0) > 0) for rows in traces]
+    idle_times = [_trace_interval(rows, lambda row: row.get("task") == "IDLE") for rows in traces]
+    non_idle_times = []
+    total_times = []
+    for vehicle_id in vehicle_ids:
+        rows = trace_by_id.get(str(vehicle_id), [])
+        summary = summaries.get(str(vehicle_id), {})
+        non_idle_times.append(_safe_float(summary.get("total_non_idle_time"), _trace_interval(rows, lambda row: row.get("task") != "IDLE")))
+        total_times.append(_safe_float(summary.get("total_time"), _trace_duration(rows)))
+    return {
+        "fleet_total_%s_path_length" % prefix: round(sum(path_lengths), 6),
+        "fleet_mean_%s_path_length" % prefix: _mean(path_lengths),
+        "fleet_total_%s_waiting_time" % prefix: round(sum(waiting_times), 6),
+        "fleet_mean_%s_waiting_time" % prefix: _mean(waiting_times),
+        "fleet_total_%s_idle_time" % prefix: round(sum(idle_times), 6),
+        "fleet_mean_%s_idle_time" % prefix: _mean(idle_times),
+        "fleet_total_%s_non_idle_time" % prefix: round(sum(non_idle_times), 6),
+        "fleet_mean_%s_non_idle_time" % prefix: _mean(non_idle_times),
+        "fleet_mean_%s_total_time" % prefix: _mean(total_times),
+    }
+
+
+def _trace_duration(rows: List[Dict[str, Any]]) -> float:
+    if not rows:
+        return 0.0
+    return max(0.0, _safe_float(rows[-1].get("time")) - _safe_float(rows[0].get("time")))
+
+
+def _trace_interval(rows: List[Dict[str, Any]], predicate) -> float:
+    total = 0.0
+    for idx, row in enumerate(rows[:-1]):
+        if predicate(row):
+            total += _row_dt(rows, idx)
+    return round(total, 6)
+
+
+def _trace_path_length(rows: List[Dict[str, Any]]) -> float:
+    total = 0.0
+    for prev, cur in zip(rows, rows[1:]):
+        total += _xy_distance(prev, cur)
+    return round(total, 6)
 
 
 def _load_json(path: Path) -> Dict[str, Any]:
