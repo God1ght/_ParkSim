@@ -77,6 +77,7 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         self._external_fleet_context = None
         self._external_fleet_actions = []
         self._last_fleet_epoch = None
+        self._fleet_defer_reason = ""
 
     def execute_next_task(self):
         if self.fleet_coordinator_enabled and not self._inside_vla_apply:
@@ -132,14 +133,18 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
 
     def build_fleet_epoch_context(self, epoch_id: int, sim_time: float) -> Optional[VLAContext]:
         """Build one immutable high-level decision context for a central epoch."""
+        self._fleet_defer_reason = ""
         if not self.fleet_coordinator_enabled or self.is_all_done():
+            self._fleet_defer_reason = "inactive_or_done"
             return None
         # A cloud epoch must never ask Qwen to choose from an all-unknown lot.
         # Returning None causes the ROS coordinator to defer this AV and retry
         # at a later simulation-aligned epoch after occupancy has propagated.
         if not occupancy_ready(self):
+            self._fleet_defer_reason = "occupancy_not_ready"
             return None
         if self._has_active_low_level_maneuver() and not self._active_maneuver_replan_due(sim_time):
+            self._fleet_defer_reason = "active_low_level_maneuver"
             return None
         actions = build_candidate_actions(
             self,
@@ -147,6 +152,7 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
             exit_coords=self.entrance_coords,
         )
         if not actions:
+            self._fleet_defer_reason = "no_candidate_actions"
             return None
         state = build_vla_state(self, valid_actions=actions, max_spots=max(self.max_candidate_spots, 8))
         context = VLAContext(

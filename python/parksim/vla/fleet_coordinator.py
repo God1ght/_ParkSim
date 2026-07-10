@@ -53,13 +53,20 @@ class FleetEpoch:
     started_wall_time: float
     contexts: Dict[int, VLAContext] = field(default_factory=dict)
     deferred_vehicle_ids: Set[int] = field(default_factory=set)
+    deferred_reasons: Dict[int, str] = field(default_factory=dict)
 
 
 class FleetEpochCoordinator:
     """Collect one AV context per epoch, then call and validate one fleet policy."""
 
-    def __init__(self, decision_period: float = 3.0, bev_output_dir: str = "") -> None:
+    def __init__(
+        self,
+        decision_period: float = 3.0,
+        bev_output_dir: str = "",
+        occupancy_retry_interval: float = 1.0,
+    ) -> None:
         self.decision_period = max(0.1, float(decision_period))
+        self.occupancy_retry_interval = max(0.1, float(occupancy_retry_interval))
         self.bev_output_dir = str(bev_output_dir or "")
         self.registered_vehicle_ids: Set[int] = set()
         self.next_epoch_sim_time = 0.0
@@ -77,6 +84,7 @@ class FleetEpochCoordinator:
                 item for item in self.active_epoch.expected_vehicle_ids if item != vehicle_id
             ]
             self.active_epoch.contexts.pop(vehicle_id, None)
+            self.active_epoch.deferred_reasons.pop(vehicle_id, None)
 
     def should_start(self, sim_time: float) -> bool:
         return (
@@ -116,7 +124,7 @@ class FleetEpochCoordinator:
         return True
 
     def defer_context(self, packet: Dict[str, Any]) -> bool:
-        """Exclude a vehicle executing a low-level maneuver from this epoch only."""
+        """Exclude a vehicle from this epoch and retain its auditable defer reason."""
         epoch = self.active_epoch
         if epoch is None:
             return False
@@ -127,6 +135,7 @@ class FleetEpochCoordinator:
         epoch.expected_vehicle_ids = [item for item in epoch.expected_vehicle_ids if item != vehicle_id]
         epoch.contexts.pop(vehicle_id, None)
         epoch.deferred_vehicle_ids.add(int(vehicle_id))
+        epoch.deferred_reasons[int(vehicle_id)] = str(packet.get("defer_reason", "not_ready") or "not_ready")
         return True
 
     def is_complete(self) -> bool:
@@ -177,6 +186,7 @@ class FleetEpochCoordinator:
             "collected_vehicle_ids": collected_ids,
             "missing_vehicle_ids": missing_ids,
             "deferred_vehicle_ids": sorted(epoch.deferred_vehicle_ids),
+            "deferred_reasons": {str(key): value for key, value in sorted(epoch.deferred_reasons.items())},
             "decision_scope": "synchronized_fleet_epoch",
             "decision_complete": not missing_ids,
             "fleet_context": fleet_context.to_dict(),
@@ -198,6 +208,11 @@ class FleetEpochCoordinator:
                 })
         else:
             result["raw_fleet_response"] = {"fleet_decisions": [], "raw_response": ""}
+        if not collected_ids and any(reason == "occupancy_not_ready" for reason in epoch.deferred_reasons.values()):
+            self.next_epoch_sim_time = min(
+                self.next_epoch_sim_time,
+                float(epoch.sim_time) + self.occupancy_retry_interval,
+            )
         self.active_epoch = None
         return result
 
@@ -231,4 +246,3 @@ class FleetEpochCoordinator:
             "human_intent_model": "partially_observable_replay_rule_random_mixed",
             "sim_time_alignment": "cloud latency is logged while simulator advancement is paused",
         }
-

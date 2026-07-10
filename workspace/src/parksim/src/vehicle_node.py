@@ -470,6 +470,7 @@ class VehicleNode(MPClabNode):
                 'sim_time': sim_time,
                 'vehicle_id': int(self.vehicle_id),
                 'ready': False,
+                'defer_reason': str(getattr(self.vehicle, '_fleet_defer_reason', '') or 'not_ready'),
             })
         else:
             message.data = json.dumps({
