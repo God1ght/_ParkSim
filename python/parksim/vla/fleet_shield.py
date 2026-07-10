@@ -123,19 +123,29 @@ def _progress_guard_action(
             continue
         candidates.append(action)
     if not candidates:
-        return None
+        return _lowest_wait_action(actions)
     return min(candidates, key=_progress_rank)
 
 
+def _lowest_wait_action(actions: List[VLACandidateAction]) -> Optional[VLACandidateAction]:
+    waits = [action for action in actions if action.action_type == VLAActionType.WAIT]
+    return min(waits, key=_progress_rank, default=None)
+
+
 def _guarded_decision(vehicle_id: int, previous: VLAFleetDecision, action: VLACandidateAction) -> VLAFleetDecision:
-    reason_code = "EXIT_READY" if action.action_type == VLAActionType.CRUISE_TO_EXIT else "PARK_AVAILABLE"
+    if action.action_type == VLAActionType.WAIT:
+        reason_code = "YIELD_TRAFFIC"
+    elif action.action_type == VLAActionType.CRUISE_TO_EXIT:
+        reason_code = "EXIT_READY"
+    else:
+        reason_code = "PARK_AVAILABLE"
     return VLAFleetDecision(
         vehicle_id=vehicle_id,
         action_id=action.action_id,
         target_spot_index=action.target_spot_index,
         priority=previous.priority,
         reason_code=reason_code,
-        reason="risk_progress_guard: selected safe lower-cost progress action",
+        reason="risk_progress_guard: selected safe progress action or deferred until traffic clears",
         confidence=previous.confidence,
         used_fallback=previous.used_fallback,
     )

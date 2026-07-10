@@ -5,6 +5,7 @@ from parksim.vla.action_space import build_candidate_actions, choose_default_act
 from parksim.vla.agent import QwenVLAVehicle
 from parksim.vla.baselines import make_baseline_decision
 from parksim.vla.decision_protocol import build_decision_packet
+from parksim.vla.fleet_shield import _progress_guard_action
 from parksim.vla.schema import (
     VLA_DECISION_PROTOCOL_VERSION,
     VLAActionType,
@@ -100,6 +101,14 @@ def main():
     )
     decision = make_baseline_decision([direct, yield_action], "risk_aware_rule")
     assert decision.action_id == yield_action.action_id, decision
+    risky_action = VLACandidateAction(
+        action_id="risky_spot",
+        action_type=VLAActionType.SELECT_SPOT_AND_CRUISE,
+        target_spot_index=1,
+        features={"conflict_risk": 1.0, "conflict_vehicle_count": 2, "bundle_cost": 1.0},
+    )
+    guarded = _progress_guard_action(risky_action, [risky_action, actions[0]], set())
+    assert guarded is not None and guarded.action_type == VLAActionType.WAIT
     _fleet_context_requires_known_occupancy()
     print("parksim.vla smoke ok")
 
