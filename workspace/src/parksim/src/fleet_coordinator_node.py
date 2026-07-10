@@ -74,7 +74,10 @@ class FleetCoordinatorNode(Node):
         except (TypeError, ValueError):
             return
         if isinstance(payload, dict) and self._same_run(payload):
-            self.coordinator.accept_context(payload)
+            if bool(payload.get("ready", True)):
+                self.coordinator.accept_context(payload)
+            else:
+                self.coordinator.defer_context(payload)
 
     def _publish_pause(self, paused):
         message = Bool()

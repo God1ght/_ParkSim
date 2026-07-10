@@ -52,6 +52,7 @@ class FleetEpoch:
     expected_vehicle_ids: List[int]
     started_wall_time: float
     contexts: Dict[int, VLAContext] = field(default_factory=dict)
+    deferred_vehicle_ids: Set[int] = field(default_factory=set)
 
 
 class FleetEpochCoordinator:
@@ -114,6 +115,20 @@ class FleetEpochCoordinator:
         epoch.contexts[vehicle_id] = context
         return True
 
+    def defer_context(self, packet: Dict[str, Any]) -> bool:
+        """Exclude a vehicle executing a low-level maneuver from this epoch only."""
+        epoch = self.active_epoch
+        if epoch is None:
+            return False
+        epoch_id = _as_int(packet.get("epoch_id"))
+        vehicle_id = _as_int(packet.get("vehicle_id"))
+        if epoch_id != epoch.epoch_id or vehicle_id not in epoch.expected_vehicle_ids:
+            return False
+        epoch.expected_vehicle_ids = [item for item in epoch.expected_vehicle_ids if item != vehicle_id]
+        epoch.contexts.pop(vehicle_id, None)
+        epoch.deferred_vehicle_ids.add(int(vehicle_id))
+        return True
+
     def is_complete(self) -> bool:
         epoch = self.active_epoch
         return epoch is not None and set(epoch.expected_vehicle_ids).issubset(epoch.contexts)
@@ -161,6 +176,7 @@ class FleetEpochCoordinator:
             "expected_vehicle_ids": list(epoch.expected_vehicle_ids),
             "collected_vehicle_ids": collected_ids,
             "missing_vehicle_ids": missing_ids,
+            "deferred_vehicle_ids": sorted(epoch.deferred_vehicle_ids),
             "decision_scope": "synchronized_fleet_epoch",
             "decision_complete": not missing_ids,
             "fleet_context": fleet_context.to_dict(),
@@ -209,6 +225,7 @@ class FleetEpochCoordinator:
             "registered_av_ids": list(epoch.expected_vehicle_ids),
             "context_received_av_ids": sorted(epoch.contexts),
             "context_missing_av_ids": list(missing_ids),
+            "deferred_vehicle_ids": sorted(epoch.deferred_vehicle_ids),
             "automated_vehicle_states": av_states,
             "observable_human_vehicle_states": list(humans.values()),
             "human_intent_model": "partially_observable_replay_rule_random_mixed",

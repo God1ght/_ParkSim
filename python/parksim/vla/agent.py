@@ -134,6 +134,8 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         """Build one immutable high-level decision context for a central epoch."""
         if not self.fleet_coordinator_enabled or self.is_all_done():
             return None
+        if self._has_active_low_level_maneuver():
+            return None
         actions = build_candidate_actions(
             self,
             max_spots=self.max_candidate_spots,
@@ -325,6 +327,10 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a") as f:
             f.write(json.dumps(record) + "\n")
+
+    def _has_active_low_level_maneuver(self) -> bool:
+        """Cloud policy may choose tasks only at stable task boundaries."""
+        return str(self.current_task or "").upper() in ("UNPARK", "CRUISE", "PARK")
 
 class BaselineVLAVehicle(QwenVLAVehicle):
     """Deterministic high-level VLA baseline over the same action interface."""
