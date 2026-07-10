@@ -63,6 +63,7 @@ TRAFFIC_COMPLETION_STOP="${PARKSIM_BENCH_TRAFFIC_COMPLETION_STOP:-1}"
 TRAFFIC_COMPLETION_GRACE_SECONDS="${PARKSIM_BENCH_TRAFFIC_COMPLETION_GRACE_SECONDS:-5}"
 TRAFFIC_HORIZON_STOP="${PARKSIM_BENCH_TRAFFIC_HORIZON_STOP:-1}"
 TRAFFIC_HORIZON_OVERRUN_SECONDS="${PARKSIM_BENCH_TRAFFIC_HORIZON_OVERRUN_SECONDS:-180}"
+TRAFFIC_DRAIN_WALL_GRACE_SECONDS="${PARKSIM_BENCH_TRAFFIC_DRAIN_WALL_GRACE_SECONDS:-180}"
 CLEAR_OUT_DIR="${PARKSIM_BENCH_CLEAR_OUT_DIR:-1}"
 
 # ROS Foxy on Ubuntu 20.04 is built against system Python 3.8.
@@ -91,7 +92,7 @@ set -u
 qwen_pid=""
 GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 GIT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown)"
-export ROOT GIT_COMMIT GIT_BRANCH DURATION WALL_TIMEOUT WALL_TIMEOUT_MULTIPLIER AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING TRAFFIC_FLOW_MODE FLEET_CONTROL_MODE ENTRY_VEHICLE_AGENT_TYPE EXIT_VEHICLE_AGENT_TYPE LONG_HORIZON_DURATION RESTORE_OBSTACLES_AS_EXIT_VEHICLES STATIC_OBSTACLE_EXIT_FRACTION STATIC_OBSTACLE_EXIT_MAX STATIC_OBSTACLE_EXIT_START_TIME LONG_HORIZON_ENTER_INTERVAL_MEAN LONG_HORIZON_EXIT_INTERVAL_MEAN HUMAN_INTENT_HIDDEN_FRACTION MAX_CONCURRENT_BACKGROUND_VEHICLES DELAYED_SPAWN_RETRY_SECONDS EXIT_SPOT_REUSE_DELAY QWEN_PERIODIC_REPLAN CONTROLLED_EGO_BLOCKS_ENTRANCE QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT EARLY_STOP EARLY_STOP_POLL_SECONDS EARLY_STOP_GRACE_SECONDS TRAFFIC_COMPLETION_STOP TRAFFIC_COMPLETION_GRACE_SECONDS TRAFFIC_HORIZON_STOP TRAFFIC_HORIZON_OVERRUN_SECONDS CLEAR_OUT_DIR
+export ROOT GIT_COMMIT GIT_BRANCH DURATION WALL_TIMEOUT WALL_TIMEOUT_MULTIPLIER AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING TRAFFIC_FLOW_MODE FLEET_CONTROL_MODE ENTRY_VEHICLE_AGENT_TYPE EXIT_VEHICLE_AGENT_TYPE LONG_HORIZON_DURATION RESTORE_OBSTACLES_AS_EXIT_VEHICLES STATIC_OBSTACLE_EXIT_FRACTION STATIC_OBSTACLE_EXIT_MAX STATIC_OBSTACLE_EXIT_START_TIME LONG_HORIZON_ENTER_INTERVAL_MEAN LONG_HORIZON_EXIT_INTERVAL_MEAN HUMAN_INTENT_HIDDEN_FRACTION MAX_CONCURRENT_BACKGROUND_VEHICLES DELAYED_SPAWN_RETRY_SECONDS EXIT_SPOT_REUSE_DELAY QWEN_PERIODIC_REPLAN CONTROLLED_EGO_BLOCKS_ENTRANCE QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT EARLY_STOP EARLY_STOP_POLL_SECONDS EARLY_STOP_GRACE_SECONDS TRAFFIC_COMPLETION_STOP TRAFFIC_COMPLETION_GRACE_SECONDS TRAFFIC_HORIZON_STOP TRAFFIC_HORIZON_OVERRUN_SECONDS TRAFFIC_DRAIN_WALL_GRACE_SECONDS CLEAR_OUT_DIR
 
 prepare_out_dir() {
   mkdir -p "$OUT_DIR"
@@ -167,6 +168,7 @@ payload = {
     "traffic_completion_grace_seconds": os.environ.get("TRAFFIC_COMPLETION_GRACE_SECONDS", ""),
     "traffic_horizon_stop": os.environ.get("TRAFFIC_HORIZON_STOP", ""),
     "traffic_horizon_overrun_seconds": os.environ.get("TRAFFIC_HORIZON_OVERRUN_SECONDS", ""),
+    "traffic_drain_wall_grace_seconds": os.environ.get("TRAFFIC_DRAIN_WALL_GRACE_SECONDS", ""),
     "clear_out_dir": os.environ.get("CLEAR_OUT_DIR", ""),
 }
 with open(sys.argv[1], "w") as f:
@@ -400,10 +402,11 @@ TRAFFIC_COMPLETION_CHECK
 
 traffic_horizon_exceeded() {
   local log_dir="$1"
-  python3 - "$log_dir" "$LONG_HORIZON_DURATION" "$TRAFFIC_HORIZON_OVERRUN_SECONDS" <<'TRAFFIC_HORIZON_CHECK'
+  python3 - "$log_dir" "$LONG_HORIZON_DURATION" "$TRAFFIC_HORIZON_OVERRUN_SECONDS" "$TRAFFIC_DRAIN_WALL_GRACE_SECONDS" <<'TRAFFIC_HORIZON_CHECK'
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
 def parse_seconds(raw):
@@ -421,27 +424,34 @@ log_dir = Path(sys.argv[1])
 try:
     horizon = parse_seconds(sys.argv[2])
     overrun = float(sys.argv[3])
+    drain_wall_grace = float(sys.argv[4])
 except Exception:
     raise SystemExit(1)
 schedule_path = log_dir / "traffic_schedule.json"
 events_path = log_dir / "traffic_events.jsonl"
 if not events_path.exists():
     raise SystemExit(1)
+scheduled = []
 if schedule_path.exists():
     try:
         payload = json.loads(schedule_path.read_text())
-        times = [float(event.get("time", 0.0)) for event in payload.get("events", []) if isinstance(event, dict)]
+        scheduled = payload.get("events", []) if isinstance(payload, dict) else []
+        times = [float(event.get("time", 0.0)) for event in scheduled if isinstance(event, dict)]
         if times:
             horizon = max(horizon, max(times))
     except Exception:
-        pass
+        scheduled = []
 threshold = horizon + overrun
 max_sim_time = None
+latest_by_event = {}
 try:
     for line in events_path.read_text().splitlines():
         if not line.strip():
             continue
         row = json.loads(line)
+        event_id = row.get("event_id")
+        if event_id:
+            latest_by_event[str(event_id)] = row
         sim_time = row.get("sim_time")
         if sim_time is None:
             continue
@@ -450,8 +460,19 @@ try:
 except Exception:
     raise SystemExit(1)
 if max_sim_time is not None and max_sim_time >= threshold:
-    print(json.dumps({"max_sim_time": max_sim_time, "threshold": threshold}))
+    print(json.dumps({"reason": "traffic_sim_time_overrun", "max_sim_time": max_sim_time, "threshold": threshold}))
     raise SystemExit(0)
+if scheduled:
+    all_events_done = True
+    for event in scheduled:
+        event_id = str(event.get("event_id", ""))
+        row = latest_by_event.get(event_id)
+        if not row or str(row.get("status") or "") == "delayed" or row.get("_done") is not True:
+            all_events_done = False
+            break
+    if all_events_done and time.time() - events_path.stat().st_mtime >= drain_wall_grace:
+        print(json.dumps({"reason": "traffic_drain_wall_grace", "age_seconds": time.time() - events_path.stat().st_mtime, "grace_seconds": drain_wall_grace}))
+        raise SystemExit(0)
 raise SystemExit(1)
 TRAFFIC_HORIZON_CHECK
 }
@@ -524,7 +545,7 @@ COMPLETION_STOP_MARKER
 write_traffic_horizon_stop_marker() {
   local run_dir="$1"
   local triggered="$2"
-  python3 - "$run_dir/traffic_horizon_stop.json" "$TRAFFIC_HORIZON_STOP" "$triggered" "$TRAFFIC_HORIZON_OVERRUN_SECONDS" "$LONG_HORIZON_DURATION" <<'TRAFFIC_HORIZON_MARKER'
+  python3 - "$run_dir/traffic_horizon_stop.json" "$TRAFFIC_HORIZON_STOP" "$triggered" "$TRAFFIC_HORIZON_OVERRUN_SECONDS" "$LONG_HORIZON_DURATION" "$TRAFFIC_DRAIN_WALL_GRACE_SECONDS" <<'TRAFFIC_HORIZON_MARKER'
 import json
 import sys
 payload = {
@@ -532,7 +553,8 @@ payload = {
     "triggered": sys.argv[3] == "1",
     "overrun_seconds": float(sys.argv[4]),
     "long_horizon_duration": sys.argv[5],
-    "reason": "traffic demand exceeded evaluation horizon before all vehicles finished" if sys.argv[3] == "1" else "not triggered",
+    "drain_wall_grace_seconds": float(sys.argv[6]),
+    "reason": "traffic demand exceeded evaluation horizon or drain grace before all vehicles finished" if sys.argv[3] == "1" else "not triggered",
 }
 with open(sys.argv[1], "w") as f:
     json.dump(payload, f, indent=2)
