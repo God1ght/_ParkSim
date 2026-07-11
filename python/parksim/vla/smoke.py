@@ -67,8 +67,13 @@ def _fleet_context_requires_known_occupancy():
     vehicle._last_vla_decision_time = 0.0
     assert QwenVLAVehicle.build_fleet_epoch_context(vehicle, epoch_id=4, sim_time=4.0) is None
     assert vehicle._fleet_defer_reason == "active_low_level_maneuver"
-    vehicle.state.v.v = 0.0
+    vehicle._last_vla_decision_time = float("-inf")
+    vehicle.is_braking = True
     assert QwenVLAVehicle.build_fleet_epoch_context(vehicle, epoch_id=5, sim_time=4.0) is not None
+    vehicle.is_braking = False
+    vehicle.state.v.v = 0.0
+    vehicle._last_vla_decision_time = 0.0
+    assert QwenVLAVehicle.build_fleet_epoch_context(vehicle, epoch_id=6, sim_time=4.0) is not None
 
 
 def _occupancy_defer_retries_promptly():

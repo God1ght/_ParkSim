@@ -351,9 +351,12 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         second spot assignment for an AV that is already committed to a bay.
         """
         last_decision = float(self._last_vla_decision_time)
-        if not np.isfinite(last_decision) or float(sim_time) - last_decision < self.decision_period:
+        is_yielding = bool(getattr(self, "is_braking", False)) or int(getattr(self, "waiting_for", 0) or 0) != 0
+        if not np.isfinite(last_decision):
+            return is_yielding
+        if float(sim_time) - last_decision < self.decision_period:
             return False
-        if bool(getattr(self, "is_braking", False)) or int(getattr(self, "waiting_for", 0) or 0) != 0:
+        if is_yielding:
             return True
         try:
             speed = abs(float(self.state.v.v))
