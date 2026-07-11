@@ -121,6 +121,9 @@ def choose_default_action(actions: List[VLACandidateAction]) -> Optional[VLACand
 
 def apply_candidate_action(vehicle: Any, action: VLACandidateAction) -> None:
     if action.action_type == VLAActionType.WAIT:
+        if str(getattr(vehicle, "current_task", "") or "").upper() in ("CRUISE", "PARK", "UNPARK"):
+            setattr(vehicle, "_vla_execution_recovery_reason", "")
+            return
         vehicle.set_task_profile([VehicleTask(name="IDLE", duration=float(action.duration or 2.0))])
     elif action.action_type in (VLAActionType.SELECT_SPOT_AND_CRUISE, VLAActionType.REROUTE):
         spot_index = int(action.target_spot_index)
@@ -164,11 +167,25 @@ def _allow_cruise_to_exit(vehicle: Any) -> bool:
 
 def _has_committed_parking_target(vehicle: Any) -> bool:
     try:
-        if int(getattr(vehicle, "spot_index", 0) or 0) <= 0:
+        spot_index = int(getattr(vehicle, "spot_index", 0) or 0)
+        if spot_index <= 0:
             return False
     except Exception:
         return False
-    return str(getattr(vehicle, "current_task", "") or "").upper() in ("CRUISE", "PARK")
+    current_task = str(getattr(vehicle, "current_task", "") or "").upper()
+    if current_task in ("CRUISE", "PARK"):
+        return True
+    if current_task != "IDLE":
+        return False
+    try:
+        spaces = np.asarray(getattr(vehicle, "parking_spaces", None), dtype=float).reshape((-1, 2))
+        idx = abs(spot_index)
+        if idx >= len(spaces):
+            return False
+        xy = np.asarray([vehicle.state.x.x, vehicle.state.x.y], dtype=float)
+        return float(np.linalg.norm(xy - spaces[idx])) <= max(8.0, 2.0 * float(getattr(vehicle, "spot_y_offset", 0.0) or 0.0))
+    except Exception:
+        return False
 
 
 def _safe_reached_target(vehicle: Any) -> bool:

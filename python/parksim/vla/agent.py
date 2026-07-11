@@ -344,9 +344,22 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
         return str(self.current_task or "").upper() in ("UNPARK", "CRUISE", "PARK")
 
     def _active_maneuver_replan_due(self, sim_time: float) -> bool:
-        """Allow recovery only after a cloud-issued maneuver has outlived one epoch."""
+        """Allow recovery only for a stalled/yielding active maneuver.
+
+        A fleet epoch must not overwrite a moving CRUISE/PARK/UNPARK executor.
+        Doing so can interrupt ParkSim's offline parking maneuver and expose a
+        second spot assignment for an AV that is already committed to a bay.
+        """
         last_decision = float(self._last_vla_decision_time)
-        return bool(np.isfinite(last_decision) and float(sim_time) - last_decision >= self.decision_period)
+        if not np.isfinite(last_decision) or float(sim_time) - last_decision < self.decision_period:
+            return False
+        if bool(getattr(self, "is_braking", False)) or int(getattr(self, "waiting_for", 0) or 0) != 0:
+            return True
+        try:
+            speed = abs(float(self.state.v.v))
+        except Exception:
+            speed = 0.0
+        return speed < 0.15
 
 class BaselineVLAVehicle(QwenVLAVehicle):
     """Deterministic high-level VLA baseline over the same action interface."""

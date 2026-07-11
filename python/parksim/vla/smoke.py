@@ -1,7 +1,7 @@
 import numpy as np
 
 from parksim.pytypes import VehicleState
-from parksim.vla.action_space import build_candidate_actions, choose_default_action
+from parksim.vla.action_space import build_candidate_actions, choose_default_action, _has_committed_parking_target
 from parksim.vla.agent import QwenVLAVehicle
 from parksim.vla.baselines import make_baseline_decision
 from parksim.vla.decision_protocol import build_decision_packet
@@ -62,8 +62,13 @@ def _fleet_context_requires_known_occupancy():
     vehicle._has_active_low_level_maneuver = lambda: True
     vehicle._last_vla_decision_time = float("-inf")
     assert QwenVLAVehicle.build_fleet_epoch_context(vehicle, epoch_id=3, sim_time=2.0) is None
+    vehicle.current_task = "CRUISE"
+    vehicle.state.v.v = 1.0
     vehicle._last_vla_decision_time = 0.0
-    assert QwenVLAVehicle.build_fleet_epoch_context(vehicle, epoch_id=4, sim_time=4.0) is not None
+    assert QwenVLAVehicle.build_fleet_epoch_context(vehicle, epoch_id=4, sim_time=4.0) is None
+    assert vehicle._fleet_defer_reason == "active_low_level_maneuver"
+    vehicle.state.v.v = 0.0
+    assert QwenVLAVehicle.build_fleet_epoch_context(vehicle, epoch_id=5, sim_time=4.0) is not None
 
 
 def _occupancy_defer_retries_promptly():
@@ -80,6 +85,18 @@ def _occupancy_defer_retries_promptly():
     result = coordinator.finalize(client=None)
     assert result["deferred_reasons"] == {"1": "occupancy_not_ready"}
     assert coordinator.next_epoch_sim_time == 11.0
+
+
+def _idle_near_target_remains_committed():
+    vehicle = DummyVehicle()
+    vehicle.current_task = "IDLE"
+    vehicle.spot_index = 1
+    vehicle.state.x.x = 10.1
+    vehicle.state.x.y = 0.0
+    vehicle.spot_y_offset = 5.0
+    assert _has_committed_parking_target(vehicle) is True
+    vehicle.state.x.x = 40.0
+    assert _has_committed_parking_target(vehicle) is False
 
 
 def main():
@@ -136,6 +153,7 @@ def main():
     assert guarded is not None and guarded.action_type == VLAActionType.WAIT
     _fleet_context_requires_known_occupancy()
     _occupancy_defer_retries_promptly()
+    _idle_near_target_remains_committed()
     print("parksim.vla smoke ok")
 
 
