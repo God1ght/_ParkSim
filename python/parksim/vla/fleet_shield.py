@@ -34,7 +34,7 @@ class VLAFleetSafetyShield:
                 vehicle=vehicle_lookup.get(vehicle_id),
             )
             if ok and action is not None:
-                guarded_action = _progress_guard_action(action, valid_actions, set(reserved_targets.keys()))
+                guarded_action = _progress_guard_action(action, valid_actions, set(reserved_targets.keys()), vehicle_context)
                 if guarded_action is not None:
                     action = guarded_action
                     decision = _guarded_decision(vehicle_id, decision, action)
@@ -102,14 +102,32 @@ def _progress_guard_action(
     selected: VLACandidateAction,
     actions: List[VLACandidateAction],
     reserved_targets: set,
+    vehicle_context: Optional[Any] = None,
 ) -> Optional[VLACandidateAction]:
     """Prefer a non-conflicting progress bundle over WAIT or a dominated risky choice."""
     selected_features = selected.features if isinstance(selected.features, dict) else {}
     selected_risk = _float_feature(selected_features, "conflict_risk", 1.0)
     selected_conflicts = _float_feature(selected_features, "conflict_vehicle_count", 1.0)
     is_wait = selected.action_type == VLAActionType.WAIT
+    if _blocking_vehicle_waited_on_by_traffic(vehicle_context):
+        release_action = _lowest_progress_action(actions, reserved_targets, allow_risky=True)
+        if release_action is not None:
+            if selected.action_id == release_action.action_id:
+                return None
+            return release_action
     if not is_wait and selected_risk <= 0.15 and selected_conflicts <= 0.0:
         return None
+    release_action = _lowest_progress_action(actions, reserved_targets, allow_risky=False)
+    if release_action is None:
+        return _lowest_wait_action(actions)
+    return release_action
+
+
+def _lowest_progress_action(
+    actions: List[VLACandidateAction],
+    reserved_targets: set,
+    allow_risky: bool,
+) -> Optional[VLACandidateAction]:
     candidates = []
     for action in actions:
         if action.action_type not in (VLAActionType.SELECT_SPOT_AND_CRUISE, VLAActionType.PARK, VLAActionType.CRUISE_TO_EXIT):
@@ -117,14 +135,37 @@ def _progress_guard_action(
         if _is_spot_action(action) and abs(int(action.target_spot_index)) in reserved_targets:
             continue
         features = action.features if isinstance(action.features, dict) else {}
-        if _float_feature(features, "conflict_risk", 1.0) > 0.15:
-            continue
-        if _float_feature(features, "conflict_vehicle_count", 1.0) > 0.0:
-            continue
+        if not allow_risky:
+            if _float_feature(features, "conflict_risk", 1.0) > 0.15:
+                continue
+            if _float_feature(features, "conflict_vehicle_count", 1.0) > 0.0:
+                continue
         candidates.append(action)
     if not candidates:
-        return _lowest_wait_action(actions)
+        return None
     return min(candidates, key=_progress_rank)
+
+
+def _blocking_vehicle_waited_on_by_traffic(vehicle_context: Optional[Any]) -> bool:
+    if vehicle_context is None:
+        return False
+    state = vehicle_context.state if isinstance(getattr(vehicle_context, "state", None), dict) else {}
+    ego = state.get("ego", {}) if isinstance(state, dict) else {}
+    try:
+        vehicle_id = int(ego.get("vehicle_id", -1))
+        speed = abs(float((ego.get("state") or {}).get("speed", 0.0)))
+        ego_waiting_for = int(ego.get("waiting_for", 0) or 0)
+    except Exception:
+        return False
+    if vehicle_id < 0 or speed > 0.15 or ego_waiting_for != 0:
+        return False
+    for nearby in state.get("nearby_vehicles", []) or []:
+        try:
+            if int(nearby.get("waiting_for", 0) or 0) == vehicle_id and bool(nearby.get("is_braking", False)):
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def _lowest_wait_action(actions: List[VLACandidateAction]) -> Optional[VLACandidateAction]:

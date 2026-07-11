@@ -156,6 +156,17 @@ def main():
     )
     guarded = _progress_guard_action(risky_action, [risky_action, actions[0]], set())
     assert guarded is not None and guarded.action_type == VLAActionType.WAIT
+    blocker_context = VLAContext(
+        instruction="release blocker",
+        state={
+            "ego": {"vehicle_id": 1, "task": "IDLE", "state": {"speed": 0.0}, "waiting_for": 0},
+            "nearby_vehicles": [{"vehicle_id": 2, "is_braking": True, "waiting_for": 1}],
+        },
+        valid_actions=[risky_action, actions[0]],
+    )
+    released = _progress_guard_action(actions[0], [risky_action, actions[0]], set(), blocker_context)
+    assert released is risky_action
+    assert _progress_guard_action(risky_action, [risky_action, actions[0]], set(), blocker_context) is None
     _fleet_context_requires_known_occupancy()
     _occupancy_defer_retries_promptly()
     _idle_near_target_remains_committed()
