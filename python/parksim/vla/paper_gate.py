@@ -88,6 +88,18 @@ REQUIRED_MANUSCRIPT_FILES = [
 
 REQUIRED_METRIC_COLUMNS = [
     "objective_score",
+    "automated_demand_released_count",
+    "automated_demand_service_rate",
+    "automated_throughput_per_sim_hour",
+    "censored_automated_vehicle_count",
+    "system_exposure_vehicle_km",
+    "system_exposure_vehicle_hours",
+    "system_near_miss_events_per_100_vehicle_km",
+    "system_collision_proxy_events_per_100_vehicle_km",
+    "trajectory_conflicts_per_100_vehicle_km",
+    "feedback_repair_success_rate",
+    "feedback_hard_violation_reduction_rate",
+    "feedback_route_conflict_reduction_rate",
     "path_length",
     "total_non_idle_time",
     "waiting_time",
@@ -113,13 +125,22 @@ REQUIRED_METRIC_COLUMNS = [
 ]
 
 TRC_METRIC_GROUPS = {
-    "fleet_efficiency": ["completed", "path_length", "total_non_idle_time", "waiting_time", "traffic_spawned_count"],
-    "operational_safety": ["system_near_miss_event_count", "system_collision_proxy_event_count", "trajectory_conflict_event_count", "mixed_intent_conflict_event_count"],
-    "cloud_coordination": ["automated_vehicle_count", "cloud_served_vehicle_count", "cloud_fleet_decision_count", "shield_rejection_count", "qwen_fallback_count"],
+    "fleet_efficiency": ["automated_demand_service_rate", "automated_throughput_per_sim_hour", "fleet_mean_automated_total_time", "fleet_total_automated_waiting_time"],
+    "operational_safety": ["system_near_miss_events_per_100_vehicle_km", "system_collision_proxy_events_per_100_vehicle_km", "trajectory_conflicts_per_100_vehicle_km"],
+    "cloud_coordination": ["feedback_hard_violation_reduction_rate", "feedback_route_conflict_reduction_rate", "cloud_fleet_decision_count", "shield_rejection_count", "qwen_fallback_count"],
     "mixed_human_traffic": ["human_like_vehicle_count", "replay_vehicle_count", "hidden_intent_vehicle_count"],
     "online_cost": ["qwen_latency_mean"],
     "data_integrity": ["trace_integrity_ok", "trace_integrity_invalid_file_count", "trace_identity_conflict_count", "trace_time_regression_count", "trace_wall_time_regression_count", "trace_kinematic_jump_count"],
 }
+
+TRC_PRIMARY_TEST_METRICS = [
+    "automated_demand_service_rate",
+    "automated_throughput_per_sim_hour",
+    "fleet_mean_automated_total_time",
+    "fleet_total_automated_waiting_time",
+    "system_near_miss_events_per_100_vehicle_km",
+    "trajectory_conflicts_per_100_vehicle_km",
+]
 
 REQUIRED_REPORT_FILES = [
     "paper_rows.csv",
@@ -345,9 +366,26 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
     paired_delta_count = int(report_manifest.get("paired_delta_count") or 0)
     gate.require("paired_delta_coverage", paired_delta_count >= expected_paired_delta_count, "paired deltas must cover every non-reference agent and scenario", {"actual": paired_delta_count, "expected": expected_paired_delta_count})
 
-    objective_stats_agents = {row.get("agent_type") for row in stats_rows if row.get("metric") == "objective_score"}
-    missing_objective_stats = sorted(set(non_reference_agents) - objective_stats_agents)
-    gate.require("objective_statistical_tests", not missing_objective_stats and bool(stats_rows), "objective statistical tests must exist for each non-reference agent", {"missing_agents": missing_objective_stats, "statistical_rows": len(stats_rows)})
+    required_test_metrics = TRC_PRIMARY_TEST_METRICS if profile == "trc" else ["objective_score"]
+    stats_pairs = {(row.get("agent_type"), row.get("metric")) for row in stats_rows}
+    missing_test_pairs = sorted(
+        "%s/%s" % (agent, metric)
+        for agent in non_reference_agents
+        for metric in required_test_metrics
+        if (agent, metric) not in stats_pairs
+    )
+    gate.require("primary_statistical_tests", not missing_test_pairs and bool(stats_rows), "primary metrics must have paired statistical tests for each non-reference method", {"missing": missing_test_pairs, "statistical_rows": len(stats_rows)})
+    if profile == "trc":
+        required_stat_columns = {
+            "delta_bootstrap_ci95_low",
+            "delta_bootstrap_ci95_high",
+            "paired_permutation_p",
+            "paired_permutation_p_holm",
+            "paired_permutation_p_holm_reject_0_05",
+        }
+        stat_columns = set(stats_rows[0].keys()) if stats_rows else set()
+        missing_stat_columns = sorted(required_stat_columns - stat_columns)
+        gate.require("trc_statistical_schema", not missing_stat_columns, "TR-C statistics require paired bootstrap, permutation tests, and Holm correction", {"missing": missing_stat_columns})
     strata_factors = {row.get("factor") for row in strata_rows}
     missing_strata = sorted(set(["background_mode", "density_label", "spawn_profile"]) - strata_factors)
     gate.require("stratified_summaries", not missing_strata and bool(strata_rows), "scenario-factor stratified summaries must exist", {"missing_factors": missing_strata, "stratified_rows": len(strata_rows)})

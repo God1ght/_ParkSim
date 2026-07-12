@@ -286,6 +286,15 @@ def collect_mode_metrics(experiment_dir: Path, mode: str) -> Dict[str, Any]:
         "decisions_path": str(decisions_path) if decisions_path.exists() else "",
         "fleet_epochs_path": str(fleet_epochs_path) if fleet_epochs_path.exists() else "",
     }
+    feedback_attempts = int(metrics.get("feedback_repair_attempt_count", 0) or 0)
+    feedback_successes = int(metrics.get("feedback_repair_success_count", 0) or 0)
+    metrics["feedback_repair_success_rate"] = feedback_successes / feedback_attempts if feedback_attempts else 0.0
+    for issue in ("hard_violation", "quality_warning", "route_conflict"):
+        pre = int(metrics.get("pre_feedback_%s_count" % issue, 0) or 0)
+        post = int(metrics.get("post_feedback_%s_count" % issue, 0) or 0)
+        reduction = pre - post
+        metrics["feedback_%s_reduction_count" % issue] = reduction
+        metrics["feedback_%s_reduction_rate" % issue] = reduction / pre if pre else 0.0
     metrics.update(collect_safety_metrics(log_dir, trace_path, trace, decisions))
     if fleet_epochs:
         requested = sum(len(row.get("collected_vehicle_ids") or []) for row in fleet_epochs)
@@ -321,6 +330,12 @@ def write_metrics(experiment_dir: Path, collected: Dict[str, Dict[str, Any]]) ->
         "traffic_spawned_count", "traffic_delayed_count", "traffic_skipped_count", "system_min_distance_m",
         "system_near_miss_event_count", "system_collision_proxy_event_count", "trajectory_conflict_event_count",
         "mixed_intent_conflict_event_count", "mixed_intent_conflict_time_s",
+        "automated_demand_released_count", "automated_demand_service_rate", "automated_throughput_per_sim_hour",
+        "system_exposure_vehicle_km", "system_exposure_vehicle_hours",
+        "system_near_miss_events_per_100_vehicle_km", "system_near_miss_events_per_100_vehicle_hours",
+        "system_collision_proxy_events_per_100_vehicle_km", "system_collision_proxy_events_per_100_vehicle_hours",
+        "trajectory_conflicts_per_100_vehicle_km", "trajectory_conflicts_per_100_vehicle_hours",
+        "feedback_repair_success_rate", "feedback_hard_violation_reduction_rate", "feedback_route_conflict_reduction_rate",
     ]
     with (experiment_dir / "metrics.csv").open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)

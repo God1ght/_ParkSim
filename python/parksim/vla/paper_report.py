@@ -2,6 +2,7 @@ import argparse
 import csv
 import json
 import math
+import random
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -10,6 +11,14 @@ DEFAULT_METRICS = [
     "completed",
     "automated_vehicle_completion_rate",
     "cloud_served_vehicle_completion_rate",
+    "automated_demand_service_rate",
+    "automated_throughput_per_sim_hour",
+    "system_near_miss_events_per_100_vehicle_km",
+    "system_collision_proxy_events_per_100_vehicle_km",
+    "trajectory_conflicts_per_100_vehicle_km",
+    "feedback_repair_success_rate",
+    "feedback_hard_violation_reduction_rate",
+    "feedback_route_conflict_reduction_rate",
     "objective_score",
     "fleet_total_automated_path_length",
     "fleet_total_automated_waiting_time",
@@ -47,6 +56,14 @@ DEFAULT_METRICS = [
 ]
 
 HIGHER_IS_BETTER_METRICS = {
+    "automated_vehicle_completion_rate",
+    "cloud_served_vehicle_completion_rate",
+    "automated_demand_service_rate",
+    "automated_throughput_per_sim_hour",
+    "feedback_repair_success_rate",
+    "feedback_hard_violation_reduction_rate",
+    "feedback_quality_warning_reduction_rate",
+    "feedback_route_conflict_reduction_rate",
     "min_other_distance_m",
     "min_ttc_s",
     "system_min_distance_m",
@@ -60,6 +77,12 @@ STRATIFY_FIELDS = [
 ]
 
 MARKDOWN_TEST_METRICS = [
+    "automated_demand_service_rate",
+    "automated_throughput_per_sim_hour",
+    "fleet_mean_automated_total_time",
+    "fleet_total_automated_waiting_time",
+    "system_near_miss_events_per_100_vehicle_km",
+    "trajectory_conflicts_per_100_vehicle_km",
     "objective_score",
     "path_length",
     "total_non_idle_time",
@@ -105,6 +128,55 @@ def _ci95(values: Iterable[float]) -> float:
     if len(values) < 2:
         return 0.0
     return 1.96 * _std(values) / math.sqrt(len(values))
+
+
+def _paired_bootstrap_ci(values: List[float], iterations: int = 5000, seed: str = "") -> Tuple[float, float]:
+    if not values:
+        return 0.0, 0.0
+    rng = random.Random("parksim-bootstrap:" + seed)
+    count = len(values)
+    samples = []
+    for _ in range(iterations):
+        samples.append(_mean(values[rng.randrange(count)] for _ in range(count)))
+    samples.sort()
+    low_index = max(0, int(0.025 * iterations))
+    high_index = min(iterations - 1, int(0.975 * iterations) - 1)
+    return samples[low_index], samples[high_index]
+
+
+def _paired_permutation_p(values: List[float], iterations: int = 5000, seed: str = "") -> float:
+    nonzero = [value for value in values if abs(value) > 1e-12]
+    if not nonzero:
+        return 1.0
+    observed = abs(_mean(nonzero))
+    extreme = 0
+    if len(nonzero) <= 20:
+        total = 1 << len(nonzero)
+        for mask in range(total):
+            candidate = _mean(value if mask & (1 << idx) else -value for idx, value in enumerate(nonzero))
+            extreme += int(abs(candidate) >= observed - 1e-12)
+        return extreme / total
+    rng = random.Random("parksim-permutation:" + seed)
+    for _ in range(iterations):
+        candidate = _mean(value if rng.random() < 0.5 else -value for value in nonzero)
+        extreme += int(abs(candidate) >= observed - 1e-12)
+    return (extreme + 1.0) / (iterations + 1.0)
+
+
+def _apply_holm(rows: List[Dict[str, Any]], p_key: str, output_key: str) -> None:
+    grouped: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        if row.get(p_key) not in (None, ""):
+            grouped[str(row.get("agent_type"))].append(row)
+    for group in grouped.values():
+        ordered = sorted(group, key=lambda row: _safe_float(row.get(p_key), 1.0))
+        running = 0.0
+        total = len(ordered)
+        for index, row in enumerate(ordered):
+            adjusted = min(1.0, (total - index) * _safe_float(row.get(p_key), 1.0))
+            running = max(running, adjusted)
+            row[output_key] = running
+            row[output_key + "_reject_0_05"] = bool(running < 0.05)
 
 
 def _normal_cdf(value: float) -> float:
@@ -330,6 +402,12 @@ def statistical_tests(deltas: List[Dict[str, Any]], metrics: List[str]) -> List[
                 continue
             sign = _sign_test(values)
             wilcoxon = _wilcoxon_signed_rank(values)
+            if metric in MARKDOWN_TEST_METRICS:
+                bootstrap_low, bootstrap_high = _paired_bootstrap_ci(values, seed=agent + ":" + metric)
+                permutation_p: Optional[float] = _paired_permutation_p(values, seed=agent + ":" + metric)
+            else:
+                bootstrap_low, bootstrap_high = None, None
+                permutation_p = None
             std = _std(values)
             ref_better = sum(1 for value in values if _reference_better(value, metric))
             agent_better = sum(1 for value in values if _agent_better(value, metric))
@@ -342,6 +420,9 @@ def statistical_tests(deltas: List[Dict[str, Any]], metrics: List[str]) -> List[
                 "delta_mean": _mean(values),
                 "delta_std": std,
                 "delta_ci95": _ci95(values),
+                "delta_bootstrap_ci95_low": bootstrap_low,
+                "delta_bootstrap_ci95_high": bootstrap_high,
+                "paired_permutation_p": permutation_p,
                 "effect_dz": _mean(values) / std if std > 1e-12 else 0.0,
                 "reference_better_count": ref_better,
                 "agent_better_count": agent_better,
@@ -360,6 +441,7 @@ def statistical_tests(deltas: List[Dict[str, Any]], metrics: List[str]) -> List[
                 "wilcoxon_z": wilcoxon["z"],
                 "wilcoxon_p_normal_approx": wilcoxon["p_value"],
             })
+    _apply_holm(stats, "paired_permutation_p", "paired_permutation_p_holm")
     return stats
 
 

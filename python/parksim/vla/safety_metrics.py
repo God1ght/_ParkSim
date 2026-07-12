@@ -102,10 +102,22 @@ def collect_system_traffic_metrics(
         pair_metrics = _empty_pairwise_metrics()
     traffic_events = load_jsonl(log_dir / "traffic_events.jsonl")
     schedule = _load_json(log_dir / "traffic_schedule.json")
+    schedule_events = schedule.get("events", []) if isinstance(schedule, dict) else []
+    scheduled_event_ids = {str(row.get("event_id")) for row in schedule_events if row.get("event_id")}
+    final_status_by_event: Dict[str, str] = {}
+    delayed_event_ids = set()
+    for row in traffic_events:
+        event_id = str(row.get("event_id", ""))
+        if not event_id:
+            continue
+        final_status_by_event[event_id] = str(row.get("status", ""))
+        if row.get("status") == "delayed":
+            delayed_event_ids.add(event_id)
     spawned = sum(1 for row in traffic_events if row.get("status") == "spawned")
     delayed = sum(1 for row in traffic_events if row.get("status") == "delayed")
     skipped = sum(1 for row in traffic_events if row.get("status") == "skipped")
     metrics = {
+        "sim_horizon_seconds": _safe_float(schedule.get("long_horizon_duration")) if isinstance(schedule, dict) else 0.0,
         "total_vehicle_trace_count": len(traces),
         "completed_vehicle_count": int(completed),
         "censored_vehicle_count": int(censored),
@@ -122,11 +134,54 @@ def collect_system_traffic_metrics(
         "traffic_spawned_count": int(spawned),
         "traffic_delayed_count": int(delayed),
         "traffic_skipped_count": int(skipped),
+        "traffic_unique_delayed_count": len(delayed_event_ids),
+        "traffic_unserved_scheduled_count": sum(1 for event_id in scheduled_event_ids if final_status_by_event.get(event_id) != "spawned"),
+        "automated_scheduled_demand_count": sum(1 for row in schedule_events if _is_automated_demand_event(row)),
     }
-    metrics.update(_fleet_completion_metrics(log_dir))
+    completion_metrics = _fleet_completion_metrics(log_dir)
+    metrics.update(completion_metrics)
     metrics.update(integrity_metrics)
     metrics.update(pair_metrics)
+
+    scheduled_av = int(metrics["automated_scheduled_demand_count"])
+    controlled_av = int(completion_metrics.get("controlled_ego_summary_count", 0))
+    released_av = scheduled_av + controlled_av
+    if released_av <= 0:
+        released_av = int(completion_metrics.get("automated_vehicle_count", 0))
+    completed_av = int(completion_metrics.get("completed_automated_vehicle_count", 0))
+    horizon = _safe_float(metrics.get("sim_horizon_seconds"))
+    metrics["automated_demand_released_count"] = released_av
+    metrics["automated_demand_service_rate"] = completed_av / released_av if released_av else 0.0
+    metrics["automated_throughput_per_sim_hour"] = completed_av * 3600.0 / horizon if horizon > 0.0 else 0.0
+
+    total_distance_m = _safe_float(completion_metrics.get("fleet_total_automated_path_length")) + _safe_float(completion_metrics.get("fleet_total_human_like_path_length"))
+    total_time_s = _safe_float(completion_metrics.get("fleet_total_automated_total_time")) + _safe_float(completion_metrics.get("fleet_total_human_like_total_time"))
+    vehicle_km = total_distance_m / 1000.0
+    vehicle_hours = total_time_s / 3600.0
+    metrics["system_exposure_vehicle_km"] = vehicle_km
+    metrics["system_exposure_vehicle_hours"] = vehicle_hours
+    for count_field, rate_stem in (
+        ("system_near_miss_event_count", "system_near_miss_events"),
+        ("system_collision_proxy_event_count", "system_collision_proxy_events"),
+        ("trajectory_conflict_event_count", "trajectory_conflicts"),
+        ("mixed_intent_conflict_event_count", "mixed_intent_conflicts"),
+    ):
+        count = _safe_float(metrics.get(count_field))
+        metrics[rate_stem + "_per_100_vehicle_km"] = _per_100_exposure(count, vehicle_km)
+        metrics[rate_stem + "_per_100_vehicle_hours"] = _per_100_exposure(count, vehicle_hours)
     return metrics
+
+
+def _is_automated_demand_event(row: Dict[str, Any]) -> bool:
+    return (
+        str(row.get("actor_class", "")).lower() == "av"
+        or str(row.get("source", "")) == "automated_vehicle_demand"
+        or str(row.get("vehicle_role", "")).startswith("av_")
+    )
+
+
+def _per_100_exposure(count: float, exposure: float) -> float:
+    return 100.0 * count / exposure if exposure > 0.0 else 0.0
 
 
 def trace_integrity_metrics(traces: List[Tuple[Path, List[Dict[str, Any]]]]) -> Dict[str, Any]:
@@ -313,6 +368,7 @@ def _fleet_operational_metrics(prefix: str, vehicle_ids: set, trace_by_id: Dict[
         "fleet_mean_%s_idle_time" % prefix: _mean(idle_times),
         "fleet_total_%s_non_idle_time" % prefix: round(sum(non_idle_times), 6),
         "fleet_mean_%s_non_idle_time" % prefix: _mean(non_idle_times),
+        "fleet_total_%s_total_time" % prefix: round(sum(total_times), 6),
         "fleet_mean_%s_total_time" % prefix: _mean(total_times),
     }
 
