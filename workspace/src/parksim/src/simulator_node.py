@@ -99,6 +99,12 @@ class SimulatorNodeParams(NodeParamTemplate):
         self.static_obstacle_exit_start_time = 5.0
         self.long_horizon_enter_interval_mean = 10.0
         self.long_horizon_exit_interval_mean = 14.0
+        # Optional actor-class-specific Poisson streams. Non-positive values
+        # preserve compatibility by falling back to the legacy aggregate mean.
+        self.long_horizon_human_enter_interval_mean = -1.0
+        self.long_horizon_human_exit_interval_mean = -1.0
+        self.long_horizon_av_enter_interval_mean = -1.0
+        self.long_horizon_av_exit_interval_mean = -1.0
         self.human_intent_hidden_fraction = 0.75
         self.max_concurrent_background_vehicles = 80
         self.delayed_spawn_retry_seconds = 2.0
@@ -469,6 +475,12 @@ class SimulatorNode(MPClabNode):
             'entry_vehicle_role': str(self.entry_vehicle_role),
             'exit_vehicle_role': str(self.exit_vehicle_role),
             'human_intent_hidden_fraction': _safe_float(self.human_intent_hidden_fraction, 0.0),
+            'long_horizon_enter_interval_mean': _safe_float(self.long_horizon_enter_interval_mean, 0.0),
+            'long_horizon_exit_interval_mean': _safe_float(self.long_horizon_exit_interval_mean, 0.0),
+            'long_horizon_human_enter_interval_mean': self._flow_interval_mean('human', 'entering'),
+            'long_horizon_human_exit_interval_mean': self._flow_interval_mean('human', 'exiting'),
+            'long_horizon_av_enter_interval_mean': self._flow_interval_mean('av', 'entering'),
+            'long_horizon_av_exit_interval_mean': self._flow_interval_mean('av', 'exiting'),
             'events': self.traffic_schedule,
             'hidden_event_count': sum(1 for event in self.traffic_schedule if not event.get('intent_observable', True)),
         }
@@ -488,6 +500,15 @@ class SimulatorNode(MPClabNode):
             times.append(round(current, 3))
         return times
 
+    def _flow_interval_mean(self, actor_class, event_type):
+        legacy = (self.long_horizon_enter_interval_mean
+                  if event_type == 'entering'
+                  else self.long_horizon_exit_interval_mean)
+        attr = 'long_horizon_%s_%s_interval_mean' % (
+            actor_class, 'enter' if event_type == 'entering' else 'exit')
+        configured = _safe_float(getattr(self, attr, -1.0), -1.0)
+        return configured if configured > 0.0 else max(0.1, _safe_float(legacy, 1.0))
+
     def _initial_departable_spots(self):
         blocked = set(int(idx) for idx in list(self.blocked_spots))
         return [idx for idx in range(1, len(self.occupied)) if bool(self.occupied[idx]) and idx not in blocked]
@@ -502,7 +523,8 @@ class SimulatorNode(MPClabNode):
             max_count = max(0, _safe_int(self.static_obstacle_exit_max, len(departable)))
             count = min(max_count, int(round(len(departable) * fraction)))
             start = _safe_float(self.static_obstacle_exit_start_time, 5.0)
-            times = self._cumulative_event_times(count, self.long_horizon_exit_interval_mean, start=start)
+            times = self._cumulative_event_times(
+                count, self._flow_interval_mean('human', 'exiting'), start=start)
             for seq, (spot, event_time) in enumerate(zip(departable[:len(times)], times)):
                 hidden = self._hidden_intent()
                 events.append({
@@ -515,7 +537,9 @@ class SimulatorNode(MPClabNode):
                     'ground_truth_intent': 'exit_from_spot_%d' % int(spot),
                     'attempts': 0,
                 })
-        for seq, event_time in enumerate(self._cumulative_event_times(self.spawn_entering, self.long_horizon_enter_interval_mean, start=0.0)):
+        human_enter_mean = self._flow_interval_mean('human', 'entering')
+        human_exit_mean = self._flow_interval_mean('human', 'exiting')
+        for seq, event_time in enumerate(self._cumulative_event_times(self.spawn_entering, human_enter_mean, start=0.0)):
             hidden = self._hidden_intent()
             events.append({
                 'event_id': 'enter_%03d' % seq,
@@ -527,7 +551,7 @@ class SimulatorNode(MPClabNode):
                 'ground_truth_intent': 'enter_and_park',
                 'attempts': 0,
             })
-        for seq, event_time in enumerate(self._cumulative_event_times(self.spawn_exiting, self.long_horizon_exit_interval_mean, start=0.0)):
+        for seq, event_time in enumerate(self._cumulative_event_times(self.spawn_exiting, human_exit_mean, start=0.0)):
             hidden = self._hidden_intent()
             events.append({
                 'event_id': 'exit_%03d' % seq,
@@ -551,8 +575,8 @@ class SimulatorNode(MPClabNode):
 
     def _append_av_demand_events(self, events):
         flows = (
-            ('entering', self.av_spawn_entering, self.long_horizon_enter_interval_mean, 'av_enter', self.av_entry_vehicle_agent_type, self.av_entry_vehicle_role),
-            ('exiting', self.av_spawn_exiting, self.long_horizon_exit_interval_mean, 'av_exit', self.av_exit_vehicle_agent_type, self.av_exit_vehicle_role),
+            ('entering', self.av_spawn_entering, self._flow_interval_mean('av', 'entering'), 'av_enter', self.av_entry_vehicle_agent_type, self.av_entry_vehicle_role),
+            ('exiting', self.av_spawn_exiting, self._flow_interval_mean('av', 'exiting'), 'av_exit', self.av_exit_vehicle_agent_type, self.av_exit_vehicle_role),
         )
         for event_type, count, interval, prefix, agent_type, vehicle_role in flows:
             for seq, event_time in enumerate(self._cumulative_event_times(count, interval, start=0.0)):

@@ -22,6 +22,12 @@
     static_obstacle_exit_start_time: 5.0
     long_horizon_enter_interval_mean: 10.0
     long_horizon_exit_interval_mean: 14.0
+    # Actor-class-specific exponential inter-event means. Values <= 0 fall
+    # back to the two legacy aggregate means above.
+    long_horizon_human_enter_interval_mean: -1.0
+    long_horizon_human_exit_interval_mean: -1.0
+    long_horizon_av_enter_interval_mean: -1.0
+    long_horizon_av_exit_interval_mean: -1.0
     human_intent_hidden_fraction: 0.75
     max_concurrent_background_vehicles: 80
     delayed_spawn_retry_seconds: 2.0
@@ -49,6 +55,3 @@
     qwen_decision_log_path: ""
 
     y_bound_to_resume_spawning: 72
-
-
-    
