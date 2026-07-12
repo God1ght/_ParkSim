@@ -2,6 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT/scripts/training_guard.sh"
+parksim_guard_active_training "ParkSim Qwen VLA ROS smoke"
+
 ROS_SETUP="${ROS_SETUP:-/opt/ros/foxy/setup.bash}"
 WORKSPACE_SETUP="${WORKSPACE_SETUP:-$ROOT/workspace/install/setup.bash}"
 DLP_ROOT="${PARKSIM_DLP_ROOT:-/media/step/data/Parking_Yccc7/_dlp_dataset}"

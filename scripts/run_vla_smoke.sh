@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")/.."
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT/scripts/training_guard.sh"
+parksim_guard_active_training "ParkSim VLA smoke"
+cd "$ROOT"
 export PYTHONPATH="$PWD/python${PYTHONPATH:+:$PYTHONPATH}"
 python3 -m parksim.vla.smoke
 python3 -m parksim.vla.integrity_smoke
