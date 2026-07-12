@@ -43,14 +43,18 @@ def encode_nearby_vehicles(vehicle: Any, max_vehicles: int = 8) -> List[Dict[str
         dist = float(np.linalg.norm([state.x.x - ego.x.x, state.x.y - ego.x.y]))
         task = getattr(vehicle, "other_task", {}).get(vehicle_id)
         parking_progress = getattr(vehicle, "other_parking_progress", {}).get(vehicle_id)
+        declared_operation = str(
+            getattr(vehicle, "other_declared_operation", {}).get(vehicle_id, "unknown") or "unknown"
+        ).lower()
         rows.append({
             "vehicle_id": int(vehicle_id),
             "distance": dist,
             "state": encode_vehicle_state(state),
             "intent_observable": bool(reveal_intents),
+            "declared_operation": declared_operation if declared_operation in ("entering", "exiting") else "unknown",
             "task": task if reveal_intents else "unknown",
             "parking_progress": parking_progress if reveal_intents else None,
-            "hidden_intent_fields": [] if reveal_intents else ["task", "parking_progress", "target_or_destination"],
+            "hidden_intent_fields": [] if reveal_intents else ["task_detail", "parking_progress", "target_spot", "planned_route"],
             "is_braking": bool(getattr(vehicle, "other_is_braking", {}).get(vehicle_id, False)),
             "waiting_for": int(getattr(vehicle, "other_waiting_for", {}).get(vehicle_id, 0) or 0),
         })
@@ -116,8 +120,8 @@ def build_vla_state(vehicle: Any, valid_actions: Optional[List[Any]] = None, max
         },
         "observability_model": {
             "background_intents_revealed": bool(getattr(vehicle, "reveal_background_intents_to_vla", False)),
-            "available_background_evidence": ["pose", "speed", "braking", "waiting_signal"],
-            "hidden_background_evidence": [] if bool(getattr(vehicle, "reveal_background_intents_to_vla", False)) else ["destination", "planned_route", "task_profile"],
+            "available_background_evidence": ["declared_operation_entering_or_exiting", "pose", "speed", "braking", "waiting_signal"],
+            "hidden_background_evidence": [] if bool(getattr(vehicle, "reveal_background_intents_to_vla", False)) else ["target_spot", "planned_route", "future_trajectory", "task_detail"],
         },
         "world_model": {
             "occupancy_ready": occupancy_ready(vehicle),

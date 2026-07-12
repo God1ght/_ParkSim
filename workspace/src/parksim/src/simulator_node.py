@@ -323,6 +323,32 @@ class SimulatorNode(MPClabNode):
             % (agent_type, vehicle_id, spot_index, vehicle_role, bool(intent_observable), bool(is_controlled_ego)))
         return vehicle_id
 
+    def _replay_declared_operation(self, vehicle_id: int) -> str:
+        agent = self.agents_dict.get(vehicle_id, self.agents_dict.get(str(vehicle_id), {})) or {}
+        tasks = list(agent.get('task_profile') or [])
+        task_names = [str(task.get('name', '')).upper() for task in tasks]
+        if 'PARK' in task_names:
+            return 'entering'
+        if 'UNPARK' in task_names:
+            return 'exiting'
+
+        initial = np.asarray(agent.get('init_coords') or [], dtype=float)
+        target = np.asarray([], dtype=float)
+        for task in reversed(tasks):
+            if task.get('target_coords') is not None:
+                target = np.asarray(task.get('target_coords'), dtype=float)
+                break
+            spot = task.get('target_spot_index')
+            if spot is not None and 0 <= int(spot) < len(self.parking_spaces):
+                target = np.asarray(self.parking_spaces[int(spot)], dtype=float)
+                break
+        if initial.size >= 2 and target.size >= 2 and len(self.parking_spaces):
+            spaces = np.asarray(self.parking_spaces, dtype=float)
+            initial_distance = float(np.min(np.linalg.norm(spaces - initial[:2], axis=1)))
+            target_distance = float(np.min(np.linalg.norm(spaces - target[:2], axis=1)))
+            return 'entering' if target_distance < initial_distance else 'exiting'
+        return 'exiting'
+
     def add_existing_vehicle(self, vehicle_id: int):
         try:
             vehicle_id = self.vehicle_id_allocator.claim_reserved(vehicle_id)
@@ -330,6 +356,7 @@ class SimulatorNode(MPClabNode):
             self.get_logger().error("Replay vehicle launch rejected: %s" % exc)
             return None
 
+        declared_operation = self._replay_declared_operation(vehicle_id)
         self.vehicles.append(
             subprocess.Popen(
                 [
@@ -337,7 +364,7 @@ class SimulatorNode(MPClabNode):
                     "vehicle_id:=%d" % vehicle_id,
                     "spot_index:=%d" % 0,
                     "use_existing:=1",
-                    "vehicle_role:=replay_background",
+                    "vehicle_role:=replay_%s" % declared_operation,
                     "intent_observable:=false",
                     "intent_label:=replay_hidden",
                     "spawn_event_id:=replay_%d" % vehicle_id,

@@ -100,6 +100,7 @@ class RuleBasedStanleyVehicle(AbstractAgent):
         self.other_target_idx: Dict[int, int] = {}
         self.other_priority: Dict[int, int] = {}
         self.other_task: Dict[int, str] = {} # The current task of other vehicle
+        self.other_declared_operation: Dict[int, str] = {}
         self.other_parking_progress: Dict[int, str] = {} # Other vehicles will broadcast "PARKING" if vehicle.is_parking(), "UNPARKING" if vehicle.is_unparking(), None otherwise
         self.other_parking_start_time: Dict[int, float] = {}
         self.other_is_braking: Dict[int, str] = {}

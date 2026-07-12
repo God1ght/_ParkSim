@@ -123,6 +123,7 @@ class VehicleNode(MPClabNode):
         # ======== Publishers, Subscribers, Services
         self.state_pub = self.create_publisher(VehicleStateMsg, 'state', 10)
         self.info_pub = self.create_publisher(VehicleInfoMsg, 'info', 10)
+        self.operation_pub = self.create_publisher(String, 'declared_operation', 10)
         self.sim_time = 0.0
         self.have_sim_time = False
         self.last_sim_time = None
@@ -140,6 +141,7 @@ class VehicleNode(MPClabNode):
 
         self.state_subs = {}
         self.info_subs = {}
+        self.operation_subs = {}
         self.occupancy_sub = self.create_subscription(Int16MultiArray, '/occupancy', self.occupancy_cb, 10)
 
         self.occupancy_cli = self.create_client(OccupancySrv, '/occupancy')
@@ -291,6 +293,15 @@ class VehicleNode(MPClabNode):
                 self.vehicle.set_vehicle_state(state=agent_state)
 
         self.vehicle.set_task_profile(task_profile=task_profile)
+
+        role = str(self.vehicle_role or '').lower()
+        task_names = [str(getattr(task, 'name', task)).upper() for task in task_profile]
+        if 'enter' in role or 'PARK' in task_names:
+            self.declared_operation = 'entering'
+        elif 'exit' in role or 'depart' in role or 'UNPARK' in task_names:
+            self.declared_operation = 'exiting'
+        else:
+            self.declared_operation = 'unknown'
 
         self.vehicle.execute_next_task()
 
@@ -534,6 +545,33 @@ class VehicleNode(MPClabNode):
 
         return callback
 
+    def declared_operation_cb(self, vehicle_id):
+        def callback(msg):
+            operation = str(msg.data or 'unknown').lower()
+            if operation in ('entering', 'exiting'):
+                self.vehicle.other_declared_operation[vehicle_id] = operation
+            else:
+                self.vehicle.other_declared_operation.setdefault(vehicle_id, 'unknown')
+
+        return callback
+
+    def _declared_operation(self):
+        declared = str(getattr(self, 'declared_operation', 'unknown') or 'unknown').lower()
+        if declared in ('entering', 'exiting'):
+            return declared
+        role = str(self.vehicle_role or '').lower()
+        if 'enter' in role:
+            return 'entering'
+        if 'exit' in role or 'depart' in role:
+            return 'exiting'
+        tasks = [str(getattr(task, 'name', task)).upper() for task in getattr(self.vehicle, 'task_profile', [])]
+        current_task = str(getattr(self.vehicle, 'current_task', '') or '').upper()
+        if 'PARK' in tasks or current_task == 'PARK':
+            return 'entering'
+        if 'UNPARK' in tasks or current_task == 'UNPARK':
+            return 'exiting'
+        return 'unknown'
+
     def occupancy_cb(self, msg):
         self.vehicle.occupancy = msg.data
 
@@ -558,6 +596,7 @@ class VehicleNode(MPClabNode):
         for topic_name, _ in topic_list_types:
             state_name_pattern = re.match("/vehicle_([1-9][0-9]*)/state", topic_name)
             info_name_pattern = re.match("/vehicle_([1-9][0-9]*)/info", topic_name)
+            operation_name_pattern = re.match("/vehicle_([1-9][0-9]*)/declared_operation", topic_name)
 
             if state_name_pattern:
                 vehicle_id = int(state_name_pattern.group(1))
@@ -597,6 +636,18 @@ class VehicleNode(MPClabNode):
                     # self.get_logger().info("Vehicle %d is not publishing anymore. Info ubscriber is destroyed." % vehicle_id)
 
                     self.vehicle.other_vehicles.discard(vehicle_id)
+
+            elif operation_name_pattern:
+                vehicle_id = int(operation_name_pattern.group(1))
+                if vehicle_id == self.vehicle_id:
+                    continue
+                publisher = self.get_publishers_info_by_topic(topic_name=topic_name)
+                if vehicle_id not in self.operation_subs and publisher:
+                    self.operation_subs[vehicle_id] = self.create_subscription(
+                        String, topic_name, self.declared_operation_cb(vehicle_id), 10)
+                elif vehicle_id in self.operation_subs and not publisher:
+                    self.destroy_subscription(self.operation_subs[vehicle_id])
+                    self.operation_subs.pop(vehicle_id)
 
             else:
                 continue
@@ -651,6 +702,9 @@ class VehicleNode(MPClabNode):
         info_msg = VehicleInfoMsg()
         self.populate_msg(info_msg, self.vehicle.get_info())
         self.info_pub.publish(info_msg)
+        operation_msg = String()
+        operation_msg.data = self._declared_operation()
+        self.operation_pub.publish(operation_msg)
 
 
 def main(args=None):
