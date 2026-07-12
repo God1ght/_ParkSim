@@ -11,8 +11,8 @@ from parksim.vla.schema import (
 )
 
 
-VLA_FLEET_DECISION_PROTOCOL_VERSION = "ParkSim-Qwen-VLA-Fleet-Decision-v1"
-VLA_FLEET_PROMPT_VERSION = "qwen-vla-cloud-fleet-policy-v1"
+VLA_FLEET_DECISION_PROTOCOL_VERSION = "ParkSim-MLLM-Fleet-Decision-v2"
+VLA_FLEET_PROMPT_VERSION = "qwen-vl-cloud-fleet-coordinator-v2"
 
 VLA_FLEET_OUTPUT_SCHEMA = {
     "type": "object",
@@ -146,7 +146,7 @@ def fleet_context_for_single_vehicle(context: VLAContext) -> VLAFleetContext:
     vehicle_id = int(ego.get("vehicle_id", -1))
     return VLAFleetContext(
         instruction=(
-            "Act as the cloud VLA fleet coordinator for mixed human-autonomous parking operations. "
+            "Act as the cloud multimodal-LLM fleet coordinator for mixed human-autonomous parking operations. "
             "The current request contains the automated vehicle that needs an immediate high-level decision; "
             "nearby replay/rule/human vehicles are observable background traffic, not controllable by Qwen. "
             "Return fleet_decisions with exactly one valid high-level action for vehicle_id %d."

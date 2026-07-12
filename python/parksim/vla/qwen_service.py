@@ -289,6 +289,21 @@ def normalize_fleet_decisions(text: str, context: Dict[str, Any]) -> Dict[str, A
     return {"fleet_decisions": output}
 
 
+def raw_fleet_decisions(text: str) -> Dict[str, Any]:
+    """Expose the model proposal without system-level repair for auditable experiments."""
+    parsed = first_json_object(text)
+    raw_decisions = parsed.get("fleet_decisions") if isinstance(parsed, dict) else None
+    if raw_decisions is None and isinstance(parsed, dict):
+        raw_decisions = parsed.get("decisions")
+    if not isinstance(raw_decisions, list):
+        raw_decisions = []
+    return {
+        "fleet_decisions": [item for item in raw_decisions if isinstance(item, dict)],
+        "model_raw_response": str(text),
+        "service_postprocess_mode": "raw_auditable",
+    }
+
+
 def _normalize_fleet_vehicle_decision(raw: Dict[str, Any], actions: Sequence[Dict[str, Any]], vehicle_id: int, priority: int) -> Dict[str, Any]:
     valid_ids = {str(action.get("action_id")) for action in actions}
     action_id = str(raw.get("action_id", "")) if isinstance(raw, dict) else ""
@@ -449,12 +464,14 @@ class QwenVLAInferenceService:
         torch_dtype: str = "auto",
         max_new_tokens: int = 512,
         mock: bool = False,
+        fleet_postprocess_mode: str = "raw",
     ):
         self.model_id = resolve_model_id(model_id)
         self.device_map = device_map
         self.torch_dtype = torch_dtype
         self.max_new_tokens = int(max_new_tokens)
         self.mock = bool(mock)
+        self.fleet_postprocess_mode = str(fleet_postprocess_mode or "raw").lower()
         self.model = None
         self.processor = None
         self._target_reservations: Dict[int, Dict[str, Any]] = {}
@@ -482,10 +499,12 @@ class QwenVLAInferenceService:
         context = extract_context(payload)
         if is_fleet_context(context):
             if self.mock:
-                return self._apply_cross_request_reservations(mock_fleet_decisions(context), context)
+                return mock_fleet_decisions(context)
             self.load()
             messages = normalize_messages(payload.get("messages", []))
             output = self._generate(messages)
+            if self.fleet_postprocess_mode == "raw":
+                return raw_fleet_decisions(output)
             return self._apply_cross_request_reservations(normalize_fleet_decisions(output, context), context)
         actions = valid_actions_from_context(context)
         if self.mock:
@@ -580,7 +599,12 @@ def make_handler(service: QwenVLAInferenceService):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             if self.path.rstrip("/") in ("", "/healthz"):
-                self._send_json({"ok": True, "model": service.model_id, "mock": service.mock})
+                self._send_json({
+                    "ok": True,
+                    "model": service.model_id,
+                    "mock": service.mock,
+                    "fleet_postprocess_mode": service.fleet_postprocess_mode,
+                })
                 return
             self.send_error(404, "not found")
 
@@ -622,6 +646,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--torch-dtype", default=os.environ.get("QWEN_TORCH_DTYPE", "auto"), choices=["auto", "bf16", "fp16"])
     parser.add_argument("--max-new-tokens", type=int, default=int(os.environ.get("QWEN_MAX_NEW_TOKENS", "512")))
     parser.add_argument("--mock", action="store_true", help="Serve deterministic valid decisions without loading a model.")
+    parser.add_argument(
+        "--fleet-postprocess-mode",
+        default=os.environ.get("QWEN_FLEET_POSTPROCESS_MODE", "raw"),
+        choices=["raw", "normalized"],
+        help="Use raw for auditable Direct-vs-Feedback experiments; normalized retains the legacy service repair path.",
+    )
     return parser
 
 
@@ -633,6 +663,7 @@ def main() -> None:
         torch_dtype=args.torch_dtype,
         max_new_tokens=args.max_new_tokens,
         mock=args.mock,
+        fleet_postprocess_mode=args.fleet_postprocess_mode,
     )
     service.load()
     server = ThreadingHTTPServer((args.host, args.port), make_handler(service))

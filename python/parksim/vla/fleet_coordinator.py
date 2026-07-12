@@ -3,10 +3,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
+import time
+
 from parksim.vla.fleet_bev import save_fleet_bev_png
 from parksim.vla.fleet_client import QwenFleetPolicyClient
+from parksim.vla.fleet_critic import FleetDecisionCritic
 from parksim.vla.fleet_schema import VLAFleetContext
 from parksim.vla.fleet_shield import VLAFleetSafetyShield
+from parksim.vla.intent_belief import HumanIntentBeliefTracker
 from parksim.vla.schema import VLACandidateAction, VLAContext
 
 
@@ -72,6 +76,9 @@ class FleetEpochCoordinator:
         self.next_epoch_sim_time = 0.0
         self.epoch_counter = 0
         self.active_epoch: Optional[FleetEpoch] = None
+        self.critic = FleetDecisionCritic()
+        self.human_belief_tracker = HumanIntentBeliefTracker()
+        self.previous_outcome_summary: Dict[str, Any] = {}
 
     def register(self, vehicle_id: int) -> None:
         self.registered_vehicle_ids.add(int(vehicle_id))
@@ -151,6 +158,7 @@ class FleetEpochCoordinator:
         client: QwenFleetPolicyClient,
         shield: Optional[VLAFleetSafetyShield] = None,
         run_id: str = "",
+        policy_mode: str = "direct",
     ) -> Dict[str, Any]:
         epoch = self.active_epoch
         if epoch is None:
@@ -168,16 +176,19 @@ class FleetEpochCoordinator:
                 )
             except Exception:
                 fleet_bev_path = None
+        fleet_state = self._fleet_state(epoch, run_id, missing_ids)
         fleet_context = VLAFleetContext(
             instruction=(
-                "Act as the synchronized cloud VLA coordinator for the entire mixed "
+                "Act as the synchronized cloud multimodal-LLM coordinator for the entire mixed "
                 "human-autonomous parking lot. Return one executable high-level action "
                 "for every automated vehicle in this decision epoch."
             ),
-            state=self._fleet_state(epoch, run_id, missing_ids),
+            state=fleet_state,
             vehicle_contexts=contexts,
             bev_image_path=fleet_bev_path,
         )
+        conflict_graph = self.critic.candidate_conflict_graph(fleet_context)
+        fleet_context.state["candidate_conflict_graph"] = conflict_graph
         result: Dict[str, Any] = {
             "run_id": str(run_id),
             "epoch_id": epoch.epoch_id,
@@ -192,11 +203,45 @@ class FleetEpochCoordinator:
             "fleet_context": fleet_context.to_dict(),
             "fleet_bev_path": fleet_bev_path,
             "fleet_decisions": [],
+            "policy_mode": str(policy_mode),
+            "model_id": (
+                "deterministic_fleet_min_cost"
+                if str(policy_mode).lower() == "fleet_min_cost"
+                else str(getattr(client, "model", "unknown"))
+            ),
+            "model_revision": "not_applicable" if str(policy_mode).lower() == "fleet_min_cost" else "local_snapshot",
+            "feedback_schema_version": "ParkSim-MLLM-Fleet-Critic-v1",
+            "repair_attempted": False,
+            "repair_latency_seconds": 0.0,
         }
         if collected_ids:
-            response = client.decide_fleet(fleet_context)
+            normalized_mode = str(policy_mode or "direct").lower()
+            if normalized_mode == "fleet_min_cost":
+                initial_response = self.critic.optimize(fleet_context)
+            else:
+                initial_response = client.decide_fleet(fleet_context)
+            pre_critique = self.critic.evaluate(initial_response, fleet_context, conflict_graph)
+            response = initial_response
+            if normalized_mode == "external_feedback" and pre_critique["needs_repair"]:
+                repair_started = time.monotonic()
+                response = client.repair_fleet(fleet_context, initial_response, pre_critique, mode="external_feedback")
+                result["repair_latency_seconds"] = float(time.monotonic() - repair_started)
+                result["repair_attempted"] = True
+            elif normalized_mode == "self_reflect":
+                repair_started = time.monotonic()
+                response = client.repair_fleet(fleet_context, initial_response, mode="self_reflect")
+                result["repair_latency_seconds"] = float(time.monotonic() - repair_started)
+                result["repair_attempted"] = True
+            post_critique = self.critic.evaluate(response, fleet_context, conflict_graph)
             checked = shield.validate(response, fleet_context)
+            result["initial_fleet_response"] = initial_response.to_dict()
             result["raw_fleet_response"] = response.to_dict()
+            result["pre_feedback_critique"] = pre_critique
+            result["post_feedback_critique"] = post_critique
+            result["changed_by_feedback_count"] = _changed_decision_count(initial_response, response)
+            pre_issue_count = int(pre_critique["hard_violation_count"]) + int(pre_critique["quality_warning_count"])
+            post_issue_count = int(post_critique["hard_violation_count"]) + int(post_critique["quality_warning_count"])
+            result["repair_success"] = bool(result["repair_attempted"] and post_issue_count < pre_issue_count)
             for vehicle_id in collected_ids:
                 ok, action, reason, decision = checked[vehicle_id]
                 result["fleet_decisions"].append({
@@ -206,6 +251,13 @@ class FleetEpochCoordinator:
                     "shield_reason": str(reason),
                     "action_bundle": action.to_dict() if action is not None else None,
                 })
+            self.previous_outcome_summary = {
+                "epoch_id": int(epoch.epoch_id),
+                "post_feedback_objective_score": post_critique.get("objective_score"),
+                "post_feedback_hard_violation_count": post_critique.get("hard_violation_count"),
+                "shield_rejection_count": sum(1 for item in result["fleet_decisions"] if not item["shield_ok"]),
+                "executed_action_ids": {str(item["vehicle_id"]): item.get("action_id") for item in result["fleet_decisions"]},
+            }
         else:
             result["raw_fleet_response"] = {"fleet_decisions": [], "raw_response": ""}
         if not collected_ids and any(reason == "occupancy_not_ready" for reason in epoch.deferred_reasons.values()):
@@ -216,8 +268,7 @@ class FleetEpochCoordinator:
         self.active_epoch = None
         return result
 
-    @staticmethod
-    def _fleet_state(epoch: FleetEpoch, run_id: str, missing_ids: List[int]) -> Dict[str, Any]:
+    def _fleet_state(self, epoch: FleetEpoch, run_id: str, missing_ids: List[int]) -> Dict[str, Any]:
         humans: Dict[int, Dict[str, Any]] = {}
         av_states: List[Dict[str, Any]] = []
         for vehicle_id in sorted(epoch.contexts):
@@ -229,10 +280,11 @@ class FleetEpochCoordinator:
                 if not isinstance(row, dict):
                     continue
                 other_id = _as_int(row.get("vehicle_id"))
-                if other_id is not None:
+                if other_id is not None and other_id not in self.registered_vehicle_ids:
                     humans[other_id] = dict(row)
+        beliefs = self.human_belief_tracker.update(epoch.sim_time, humans.values())
         return {
-            "cloud_policy_role": "fleet_level_qwen_vla_server",
+            "cloud_policy_role": "fleet_level_multimodal_llm_server",
             "decision_scope": "synchronized_fleet_epoch",
             "run_id": str(run_id),
             "sim_time": float(epoch.sim_time),
@@ -243,6 +295,27 @@ class FleetEpochCoordinator:
             "deferred_vehicle_ids": sorted(epoch.deferred_vehicle_ids),
             "automated_vehicle_states": av_states,
             "observable_human_vehicle_states": list(humans.values()),
+            "human_intent_beliefs": beliefs,
             "human_intent_model": "partially_observable_replay_rule_random_mixed",
+            "human_information_boundary": {
+                "operation_class_observable": True,
+                "target_spot_observable": False,
+                "intended_route_observable": False,
+                "future_ground_truth_trajectory_observable": False,
+                "belief_trajectories_are_inferred_not_privileged": True,
+            },
+            "previous_outcome_summary": dict(self.previous_outcome_summary),
             "sim_time_alignment": "cloud latency is logged while simulator advancement is paused",
         }
+
+
+def _changed_decision_count(initial: Any, revised: Any) -> int:
+    initial_by_id = {int(item.vehicle_id): item for item in initial.decisions}
+    revised_by_id = {int(item.vehicle_id): item for item in revised.decisions}
+    vehicle_ids = set(initial_by_id) | set(revised_by_id)
+    return sum(
+        1 for vehicle_id in vehicle_ids
+        if vehicle_id not in initial_by_id
+        or vehicle_id not in revised_by_id
+        or initial_by_id[vehicle_id].action_id != revised_by_id[vehicle_id].action_id
+    )

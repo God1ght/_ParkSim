@@ -24,7 +24,12 @@ from parksim.base_node import MPClabNode, parksim_path
 from parksim.pytypes import VehicleState, NodeParamTemplate
 from parksim.vla.vehicle_ids import VehicleIdAllocator, replay_vehicle_ids
 
-VLA_AGENT_TYPES = {'qwen_vla', 'greedy_nearest', 'greedy_shortest_path', 'risk_aware_rule', 'bundle_risk_aware', 'conflict_aware_bundle', 'min_bundle_cost', 'reservation_bundle', 'rolling_horizon_bundle', 'centralized_min_cost', 'oracle_intent_bundle', 'vla_baseline'}
+VLA_AGENT_TYPES = {
+    'qwen_vla', 'mllm_direct', 'mllm_self_reflect', 'mllm_external_feedback', 'fleet_min_cost',
+    'greedy_nearest', 'greedy_shortest_path', 'risk_aware_rule', 'bundle_risk_aware',
+    'conflict_aware_bundle', 'min_bundle_cost', 'reservation_bundle', 'rolling_horizon_bundle',
+    'centralized_min_cost', 'oracle_intent_bundle', 'vla_baseline',
+}
 
 
 def _as_bool(value):
@@ -92,7 +97,11 @@ class SimulatorNodeParams(NodeParamTemplate):
         # Long-horizon human-machine mixed traffic generator. The legacy path is
         # unchanged unless this mode is explicitly enabled by an experiment script.
         self.traffic_flow_mode = 'legacy'  # legacy or human_mixed_long_horizon
+        self.traffic_arrival_process = 'nhpp_piecewise'
+        self.traffic_rate_profile = 'parking_diurnal'
+        self.traffic_rate_window_seconds = 300.0
         self.long_horizon_duration = 600.0
+        self.hard_stop_at_long_horizon = False
         self.restore_obstacles_as_exit_vehicles = False
         self.static_obstacle_exit_fraction = 0.35
         self.static_obstacle_exit_max = 40
@@ -459,6 +468,9 @@ class SimulatorNode(MPClabNode):
         os.makedirs(self.log_path, exist_ok=True)
         payload = {
             'traffic_flow_mode': str(self.traffic_flow_mode),
+            'traffic_arrival_process': str(self.traffic_arrival_process),
+            'traffic_rate_profile': str(self.traffic_rate_profile),
+            'traffic_rate_window_seconds': _safe_float(self.traffic_rate_window_seconds, 300.0),
             'background_mode': str(self.background_mode),
             'long_horizon_duration': _safe_float(self.long_horizon_duration, 0.0),
             'spawn_entering': _safe_int(self.spawn_entering, 0),
@@ -487,18 +499,46 @@ class SimulatorNode(MPClabNode):
         with open(self.traffic_schedule_path, 'w') as f:
             json.dump(payload, f, indent=2)
 
-    def _cumulative_event_times(self, count, interval_mean, start=0.0):
+    def _cumulative_event_times(self, count, interval_mean, start=0.0, actor_class='human', event_type='entering'):
         count = max(0, _safe_int(count, 0))
         mean = max(0.1, _safe_float(interval_mean, 1.0))
         horizon = max(0.0, _safe_float(self.long_horizon_duration, 0.0))
         times = []
         current = float(start)
-        for _ in range(count):
-            current += float(np.random.exponential(mean))
+        process = str(self.traffic_arrival_process or 'homogeneous_poisson').lower()
+        profile = self._traffic_rate_multipliers(actor_class, event_type)
+        maximum = max(profile) if process == 'nhpp_piecewise' else 1.0
+        attempts = 0
+        while len(times) < count:
+            attempts += 1
+            if attempts > max(1000, count * 100):
+                break
+            current += float(np.random.exponential(mean / max(0.05, maximum)))
             if horizon > 0.0 and current > horizon:
                 break
+            if process == 'nhpp_piecewise':
+                multiplier = self._traffic_rate_multiplier(profile, current)
+                if float(np.random.random()) > multiplier / max(0.05, maximum):
+                    continue
             times.append(round(current, 3))
         return times
+
+    def _traffic_rate_multipliers(self, actor_class, event_type):
+        if str(self.traffic_rate_profile).lower() != 'parking_diurnal':
+            return [1.0]
+        entering = [0.70, 0.85, 1.05, 1.30, 1.55, 1.45, 1.25, 1.05, 0.90, 0.80, 0.70, 0.60]
+        exiting = [0.60, 0.70, 0.80, 0.90, 1.05, 1.25, 1.45, 1.60, 1.45, 1.20, 0.90, 0.70]
+        values = entering if str(event_type).lower() == 'entering' else exiting
+        if str(actor_class).lower() == 'av':
+            values = [0.9 + 0.1 * value for value in values]
+        return values
+
+    def _traffic_rate_multiplier(self, profile, sim_time):
+        if not profile:
+            return 1.0
+        window = max(1.0, _safe_float(self.traffic_rate_window_seconds, 300.0))
+        index = min(len(profile) - 1, max(0, int(float(sim_time) // window)))
+        return max(0.05, _safe_float(profile[index], 1.0))
 
     def _flow_interval_mean(self, actor_class, event_type):
         legacy = (self.long_horizon_enter_interval_mean
@@ -524,7 +564,8 @@ class SimulatorNode(MPClabNode):
             count = min(max_count, int(round(len(departable) * fraction)))
             start = _safe_float(self.static_obstacle_exit_start_time, 5.0)
             times = self._cumulative_event_times(
-                count, self._flow_interval_mean('human', 'exiting'), start=start)
+                count, self._flow_interval_mean('human', 'exiting'), start=start,
+                actor_class='human', event_type='exiting')
             for seq, (spot, event_time) in enumerate(zip(departable[:len(times)], times)):
                 hidden = self._hidden_intent()
                 events.append({
@@ -535,11 +576,14 @@ class SimulatorNode(MPClabNode):
                     'spot_index': int(spot),
                     'intent_observable': not hidden,
                     'ground_truth_intent': 'exit_from_spot_%d' % int(spot),
+                    'preference_seed': int(np.random.randint(0, 2 ** 31 - 1)),
                     'attempts': 0,
                 })
         human_enter_mean = self._flow_interval_mean('human', 'entering')
         human_exit_mean = self._flow_interval_mean('human', 'exiting')
-        for seq, event_time in enumerate(self._cumulative_event_times(self.spawn_entering, human_enter_mean, start=0.0)):
+        for seq, event_time in enumerate(self._cumulative_event_times(
+                self.spawn_entering, human_enter_mean, start=0.0,
+                actor_class='human', event_type='entering')):
             hidden = self._hidden_intent()
             events.append({
                 'event_id': 'enter_%03d' % seq,
@@ -549,9 +593,12 @@ class SimulatorNode(MPClabNode):
                 'spot_index': None,
                 'intent_observable': not hidden,
                 'ground_truth_intent': 'enter_and_park',
+                'preference_seed': int(np.random.randint(0, 2 ** 31 - 1)),
                 'attempts': 0,
             })
-        for seq, event_time in enumerate(self._cumulative_event_times(self.spawn_exiting, human_exit_mean, start=0.0)):
+        for seq, event_time in enumerate(self._cumulative_event_times(
+                self.spawn_exiting, human_exit_mean, start=0.0,
+                actor_class='human', event_type='exiting')):
             hidden = self._hidden_intent()
             events.append({
                 'event_id': 'exit_%03d' % seq,
@@ -561,6 +608,7 @@ class SimulatorNode(MPClabNode):
                 'spot_index': None,
                 'intent_observable': not hidden,
                 'ground_truth_intent': 'leave_from_occupied_spot',
+                'preference_seed': int(np.random.randint(0, 2 ** 31 - 1)),
                 'attempts': 0,
             })
         self._append_av_demand_events(events)
@@ -579,7 +627,9 @@ class SimulatorNode(MPClabNode):
             ('exiting', self.av_spawn_exiting, self._flow_interval_mean('av', 'exiting'), 'av_exit', self.av_exit_vehicle_agent_type, self.av_exit_vehicle_role),
         )
         for event_type, count, interval, prefix, agent_type, vehicle_role in flows:
-            for seq, event_time in enumerate(self._cumulative_event_times(count, interval, start=0.0)):
+            for seq, event_time in enumerate(self._cumulative_event_times(
+                    count, interval, start=0.0,
+                    actor_class='av', event_type=event_type)):
                 events.append({
                     'event_id': '%s_%03d' % (prefix, seq),
                     'time': float(event_time),
@@ -591,6 +641,7 @@ class SimulatorNode(MPClabNode):
                     'spot_index': None,
                     'intent_observable': True,
                     'ground_truth_intent': 'av_%s_task' % event_type,
+                    'preference_seed': int(np.random.randint(0, 2 ** 31 - 1)),
                     'attempts': 0,
                 })
 
@@ -612,6 +663,16 @@ class SimulatorNode(MPClabNode):
         reserved = set(int(idx) for idx in self.exit_reserved_spots.keys())
         return [idx for idx in range(1, len(self.occupied)) if self.occupied[idx] and idx not in blocked and idx not in reserved]
 
+    @staticmethod
+    def _event_preferred_spot(candidates, event):
+        candidates = sorted(int(value) for value in candidates)
+        if not candidates:
+            return None
+        seed = _safe_int(event.get('preference_seed'), 0)
+        generator = np.random.RandomState(seed)
+        ordering = generator.permutation(np.asarray(candidates, dtype=int))
+        return int(ordering[0])
+
     def _delay_traffic_event(self, event, reason):
         event['_done'] = True
         delayed = dict(event)
@@ -631,7 +692,7 @@ class SimulatorNode(MPClabNode):
             event['_done'] = True
             self._append_traffic_event(event, 'skipped', reason='no_selectable_empty_spot')
             return
-        chosen_spot = int(np.random.choice(empty_spots))
+        chosen_spot = self._event_preferred_spot(empty_spots, event)
         vehicle_id = self.add_vehicle(
             chosen_spot,
             agent_type=str(event.get('agent_type') or self.entry_vehicle_agent_type),
@@ -658,7 +719,7 @@ class SimulatorNode(MPClabNode):
                 event['_done'] = True
                 self._append_traffic_event(event, 'skipped', reason='no_departable_occupied_spot')
                 return
-            chosen_spot = int(np.random.choice(departable))
+            chosen_spot = self._event_preferred_spot(departable, event)
         self.exit_reserved_spots[chosen_spot] = current_time + max(0.0, _safe_float(self.exit_spot_reuse_delay, 20.0))
         vehicle_id = self.add_vehicle(
             -1 * chosen_spot,
@@ -801,6 +862,16 @@ class SimulatorNode(MPClabNode):
         occupancy_msg = Int16MultiArray()
         occupancy_msg.data = self.occupied
         self.occupancy_pub.publish(occupancy_msg)
+
+        if (
+            _as_bool(self.hard_stop_at_long_horizon)
+            and self._uses_scheduled_traffic()
+            and float(self.long_horizon_duration) > 0.0
+            and float(self.sim_time) + 1e-9 >= float(self.long_horizon_duration)
+        ):
+            self.get_logger().info(
+                'Hard simulation-time horizon reached at %.3f s' % float(self.sim_time))
+            raise KeyboardInterrupt()
 
 
 def _raise_keyboard_interrupt(signum, frame):

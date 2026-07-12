@@ -1,5 +1,6 @@
 import argparse
 import csv
+import hashlib
 import json
 import math
 import pickle
@@ -62,6 +63,31 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except Exception:
         return default
+
+
+def _stable_hash(payload: Any) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _traffic_schedule_hash(log_dir: Path) -> str:
+    payload = _load_json(log_dir / "traffic_schedule.json")
+    events = payload.get("events", []) if isinstance(payload, dict) else []
+    canonical = []
+    for event in events if isinstance(events, list) else []:
+        if not isinstance(event, dict):
+            continue
+        canonical.append({
+            "event_id": event.get("event_id"),
+            "time": event.get("time"),
+            "event_type": event.get("event_type"),
+            "source": event.get("source"),
+            "actor_class": event.get("actor_class", "human"),
+            "spot_index": event.get("spot_index"),
+            "intent_observable": event.get("intent_observable"),
+            "preference_seed": event.get("preference_seed"),
+        })
+    return _stable_hash(canonical)
 
 
 def _load_spots(root: Path) -> List[List[float]]:
@@ -171,10 +197,26 @@ def collect_mode_metrics(experiment_dir: Path, mode: str) -> Dict[str, Any]:
     accelerations = [_safe_float(row.get("acceleration")) for row in trace]
     final = trace[-1] if trace else {}
     first = trace[0] if trace else {}
+    first_fleet_epoch = fleet_epochs[0] if fleet_epochs else {}
+    first_fleet_context = first_fleet_epoch.get("fleet_context") or {}
 
     qwen_latencies = [_safe_float(row.get("latency_seconds")) for row in decisions]
     fleet_latencies = [_safe_float(row.get("latency_seconds")) for row in fleet_epochs]
     fleet_batch_waits = [_safe_float(row.get("batch_wait_seconds")) for row in fleet_epochs]
+    pre_critiques = [row.get("pre_feedback_critique") or {} for row in fleet_epochs]
+    post_critiques = [row.get("post_feedback_critique") or {} for row in fleet_epochs]
+    belief_rows = [
+        belief
+        for epoch in fleet_epochs
+        for belief in (((epoch.get("fleet_context") or {}).get("state") or {}).get("human_intent_beliefs") or [])
+        if isinstance(belief, dict)
+    ]
+    observability_audits = [
+        item.get("observability_audit")
+        for item in pre_critiques
+        if isinstance(item.get("observability_audit"), dict)
+        and "observability_audit_ok" in item.get("observability_audit", {})
+    ]
     if fleet_latencies:
         qwen_latencies = fleet_latencies
     applied_actions = [row.get("applied_action") or {} for row in decisions]
@@ -212,6 +254,30 @@ def collect_mode_metrics(experiment_dir: Path, mode: str) -> Dict[str, Any]:
         "qwen_batch_wait_mean": _mean(fleet_batch_waits),
         "qwen_batch_wait_max": max(fleet_batch_waits, default=0.0),
         "cloud_fleet_deferred_vehicle_count": sum(len(row.get("deferred_vehicle_ids") or []) for row in fleet_epochs),
+        "policy_variant": str(fleet_epochs[0].get("policy_mode", mode) if fleet_epochs else mode),
+        "model_id": str(first_fleet_epoch.get("model_id", "")),
+        "model_revision": str(first_fleet_epoch.get("model_revision", "")),
+        "fleet_protocol_version": str(first_fleet_context.get("protocol_version", "")),
+        "prompt_version": str(first_fleet_context.get("prompt_version", "")),
+        "traffic_schedule_hash": _traffic_schedule_hash(log_dir),
+        "feedback_enabled": any(bool(row.get("repair_attempted")) for row in fleet_epochs),
+        "feedback_repair_attempt_count": sum(1 for row in fleet_epochs if row.get("repair_attempted")),
+        "feedback_repair_success_count": sum(1 for row in fleet_epochs if row.get("repair_success")),
+        "feedback_changed_action_count": sum(int(row.get("changed_by_feedback_count", 0) or 0) for row in fleet_epochs),
+        "feedback_latency_mean": _mean(_safe_float(row.get("repair_latency_seconds")) for row in fleet_epochs if row.get("repair_attempted")),
+        "pre_feedback_hard_violation_count": sum(int(row.get("hard_violation_count", 0) or 0) for row in pre_critiques),
+        "post_feedback_hard_violation_count": sum(int(row.get("hard_violation_count", 0) or 0) for row in post_critiques),
+        "pre_feedback_quality_warning_count": sum(int(row.get("quality_warning_count", 0) or 0) for row in pre_critiques),
+        "post_feedback_quality_warning_count": sum(int(row.get("quality_warning_count", 0) or 0) for row in post_critiques),
+        "pre_feedback_route_conflict_count": sum(int(row.get("route_conflict_count", 0) or 0) for row in pre_critiques),
+        "post_feedback_route_conflict_count": sum(int(row.get("route_conflict_count", 0) or 0) for row in post_critiques),
+        "candidate_conflict_edge_count_mean": _mean(_safe_float(row.get("candidate_conflict_edge_count")) for row in pre_critiques),
+        "human_belief_observation_count": len(belief_rows),
+        "human_belief_entropy_mean": _mean(_safe_float(row.get("normalized_entropy")) for row in belief_rows),
+        "observability_audit_ok": all(bool(row.get("observability_audit_ok")) for row in observability_audits) if observability_audits else None,
+        "human_target_spot_exposed": any(bool(row.get("human_target_spot_exposed")) for row in observability_audits),
+        "human_route_exposed": any(bool(row.get("human_route_exposed")) for row in observability_audits),
+        "human_future_trajectory_exposed": any(bool(row.get("human_future_trajectory_exposed")) for row in observability_audits),
         "first_action_type": action_types[0] if action_types else None,
         "final_x": _safe_float((summary.get("final_state") or {}).get("x"), _safe_float(final.get("x"))),
         "final_y": _safe_float((summary.get("final_state") or {}).get("y"), _safe_float(final.get("y"))),
@@ -221,6 +287,16 @@ def collect_mode_metrics(experiment_dir: Path, mode: str) -> Dict[str, Any]:
         "fleet_epochs_path": str(fleet_epochs_path) if fleet_epochs_path.exists() else "",
     }
     metrics.update(collect_safety_metrics(log_dir, trace_path, trace, decisions))
+    if fleet_epochs:
+        requested = sum(len(row.get("collected_vehicle_ids") or []) for row in fleet_epochs)
+        returned = sum(len(row.get("fleet_decisions") or []) for row in fleet_epochs)
+        metrics.update({
+            "cloud_fleet_decision_count": len(fleet_epochs),
+            "cloud_fleet_vehicle_decision_count": returned,
+            "cloud_fleet_missing_vehicle_decision_count": sum(len(row.get("missing_vehicle_ids") or []) for row in fleet_epochs),
+            "cloud_fleet_requested_vehicle_decision_count": requested,
+            "cloud_fleet_decision_coverage_rate": returned / requested if requested else 0.0,
+        })
     return {"metrics": metrics, "trace": trace, "summary": summary, "decisions": decisions}
 
 

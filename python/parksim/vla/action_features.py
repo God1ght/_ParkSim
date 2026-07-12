@@ -21,7 +21,8 @@ def build_action_features(vehicle: Any, action: VLACandidateAction) -> Dict[str,
         spot_status = status_by_index(vehicle).get(abs(int(action.target_spot_index)))
     wait_before_departure = _wait_before_departure(action)
     euclidean = _distance(ego_xy, target_xy) if target_xy is not None else 0.0
-    route_length = _estimate_route_length(vehicle, action, target_xy, fallback=euclidean)
+    route_points = _estimate_route_points(vehicle, action, target_xy)
+    route_length = _polyline_length(route_points) if route_points else euclidean
     nearby_count, min_vehicle_distance, conflict_risk, conflict_vehicle_count, min_ttc = _nearby_vehicle_risk(
         vehicle, ego_xy, target_xy, wait_before_departure=wait_before_departure
     )
@@ -30,6 +31,8 @@ def build_action_features(vehicle: Any, action: VLACandidateAction) -> Dict[str,
         euclidean = 0.0
         conflict_risk = max(conflict_risk, 0.05)
     estimated_time = _estimated_time(vehicle, action, route_length, wait_before_departure)
+    nominal_speed = _nominal_speed(vehicle, action)
+    route_polyline = _sample_polyline(route_points, limit=12)
     expected_wait = _expected_wait_seconds(action, conflict_risk, min_ttc, nearby_count)
     bundle_cost = _bundle_cost(action, route_length, estimated_time, expected_wait, conflict_risk, conflict_vehicle_count, spot_status)
     reservation_cost = _reservation_cost(action, bundle_cost, expected_wait, conflict_risk, conflict_vehicle_count)
@@ -50,6 +53,11 @@ def build_action_features(vehicle: Any, action: VLACandidateAction) -> Dict[str,
         "wait_before_departure_s": round(float(wait_before_departure), 3),
         "spot_distance_m": round(float(euclidean), 3),
         "route_length_m": round(float(route_length), 3),
+        "route_polyline_xy": route_polyline,
+        "route_start_delay_s": round(float(wait_before_departure), 3),
+        "route_end_time_s": round(float(estimated_time), 3),
+        "route_nominal_speed_mps": round(float(nominal_speed), 3),
+        "target_xy": [round(float(value), 3) for value in target_xy[:2]] if target_xy is not None else None,
         "estimated_time_s": round(float(estimated_time), 3),
         "expected_wait_s": round(float(expected_wait), 3),
         "nearby_vehicle_count": int(nearby_count),
@@ -77,6 +85,11 @@ def build_action_features(vehicle: Any, action: VLACandidateAction) -> Dict[str,
             "route_strategy": _route_strategy(action),
             "wait_before_departure_s": round(float(wait_before_departure), 3),
             "path_length_m": round(float(route_length), 3),
+            "route_polyline_xy": route_polyline,
+            "route_start_delay_s": round(float(wait_before_departure), 3),
+            "route_end_time_s": round(float(estimated_time), 3),
+            "route_nominal_speed_mps": round(float(nominal_speed), 3),
+            "target_xy": [round(float(value), 3) for value in target_xy[:2]] if target_xy is not None else None,
             "eta_s": round(float(estimated_time), 3),
             "expected_wait_s": round(float(expected_wait), 3),
             "conflict_risk": round(float(conflict_risk), 4),
@@ -114,13 +127,17 @@ def _distance(a: Optional[np.ndarray], b: Optional[np.ndarray]) -> float:
     return float(np.linalg.norm(np.asarray(a, dtype=float) - np.asarray(b, dtype=float)))
 
 
-def _estimate_route_length(vehicle: Any, action: VLACandidateAction, target_xy: Optional[np.ndarray], fallback: float) -> float:
-    if target_xy is None or getattr(vehicle, "graph", None) is None:
-        return fallback
+def _estimate_route_points(vehicle: Any, action: VLACandidateAction, target_xy: Optional[np.ndarray]) -> List[np.ndarray]:
+    start = _ego_xy(vehicle)
+    if action.action_type == VLAActionType.WAIT:
+        return [start]
+    if target_xy is None:
+        return [start]
+    if getattr(vehicle, "graph", None) is None:
+        return [start, np.asarray(target_xy, dtype=float)]
     try:
         from parksim.route_planner.a_star import AStarPlanner
 
-        start = _ego_xy(vehicle)
         start_vertex = vehicle.graph.vertices[vehicle.graph.search(start)]
         if action.target_spot_index is not None and getattr(vehicle, "parking_spaces", None) is not None:
             spot_index = abs(int(action.target_spot_index))
@@ -135,9 +152,35 @@ def _estimate_route_length(vehicle: Any, action: VLACandidateAction, target_xy: 
         coords.extend([np.asarray(v.coords, dtype=float) for v in getattr(graph_sol, "vertices", [])])
         coords.append(np.asarray(target_for_graph, dtype=float))
         coords.append(np.asarray(target_xy, dtype=float))
-        return max(fallback, _polyline_length(coords))
+        return _deduplicate_points(coords)
     except Exception:
-        return fallback
+        return [start, np.asarray(target_xy, dtype=float)]
+
+
+def _nominal_speed(vehicle: Any, action: VLACandidateAction) -> float:
+    if action.action_type == VLAActionType.WAIT:
+        return 0.0
+    return max(0.1, float(getattr(getattr(vehicle, "vehicle_config", None), "v_cruise", 5.0) or 5.0))
+
+
+def _deduplicate_points(points: Iterable[np.ndarray]) -> List[np.ndarray]:
+    output: List[np.ndarray] = []
+    for point in points:
+        value = np.asarray(point, dtype=float).reshape(-1)[:2]
+        if not output or float(np.linalg.norm(value - output[-1])) > 1e-6:
+            output.append(value)
+    return output
+
+
+def _sample_polyline(points: List[np.ndarray], limit: int = 12) -> List[List[float]]:
+    if not points:
+        return []
+    if len(points) <= limit:
+        selected = points
+    else:
+        indices = np.linspace(0, len(points) - 1, num=limit, dtype=int)
+        selected = [points[int(index)] for index in indices]
+    return [[round(float(point[0]), 3), round(float(point[1]), 3)] for point in selected]
 
 
 def _polyline_length(points: Iterable[np.ndarray]) -> float:

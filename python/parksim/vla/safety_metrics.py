@@ -60,6 +60,7 @@ def collect_system_traffic_metrics(
     agent_types: Dict[str, str] = {}
     intent_observable: Dict[str, bool] = {}
     completed = 0
+    censored = 0
     for summary_path in sorted(log_dir.glob("vehicle_*_summary.json")):
         try:
             summary = json.loads(summary_path.read_text())
@@ -72,6 +73,8 @@ def collect_system_traffic_metrics(
             intent_observable[vehicle_id] = bool(summary.get("intent_observable", True))
         if summary.get("completed") is True:
             completed += 1
+        if summary.get("censored") is True:
+            censored += 1
     for trace_path in sorted(log_dir.glob("vehicle_*_trace.jsonl")):
         rows = load_jsonl(trace_path)
         if not rows:
@@ -105,10 +108,11 @@ def collect_system_traffic_metrics(
     metrics = {
         "total_vehicle_trace_count": len(traces),
         "completed_vehicle_count": int(completed),
+        "censored_vehicle_count": int(censored),
         "entering_vehicle_count": sum(1 for role in roles.values() if _is_entering_role(role)),
         "exiting_vehicle_count": sum(1 for role in roles.values() if _is_exiting_role(role)),
         "automated_vehicle_count": sum(1 for vehicle_id, role in roles.items() if _is_automated_vehicle(role, agent_types.get(vehicle_id, ""))),
-        "cloud_served_vehicle_count": sum(1 for vehicle_id, role in roles.items() if _is_automated_vehicle(role, agent_types.get(vehicle_id, "")) and str(agent_types.get(vehicle_id, "")).lower() == "qwen_vla"),
+        "cloud_served_vehicle_count": sum(1 for vehicle_id, role in roles.items() if _is_automated_vehicle(role, agent_types.get(vehicle_id, "")) and _is_cloud_served_agent(agent_types.get(vehicle_id, ""))),
         "human_like_vehicle_count": sum(1 for vehicle_id, role in roles.items() if not _is_automated_vehicle(role, agent_types.get(vehicle_id, ""))),
         "replay_vehicle_count": sum(1 for role in roles.values() if role == "replay_background"),
         "human_rule_vehicle_count": sum(1 for role in roles.values() if str(role).startswith("human_rule_")),
@@ -211,6 +215,7 @@ def _fleet_completion_metrics(log_dir: Path) -> Dict[str, Any]:
     agent_types: Dict[str, str] = {}
     intent_observable: Dict[str, bool] = {}
     completed_by_id: Dict[str, bool] = {}
+    censored_by_id: Dict[str, bool] = {}
     summaries: Dict[str, Dict[str, Any]] = {}
     trace_by_id: Dict[str, List[Dict[str, Any]]] = {}
     controlled_summary_ids = set()
@@ -225,6 +230,7 @@ def _fleet_completion_metrics(log_dir: Path) -> Dict[str, Any]:
         agent_types[vehicle_id] = str(summary.get("agent_type") or "unknown")
         intent_observable[vehicle_id] = bool(summary.get("intent_observable", True))
         completed_by_id[vehicle_id] = bool(summary.get("completed") is True)
+        censored_by_id[vehicle_id] = bool(summary.get("censored") is True)
         if summary.get("is_controlled_ego") is True:
             controlled_summary_ids.add(vehicle_id)
     for trace_path in sorted(log_dir.glob("vehicle_*_trace.jsonl")):
@@ -246,7 +252,7 @@ def _fleet_completion_metrics(log_dir: Path) -> Dict[str, Any]:
             controlled_trace_ids.add(vehicle_id)
     vehicle_ids = set(roles.keys()) | set(agent_types.keys()) | set(trace_by_id.keys())
     automated_ids = {vehicle_id for vehicle_id in vehicle_ids if _is_automated_vehicle(roles.get(vehicle_id, ""), agent_types.get(vehicle_id, ""))}
-    cloud_ids = {vehicle_id for vehicle_id in automated_ids if str(agent_types.get(vehicle_id, "")).lower() == "qwen_vla"}
+    cloud_ids = {vehicle_id for vehicle_id in automated_ids if _is_cloud_served_agent(agent_types.get(vehicle_id, ""))}
     human_like_ids = vehicle_ids - automated_ids
     deadlock_release_count = sum(
         int(_safe_float(rows[-1].get("deadlock_release_count")))
@@ -263,6 +269,9 @@ def _fleet_completion_metrics(log_dir: Path) -> Dict[str, Any]:
         "completed_human_like_vehicle_count": _completed_count(human_like_ids, completed_by_id),
         "human_like_vehicle_completion_rate": _completion_rate(human_like_ids, completed_by_id),
         "completed_vehicle_count": _completed_count(vehicle_ids, completed_by_id),
+        "censored_vehicle_count": sum(1 for vehicle_id in vehicle_ids if censored_by_id.get(vehicle_id, False)),
+        "censored_automated_vehicle_count": sum(1 for vehicle_id in automated_ids if censored_by_id.get(vehicle_id, False)),
+        "censored_cloud_served_vehicle_count": sum(1 for vehicle_id in cloud_ids if censored_by_id.get(vehicle_id, False)),
         "controlled_ego_summary_count": len(controlled_summary_ids),
         "controlled_ego_trace_count": len(controlled_trace_ids),
         "controlled_ego_completed_count": _completed_count(controlled_summary_ids | controlled_trace_ids, completed_by_id),
@@ -429,6 +438,10 @@ def _is_exiting_role(role: str) -> bool:
 def _is_automated_agent(agent_type: str) -> bool:
     return str(agent_type).lower() in {
         "qwen_vla",
+        "mllm_direct",
+        "mllm_self_reflect",
+        "mllm_external_feedback",
+        "fleet_min_cost",
         "greedy_nearest",
         "greedy_shortest_path",
         "risk_aware_rule",
@@ -440,6 +453,16 @@ def _is_automated_agent(agent_type: str) -> bool:
         "centralized_min_cost",
         "oracle_intent_bundle",
         "vla_baseline",
+    }
+
+
+def _is_cloud_served_agent(agent_type: str) -> bool:
+    return str(agent_type).lower() in {
+        "qwen_vla",
+        "mllm_direct",
+        "mllm_self_reflect",
+        "mllm_external_feedback",
+        "fleet_min_cost",
     }
 
 

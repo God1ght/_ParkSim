@@ -31,7 +31,7 @@ def build_fleet_qwen_prompt(packet: Dict[str, Any]) -> str:
     compact_packet = build_compact_fleet_prompt_packet(packet)
     packet_json = json.dumps(compact_packet, ensure_ascii=False, sort_keys=True)
     return (
-        "You are the cloud VLA fleet coordinator for a mixed human-autonomous parking lot. "
+        "You are the cloud multimodal-LLM fleet coordinator for a mixed human-autonomous parking lot. "
         "Read the fleet_decision_packet JSON and optional BEV image. Return exactly one strict JSON object. "
         "The JSON must contain fleet_decisions, with one item per automated_vehicle_ids entry. "
         "For each vehicle, copy action_id exactly from that vehicle's valid_action_ids and keep target_spot_index consistent with the selected action. "
@@ -68,6 +68,9 @@ def build_compact_fleet_prompt_packet(packet: Dict[str, Any]) -> Dict[str, Any]:
             "valid_actions": _compact_actions(vehicle.get("valid_actions", [])),
         })
     human_states = state.get("observable_human_vehicle_states", [])
+    human_beliefs = state.get("human_intent_beliefs", [])
+    conflict_graph = state.get("candidate_conflict_graph", {}) if isinstance(state.get("candidate_conflict_graph"), dict) else {}
+    outcome_memory = state.get("previous_outcome_summary", {}) if isinstance(state.get("previous_outcome_summary"), dict) else {}
     return {
         "protocol_version": packet.get("protocol_version"),
         "output_schema": packet.get("output_schema"),
@@ -80,7 +83,15 @@ def build_compact_fleet_prompt_packet(packet: Dict[str, Any]) -> Dict[str, Any]:
             "human_vehicle_count": len(human_states) if isinstance(human_states, list) else 0,
             "human_intent_model": state.get("human_intent_model"),
             "human_intents_revealed": False,
+            "human_intent_beliefs": list(human_beliefs)[:32] if isinstance(human_beliefs, list) else [],
+            "candidate_conflict_edge_count": int(conflict_graph.get("edge_count", 0) or 0),
         },
+        "candidate_conflict_graph": {
+            "schema_version": conflict_graph.get("schema_version"),
+            "safety_distance_m": conflict_graph.get("safety_distance_m"),
+            "edges": list(conflict_graph.get("edges", []))[:96],
+        },
+        "previous_outcome_summary": outcome_memory,
         "automated_vehicle_ids": packet.get("automated_vehicle_ids", []),
         "automated_vehicles": compact_vehicles,
     }
@@ -124,6 +135,8 @@ def _compact_actions(actions: Any, max_progress: int = 6) -> list:
             "conflict_risk": _rounded(features.get("conflict_risk")),
             "estimated_time_s": _rounded(features.get("estimated_time_s")),
             "expected_wait_s": _rounded(features.get("expected_wait_s")),
+            "route_start_delay_s": _rounded(features.get("route_start_delay_s")),
+            "route_end_time_s": _rounded(features.get("route_end_time_s")),
         })
     return result
 

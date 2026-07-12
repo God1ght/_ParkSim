@@ -9,7 +9,8 @@ from parksim.vla.compare_results import collect_mode_metrics
 from parksim.vla.decision_audit import audit_logs, discover_logs, write_outputs
 
 PREFERRED_FIELDS = [
-    "scenario_id", "agent_type", "seed", "background_mode", "spot_index",
+    "scenario_id", "agent_type", "policy_variant", "seed", "background_mode", "spot_index",
+    "model_id", "model_revision", "fleet_protocol_version", "prompt_version", "traffic_schedule_hash",
     "completed", "objective_score", "total_time", "total_non_idle_time",
     "path_length", "idle_time", "low_speed_time", "waiting_time", "decision_count",
     "qwen_fallback_count", "shield_rejection_count", "qwen_latency_mean",
@@ -18,10 +19,18 @@ PREFERRED_FIELDS = [
     "near_miss_event_count", "near_miss_time_s", "collision_proxy_event_count", "collision_proxy_time_s",
     "unsafe_occupancy_action_count", "malformed_decision_count", "target_mismatch_decision_count", "missing_reason_code_count",
     "candidate_action_count_mean", "available_candidate_count_mean", "blocked_candidate_count_mean",
-    "total_vehicle_trace_count", "completed_vehicle_count", "entering_vehicle_count", "exiting_vehicle_count",
+    "total_vehicle_trace_count", "completed_vehicle_count", "censored_vehicle_count", "censored_automated_vehicle_count",
+    "censored_cloud_served_vehicle_count", "entering_vehicle_count", "exiting_vehicle_count",
     "automated_vehicle_count", "cloud_served_vehicle_count", "human_like_vehicle_count", "replay_vehicle_count",
     "human_rule_vehicle_count", "hidden_intent_vehicle_count", "cloud_fleet_decision_count",
     "cloud_fleet_vehicle_decision_count", "cloud_fleet_missing_vehicle_decision_count",
+    "cloud_fleet_requested_vehicle_decision_count", "cloud_fleet_decision_coverage_rate",
+    "feedback_enabled", "feedback_repair_attempt_count", "feedback_repair_success_count",
+    "feedback_changed_action_count", "feedback_latency_mean", "pre_feedback_hard_violation_count",
+    "post_feedback_hard_violation_count", "pre_feedback_quality_warning_count", "post_feedback_quality_warning_count",
+    "pre_feedback_route_conflict_count", "post_feedback_route_conflict_count",
+    "candidate_conflict_edge_count_mean", "human_belief_observation_count", "human_belief_entropy_mean",
+    "observability_audit_ok", "human_target_spot_exposed", "human_route_exposed", "human_future_trajectory_exposed",
     "traffic_scheduled_count", "traffic_hidden_event_count",
     "traffic_spawned_count", "traffic_delayed_count", "traffic_skipped_count", "system_min_distance_m",
     "trace_integrity_ok", "trace_integrity_invalid_file_count", "trace_identity_conflict_count",
@@ -182,6 +191,12 @@ def aggregate_by_agent(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "mean_cloud_served_vehicle_completion_rate": _mean(_safe_float(row.get("cloud_served_vehicle_completion_rate")) for row in group),
             "mean_human_like_vehicle_count": _mean(_safe_float(row.get("human_like_vehicle_count")) for row in group),
             "mean_cloud_fleet_decisions": _mean(_safe_float(row.get("cloud_fleet_decision_count")) for row in group),
+            "mean_feedback_repair_attempts": _mean(_safe_float(row.get("feedback_repair_attempt_count")) for row in group),
+            "mean_feedback_repair_successes": _mean(_safe_float(row.get("feedback_repair_success_count")) for row in group),
+            "mean_feedback_changed_actions": _mean(_safe_float(row.get("feedback_changed_action_count")) for row in group),
+            "mean_pre_feedback_hard_violations": _mean(_safe_float(row.get("pre_feedback_hard_violation_count")) for row in group),
+            "mean_post_feedback_hard_violations": _mean(_safe_float(row.get("post_feedback_hard_violation_count")) for row in group),
+            "observability_audit_pass_rate": _mean(1.0 if row.get("observability_audit_ok") is True else 0.0 for row in group),
             "mean_objective_score": _mean(_safe_float(row.get("objective_score")) for row in group),
         })
     return summary

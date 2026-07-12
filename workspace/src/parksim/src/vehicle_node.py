@@ -27,6 +27,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
 VLA_BASELINE_AGENT_TYPES = ('greedy_nearest', 'greedy_shortest_path', 'risk_aware_rule', 'bundle_risk_aware', 'conflict_aware_bundle', 'min_bundle_cost', 'reservation_bundle', 'rolling_horizon_bundle', 'centralized_min_cost', 'oracle_intent_bundle', 'vla_baseline')
+MLLM_FLEET_AGENT_TYPES = ('qwen_vla', 'mllm_direct', 'mllm_self_reflect', 'mllm_external_feedback', 'fleet_min_cost')
 
 
 def _as_bool(value):
@@ -164,8 +165,8 @@ class VehicleNode(MPClabNode):
         vehicle_config = VehicleConfig()
 
         agent_type = str(self.agent_type).lower()
-        self._fleet_mode_active = _as_bool(self.fleet_coordinator_enabled) and agent_type == 'qwen_vla'
-        if agent_type == 'qwen_vla':
+        self._fleet_mode_active = _as_bool(self.fleet_coordinator_enabled) and agent_type in MLLM_FLEET_AGENT_TYPES
+        if agent_type in MLLM_FLEET_AGENT_TYPES:
             from parksim.vla.agent import QwenVLAVehicle
 
             self.vehicle = QwenVLAVehicle(
@@ -227,7 +228,7 @@ class VehicleNode(MPClabNode):
                 intent_predictor=None
                 )
         else:
-            raise ValueError("Unsupported agent_type '%s'. Use 'rule_based', 'rl_policy', 'qwen_vla', 'greedy_nearest', 'greedy_shortest_path', 'risk_aware_rule', 'bundle_risk_aware', 'conflict_aware_bundle', 'min_bundle_cost', 'reservation_bundle', 'rolling_horizon_bundle', 'centralized_min_cost', 'oracle_intent_bundle', or 'vla_baseline'." % self.agent_type)
+            raise ValueError("Unsupported agent_type '%s'. Use a supported rule, MLLM fleet, or VLA-compatible baseline agent type." % self.agent_type)
 
         self.vehicle.vehicle_role = str(self.vehicle_role)
         self.vehicle.intent_observable = _as_bool(self.intent_observable)
@@ -244,7 +245,7 @@ class VehicleNode(MPClabNode):
 
         if not self.use_existing_agents:
             if self.spot_index > 0:
-                if agent_type == 'qwen_vla' or agent_type in VLA_BASELINE_AGENT_TYPES:
+                if agent_type in MLLM_FLEET_AGENT_TYPES or agent_type in VLA_BASELINE_AGENT_TYPES:
                     task_profile = []
                 else:
                     cruise_task = VehicleTask(
@@ -362,7 +363,7 @@ class VehicleNode(MPClabNode):
     def _default_summary_log_path(self):
         return os.path.join(self.log_path, "vehicle_%d_summary.json" % self.vehicle_id)
 
-    def _append_trace_record(self, sim_time, wall_time=None, final=False):
+    def _append_trace_record(self, sim_time, wall_time=None, final=False, censored=False):
         wall_time = self.get_ros_time() if wall_time is None else float(wall_time)
         if not self.write_log or not self.trace_log_enabled:
             return
@@ -384,6 +385,7 @@ class VehicleNode(MPClabNode):
             "spot_index": int(self.spot_index),
             "task": self.vehicle.current_task,
             "is_final": bool(final),
+            "censored": bool(censored),
             "total_non_idle_time": float(self.total_non_idle_time),
             "x": float(state.x.x),
             "y": float(state.x.y),
@@ -402,13 +404,14 @@ class VehicleNode(MPClabNode):
         with open(trace_path, 'a') as f:
             f.write(json.dumps(record) + "\n")
 
-    def _write_summary_record(self, sim_time):
+    def _write_summary_record(self, sim_time, censor_reason=""):
         if not self.write_log:
             return
         log_dir_path = self.log_path
         if not os.path.exists(log_dir_path):
             os.makedirs(log_dir_path, exist_ok=True)
         state = self.vehicle.state
+        completed = bool(self.vehicle.is_all_done())
         summary = {
             "vehicle_id": int(self.vehicle_id),
             "agent_type": str(self.agent_type),
@@ -419,7 +422,9 @@ class VehicleNode(MPClabNode):
             "spawn_event_id": str(self.spawn_event_id),
             "spot_index": int(self.spot_index),
             "vehicle_spot_index": int(getattr(self.vehicle, "spot_index", 0) or 0),
-            "completed": bool(self.vehicle.is_all_done()),
+            "completed": completed,
+            "censored": bool(censor_reason and not completed),
+            "censor_reason": str(censor_reason if not completed else ""),
             "total_time": float(sim_time),
             "total_non_idle_time": float(self.total_non_idle_time),
             "deadlock_release_count": int(getattr(self.vehicle, "deadlock_release_count", 0) or 0),
@@ -723,6 +728,25 @@ def main(args=None):
         traceback.print_exc()
         print("Unknown exception")
     finally:
+        try:
+            summary_path = vehicle.summary_log_path or vehicle._default_summary_log_path()
+            if vehicle.write_log and not os.path.exists(summary_path):
+                sim_time = float(vehicle.sim_time)
+                vehicle._append_trace_record(
+                    sim_time,
+                    wall_time=vehicle.get_ros_time(),
+                    final=False,
+                    censored=True,
+                )
+                vehicle._write_summary_record(sim_time, censor_reason="simulation_horizon_or_shutdown")
+            if vehicle._fleet_mode_active:
+                vehicle._publish_fleet_registry('unregister')
+        except Exception:
+            traceback.print_exc()
+        try:
+            vehicle.destroy_node()
+        except Exception:
+            pass
         rclpy.shutdown()
 
 if __name__ == "__main__":

@@ -23,6 +23,39 @@ class QwenFleetPolicyClient:
         if not self.endpoint:
             return self._fallback(context, reason="qwen endpoint is not configured")
         payload = self._build_payload(context)
+        return self._request_payload(payload, context, failure_label="qwen fleet request")
+
+    def repair_fleet(
+        self,
+        context: VLAFleetContext,
+        initial_response: VLAFleetResponse,
+        critique: Optional[Dict[str, Any]] = None,
+        mode: str = "external_feedback",
+    ) -> VLAFleetResponse:
+        """Request one bounded revision with or without deterministic critic evidence."""
+        if not self.endpoint:
+            return self._fallback(context, reason="qwen endpoint is not configured for repair")
+        packet = build_fleet_decision_packet(context)
+        if mode == "self_reflect":
+            feedback = {
+                "instruction": "Review your original fleet proposal once for coordination errors and return a corrected strict JSON proposal.",
+                "original_proposal": initial_response.to_dict(),
+            }
+        else:
+            feedback = {
+                "instruction": "Revise the original proposal once using the deterministic Fleet Critic findings. Resolve every listed violation using only valid action ids.",
+                "original_proposal": initial_response.to_dict(),
+                "deterministic_fleet_critic": dict(critique or {}),
+            }
+        prompt = build_fleet_qwen_prompt(packet) + "\n\none_pass_revision_request:\n" + json.dumps(feedback, ensure_ascii=False, sort_keys=True)
+        payload = self._build_payload(
+            context,
+            prompt_override=prompt,
+            extra_metadata={"revision_mode": mode, "revision_pass": 1},
+        )
+        return self._request_payload(payload, context, failure_label="qwen fleet repair request")
+
+    def _request_payload(self, payload: Dict[str, Any], context: VLAFleetContext, failure_label: str) -> VLAFleetResponse:
         data = json.dumps(payload).encode("utf-8")
         req = request.Request(self.endpoint, data=data, headers={"Content-Type": "application/json"}, method="POST")
         started = time.time()
@@ -34,9 +67,9 @@ class QwenFleetPolicyClient:
                 detail = exc.read().decode("utf-8", errors="replace")
             except Exception:
                 detail = str(exc)
-            return self._fallback(context, reason="qwen fleet request failed: http %s: %s" % (exc.code, detail[:400]))
+            return self._fallback(context, reason="%s failed: http %s: %s" % (failure_label, exc.code, detail[:400]))
         except (error.URLError, TimeoutError, OSError) as exc:
-            return self._fallback(context, reason="qwen fleet request failed: %s" % exc)
+            return self._fallback(context, reason="%s failed: %s" % (failure_label, exc))
         response = self._parse_response(body, context)
         for decision in response.decisions:
             decision.raw_response = body
@@ -45,9 +78,14 @@ class QwenFleetPolicyClient:
         response.raw_response = body
         return response
 
-    def _build_payload(self, context: VLAFleetContext) -> Dict[str, Any]:
+    def _build_payload(
+        self,
+        context: VLAFleetContext,
+        prompt_override: Optional[str] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         packet = build_fleet_decision_packet(context)
-        prompt = build_fleet_qwen_prompt(packet)
+        prompt = prompt_override or build_fleet_qwen_prompt(packet)
         content: Any = prompt
         if context.bev_image_path:
             image_url = self._image_data_url(context.bev_image_path)
@@ -56,20 +94,22 @@ class QwenFleetPolicyClient:
                     {"type": "image_url", "image_url": {"url": image_url}},
                     {"type": "text", "text": prompt},
                 ]
+        metadata = {
+            "protocol_version": packet.get("protocol_version"),
+            "prompt_version": packet.get("prompt_version"),
+            "decision_scope": "cloud_fleet",
+        }
+        metadata.update(extra_metadata or {})
         return {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "Return strict JSON only for the ParkSim cloud fleet VLA decision protocol."},
+                {"role": "system", "content": "Return strict JSON only for the ParkSim cloud multimodal-LLM fleet decision protocol."},
                 {"role": "user", "content": content},
             ],
             "temperature": 0.0,
             "max_tokens": 768,
             "context": packet,
-            "metadata": {
-                "protocol_version": packet.get("protocol_version"),
-                "prompt_version": packet.get("prompt_version"),
-                "decision_scope": "cloud_fleet",
-            },
+            "metadata": metadata,
         }
 
     def _image_data_url(self, image_path: str) -> str:

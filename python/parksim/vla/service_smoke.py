@@ -3,7 +3,7 @@ import threading
 from parksim.vla.fleet_client import QwenFleetPolicyClient
 from parksim.vla.fleet_schema import VLAFleetContext
 from parksim.vla.qwen_client import QwenPolicyClient
-from parksim.vla.qwen_service import QwenVLAInferenceService, make_handler
+from parksim.vla.qwen_service import QwenVLAInferenceService, make_handler, raw_fleet_decisions
 from parksim.vla.schema import VLAActionType, VLACandidateAction, VLAContext
 
 
@@ -54,6 +54,9 @@ def main():
     assert decision.reason_code == "YIELD_TRAFFIC", decision
     assert not decision.used_fallback, decision
     assert fleet_response.decision_for(1).action_id == "yield_2s_then_cruise_to_spot_2", fleet_response.to_dict()
+    raw = raw_fleet_decisions('{"fleet_decisions":[{"vehicle_id":1,"action_id":"a","target_spot_index":3},{"vehicle_id":2,"action_id":"b","target_spot_index":3}]}')
+    assert len(raw["fleet_decisions"]) == 2
+    assert raw["fleet_decisions"][0]["target_spot_index"] == raw["fleet_decisions"][1]["target_spot_index"]
     print("parksim.vla qwen service smoke ok")
 
 

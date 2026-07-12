@@ -23,9 +23,11 @@ class FleetCoordinatorNode(Node):
         self.declare_parameter("batch_timeout", 5.0)
         self.declare_parameter("run_id", "")
         self.declare_parameter("decision_log_path", "")
+        self.declare_parameter("policy_mode", "direct")
 
         self.run_id = str(self.get_parameter("run_id").value)
         self.batch_timeout = float(self.get_parameter("batch_timeout").value)
+        self.policy_mode = str(self.get_parameter("policy_mode").value or "direct")
         self.client = QwenFleetPolicyClient(
             endpoint=str(self.get_parameter("qwen_endpoint").value),
             model=str(self.get_parameter("qwen_model").value),
@@ -114,7 +116,12 @@ class FleetCoordinatorNode(Node):
             return
 
         started = time.monotonic()
-        payload = self.coordinator.finalize(self.client, self.shield, run_id=self.run_id)
+        payload = self.coordinator.finalize(
+            self.client,
+            self.shield,
+            run_id=self.run_id,
+            policy_mode=self.policy_mode,
+        )
         payload["latency_seconds"] = float(time.monotonic() - started)
         payload["batch_wait_seconds"] = float(started - active.started_wall_time)
         self._append_log(payload)
@@ -138,4 +145,3 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
-

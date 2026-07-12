@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional, Tuple
 
 from parksim.vla.fleet_schema import VLAFleetContext, VLAFleetDecision, VLAFleetResponse
+from parksim.vla.fleet_critic import FleetDecisionCritic
 from parksim.vla.qwen_client import _select_lowest_cost_fallback
 from parksim.vla.schema import VLACandidateAction, VLAActionType
 from parksim.vla.shield import VLASafetyShield
@@ -21,12 +22,38 @@ class VLAFleetSafetyShield:
         decisions_by_vehicle = {int(decision.vehicle_id): decision for decision in response.decisions}
         results: Dict[int, Tuple[bool, Optional[VLACandidateAction], str, VLAFleetDecision]] = {}
         reserved_targets: Dict[int, int] = {}
-        for vehicle_id, vehicle_context in context_by_vehicle.items():
+        accepted_actions: Dict[int, VLACandidateAction] = {}
+        conflict_graph = FleetDecisionCritic().candidate_conflict_graph(context)
+        conflict_pairs = _conflict_pairs(conflict_graph)
+        ordered_vehicle_ids = sorted(
+            context_by_vehicle,
+            key=lambda vehicle_id: (
+                decisions_by_vehicle[vehicle_id].priority if vehicle_id in decisions_by_vehicle else 10 ** 9,
+                vehicle_id,
+            ),
+        )
+        for vehicle_id in ordered_vehicle_ids:
+            vehicle_context = context_by_vehicle[vehicle_id]
             decision = decisions_by_vehicle.get(vehicle_id)
             valid_actions = list(vehicle_context.valid_actions)
             if decision is None:
-                fallback = _fallback_decision(vehicle_id, valid_actions, "missing fleet decision for vehicle")
-                results[vehicle_id] = (False, _action_by_id(valid_actions, fallback.action_id), "missing fleet decision for vehicle", fallback)
+                blocked_action_ids = {
+                    candidate.action_id for candidate in valid_actions
+                    if _conflicts_with_accepted(vehicle_id, candidate, accepted_actions, conflict_pairs)
+                }
+                fallback = _fallback_decision(
+                    vehicle_id,
+                    valid_actions,
+                    "missing fleet decision for vehicle",
+                    reserved_targets=set(reserved_targets.keys()),
+                    blocked_action_ids=blocked_action_ids,
+                )
+                fallback_action = _action_by_id(valid_actions, fallback.action_id)
+                if fallback_action is not None:
+                    accepted_actions[vehicle_id] = fallback_action
+                    if _is_spot_action(fallback_action):
+                        reserved_targets[abs(int(fallback_action.target_spot_index))] = vehicle_id
+                results[vehicle_id] = (False, fallback_action, "missing fleet decision for vehicle", fallback)
                 continue
             ok, action, reason = self.single_vehicle_shield.validate(
                 decision.to_vla_decision(),
@@ -44,15 +71,31 @@ class VLAFleetSafetyShield:
                 if spot in reserved_targets:
                     ok = False
                     reason = "fleet target_spot_index conflicts with vehicle %d" % reserved_targets[spot]
-                else:
-                    reserved_targets[spot] = vehicle_id
+            if ok and action is not None and _conflicts_with_accepted(vehicle_id, action, accepted_actions, conflict_pairs):
+                ok = False
+                reason = "fleet action has a verified pairwise route conflict with an accepted higher-priority action"
             if ok and action is not None:
+                if _is_spot_action(action):
+                    reserved_targets[abs(int(action.target_spot_index))] = vehicle_id
+                accepted_actions[vehicle_id] = action
                 results[vehicle_id] = (True, action, "ok", decision)
                 continue
-            fallback = _fallback_decision(vehicle_id, valid_actions, "fleet shield fallback: " + reason, reserved_targets=set(reserved_targets.keys()))
+            blocked_action_ids = {
+                candidate.action_id for candidate in valid_actions
+                if _conflicts_with_accepted(vehicle_id, candidate, accepted_actions, conflict_pairs)
+            }
+            fallback = _fallback_decision(
+                vehicle_id,
+                valid_actions,
+                "fleet shield fallback: " + reason,
+                reserved_targets=set(reserved_targets.keys()),
+                blocked_action_ids=blocked_action_ids,
+            )
             fallback_action = _action_by_id(valid_actions, fallback.action_id)
             if fallback_action is not None and _is_spot_action(fallback_action):
                 reserved_targets[abs(int(fallback_action.target_spot_index))] = vehicle_id
+            if fallback_action is not None:
+                accepted_actions[vehicle_id] = fallback_action
             results[vehicle_id] = (False, fallback_action, reason, fallback)
         return results
 
@@ -67,11 +110,19 @@ def _contexts_by_vehicle(context: VLAFleetContext) -> Dict[int, Any]:
     return output
 
 
-def _fallback_decision(vehicle_id: int, actions: List[VLACandidateAction], reason: str, reserved_targets: Optional[set] = None) -> VLAFleetDecision:
+def _fallback_decision(
+    vehicle_id: int,
+    actions: List[VLACandidateAction],
+    reason: str,
+    reserved_targets: Optional[set] = None,
+    blocked_action_ids: Optional[set] = None,
+) -> VLAFleetDecision:
     reserved_targets = reserved_targets or set()
+    blocked_action_ids = blocked_action_ids or set()
     filtered = [
         action for action in actions
-        if action.target_spot_index is None or abs(int(action.target_spot_index)) not in reserved_targets
+        if action.action_id not in blocked_action_ids
+        and (action.target_spot_index is None or abs(int(action.target_spot_index)) not in reserved_targets)
     ]
     selected = _select_lowest_cost_fallback(filtered or actions)
     if selected is None:
@@ -206,3 +257,23 @@ def _float_feature(features: Dict[str, Any], key: str, default: float) -> float:
         return float(features.get(key, default))
     except Exception:
         return default
+
+
+def _conflict_pairs(graph: Dict[str, Any]) -> set:
+    output = set()
+    for row in graph.get("edges", []):
+        left = (int(row["left_vehicle_id"]), str(row["left_action_id"]))
+        right = (int(row["right_vehicle_id"]), str(row["right_action_id"]))
+        output.add((left, right))
+        output.add((right, left))
+    return output
+
+
+def _conflicts_with_accepted(
+    vehicle_id: int,
+    action: VLACandidateAction,
+    accepted: Dict[int, VLACandidateAction],
+    conflict_pairs: set,
+) -> bool:
+    key = (int(vehicle_id), action.action_id)
+    return any((key, (int(other_id), other.action_id)) in conflict_pairs for other_id, other in accepted.items())

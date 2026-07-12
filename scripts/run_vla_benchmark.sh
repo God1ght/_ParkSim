@@ -9,7 +9,7 @@ OUT_DIR="${PARKSIM_BENCH_OUT_DIR:-$ROOT/experiments/qwen_vla_benchmark/$(date +%
 DURATION="${PARKSIM_BENCH_DURATION:-90s}"
 WALL_TIMEOUT="${PARKSIM_BENCH_WALL_TIMEOUT:-}"
 WALL_TIMEOUT_MULTIPLIER="${PARKSIM_BENCH_WALL_TIMEOUT_MULTIPLIER:-4}"
-AGENTS="${PARKSIM_BENCH_AGENTS:-rule_based greedy_nearest greedy_shortest_path risk_aware_rule bundle_risk_aware conflict_aware_bundle reservation_bundle rolling_horizon_bundle centralized_min_cost oracle_intent_bundle qwen_vla}"
+AGENTS="${PARKSIM_BENCH_AGENTS:-rule_based fleet_min_cost mllm_direct mllm_external_feedback}"
 AGENTS="${AGENTS//,/ }"
 SEEDS="${PARKSIM_BENCH_SEEDS:-0 1 2}"
 BACKGROUND_MODES="${PARKSIM_BENCH_BACKGROUND_MODES:-rule_random}"
@@ -22,10 +22,14 @@ AV_SPAWN_EXITING="${PARKSIM_BENCH_AV_SPAWN_EXITING:-0}"
 AV_ENTRY_VEHICLE_AGENT_TYPE="${PARKSIM_BENCH_AV_ENTRY_VEHICLE_AGENT_TYPE:-__agent__}"
 AV_EXIT_VEHICLE_AGENT_TYPE="${PARKSIM_BENCH_AV_EXIT_VEHICLE_AGENT_TYPE:-__agent__}"
 TRAFFIC_FLOW_MODE="${PARKSIM_BENCH_TRAFFIC_FLOW_MODE:-legacy}"
+TRAFFIC_ARRIVAL_PROCESS="${PARKSIM_BENCH_TRAFFIC_ARRIVAL_PROCESS:-nhpp_piecewise}"
+TRAFFIC_RATE_PROFILE="${PARKSIM_BENCH_TRAFFIC_RATE_PROFILE:-parking_diurnal}"
+TRAFFIC_RATE_WINDOW_SECONDS="${PARKSIM_BENCH_TRAFFIC_RATE_WINDOW_SECONDS:-300.0}"
 FLEET_CONTROL_MODE="${PARKSIM_BENCH_FLEET_CONTROL_MODE:-cloud_av}"
 ENTRY_VEHICLE_AGENT_TYPE="${PARKSIM_BENCH_ENTRY_VEHICLE_AGENT_TYPE:-rule_based}"
 EXIT_VEHICLE_AGENT_TYPE="${PARKSIM_BENCH_EXIT_VEHICLE_AGENT_TYPE:-rule_based}"
 LONG_HORIZON_DURATION="${PARKSIM_BENCH_LONG_HORIZON_DURATION:-${DURATION%s}}"
+HARD_STOP_AT_LONG_HORIZON="${PARKSIM_BENCH_HARD_STOP_AT_LONG_HORIZON:-true}"
 RESTORE_OBSTACLES_AS_EXIT_VEHICLES="${PARKSIM_BENCH_RESTORE_OBSTACLES_AS_EXIT_VEHICLES:-false}"
 STATIC_OBSTACLE_EXIT_FRACTION="${PARKSIM_BENCH_STATIC_OBSTACLE_EXIT_FRACTION:-0.35}"
 STATIC_OBSTACLE_EXIT_MAX="${PARKSIM_BENCH_STATIC_OBSTACLE_EXIT_MAX:-40}"
@@ -63,6 +67,7 @@ FLEET_DECISION_PERIOD="${PARKSIM_BENCH_FLEET_DECISION_PERIOD:-3.0}"
 CONTROLLED_EGO_BLOCKS_ENTRANCE="${PARKSIM_BENCH_CONTROLLED_EGO_BLOCKS_ENTRANCE:-true}"
 SPAWN_CONTROLLED_EGO="${PARKSIM_BENCH_SPAWN_CONTROLLED_EGO:-true}"
 QWEN_MODE="${PARKSIM_BENCH_QWEN_MODE:-mock}"
+QWEN_FLEET_POSTPROCESS_MODE="${PARKSIM_BENCH_QWEN_FLEET_POSTPROCESS_MODE:-raw}"
 QWEN_PORT="${PARKSIM_BENCH_QWEN_PORT:-18087}"
 QWEN_ENDPOINT="${PARKSIM_BENCH_QWEN_ENDPOINT:-}"
 QWEN_TIMEOUT="${PARKSIM_BENCH_QWEN_TIMEOUT:-120.0}"
@@ -103,7 +108,7 @@ set -u
 qwen_pid=""
 GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 GIT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown)"
-export ROOT GIT_COMMIT GIT_BRANCH DURATION WALL_TIMEOUT WALL_TIMEOUT_MULTIPLIER AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING TRAFFIC_FLOW_MODE FLEET_CONTROL_MODE ENTRY_VEHICLE_AGENT_TYPE EXIT_VEHICLE_AGENT_TYPE LONG_HORIZON_DURATION RESTORE_OBSTACLES_AS_EXIT_VEHICLES STATIC_OBSTACLE_EXIT_FRACTION STATIC_OBSTACLE_EXIT_MAX STATIC_OBSTACLE_EXIT_START_TIME LONG_HORIZON_ENTER_INTERVAL_MEAN LONG_HORIZON_EXIT_INTERVAL_MEAN LONG_HORIZON_HUMAN_ENTER_INTERVAL_MEAN LONG_HORIZON_HUMAN_EXIT_INTERVAL_MEAN LONG_HORIZON_AV_ENTER_INTERVAL_MEAN LONG_HORIZON_AV_EXIT_INTERVAL_MEAN HUMAN_INTENT_HIDDEN_FRACTION MAX_CONCURRENT_BACKGROUND_VEHICLES DELAYED_SPAWN_RETRY_SECONDS EXIT_SPOT_REUSE_DELAY QWEN_PERIODIC_REPLAN CONTROLLED_EGO_BLOCKS_ENTRANCE QWEN_MODE QWEN_ENDPOINT QWEN_TIMEOUT EARLY_STOP EARLY_STOP_POLL_SECONDS EARLY_STOP_GRACE_SECONDS TRAFFIC_COMPLETION_STOP TRAFFIC_COMPLETION_GRACE_SECONDS TRAFFIC_HORIZON_STOP TRAFFIC_HORIZON_OVERRUN_SECONDS TRAFFIC_DRAIN_WALL_GRACE_SECONDS CLEAR_OUT_DIR
+export ROOT GIT_COMMIT GIT_BRANCH DURATION WALL_TIMEOUT WALL_TIMEOUT_MULTIPLIER AGENTS SEEDS BACKGROUND_MODES SPOT_INDEX SPAWN_ENTERING SPAWN_EXITING TRAFFIC_FLOW_MODE TRAFFIC_ARRIVAL_PROCESS TRAFFIC_RATE_PROFILE TRAFFIC_RATE_WINDOW_SECONDS FLEET_CONTROL_MODE ENTRY_VEHICLE_AGENT_TYPE EXIT_VEHICLE_AGENT_TYPE LONG_HORIZON_DURATION HARD_STOP_AT_LONG_HORIZON RESTORE_OBSTACLES_AS_EXIT_VEHICLES STATIC_OBSTACLE_EXIT_FRACTION STATIC_OBSTACLE_EXIT_MAX STATIC_OBSTACLE_EXIT_START_TIME LONG_HORIZON_ENTER_INTERVAL_MEAN LONG_HORIZON_EXIT_INTERVAL_MEAN LONG_HORIZON_HUMAN_ENTER_INTERVAL_MEAN LONG_HORIZON_HUMAN_EXIT_INTERVAL_MEAN LONG_HORIZON_AV_ENTER_INTERVAL_MEAN LONG_HORIZON_AV_EXIT_INTERVAL_MEAN HUMAN_INTENT_HIDDEN_FRACTION MAX_CONCURRENT_BACKGROUND_VEHICLES DELAYED_SPAWN_RETRY_SECONDS EXIT_SPOT_REUSE_DELAY QWEN_PERIODIC_REPLAN CONTROLLED_EGO_BLOCKS_ENTRANCE QWEN_MODE QWEN_FLEET_POSTPROCESS_MODE QWEN_ENDPOINT QWEN_TIMEOUT EARLY_STOP EARLY_STOP_POLL_SECONDS EARLY_STOP_GRACE_SECONDS TRAFFIC_COMPLETION_STOP TRAFFIC_COMPLETION_GRACE_SECONDS TRAFFIC_HORIZON_STOP TRAFFIC_HORIZON_OVERRUN_SECONDS TRAFFIC_DRAIN_WALL_GRACE_SECONDS CLEAR_OUT_DIR
 export AV_SPAWN_ENTERING AV_SPAWN_EXITING AV_ENTRY_VEHICLE_AGENT_TYPE AV_EXIT_VEHICLE_AGENT_TYPE SPAWN_CONTROLLED_EGO
 export FLEET_DECISION_PERIOD
 
@@ -157,10 +162,14 @@ payload = {
     "spawn_entering": os.environ.get("SPAWN_ENTERING", ""),
     "spawn_exiting": os.environ.get("SPAWN_EXITING", ""),
     "traffic_flow_mode": os.environ.get("TRAFFIC_FLOW_MODE", ""),
+    "traffic_arrival_process": os.environ.get("TRAFFIC_ARRIVAL_PROCESS", ""),
+    "traffic_rate_profile": os.environ.get("TRAFFIC_RATE_PROFILE", ""),
+    "traffic_rate_window_seconds": os.environ.get("TRAFFIC_RATE_WINDOW_SECONDS", ""),
     "fleet_control_mode": os.environ.get("FLEET_CONTROL_MODE", ""),
     "entry_vehicle_agent_type": os.environ.get("ENTRY_VEHICLE_AGENT_TYPE", ""),
     "exit_vehicle_agent_type": os.environ.get("EXIT_VEHICLE_AGENT_TYPE", ""),
     "long_horizon_duration": os.environ.get("LONG_HORIZON_DURATION", ""),
+    "hard_stop_at_long_horizon": os.environ.get("HARD_STOP_AT_LONG_HORIZON", ""),
     "restore_obstacles_as_exit_vehicles": os.environ.get("RESTORE_OBSTACLES_AS_EXIT_VEHICLES", ""),
     "static_obstacle_exit_fraction": os.environ.get("STATIC_OBSTACLE_EXIT_FRACTION", ""),
     "static_obstacle_exit_max": os.environ.get("STATIC_OBSTACLE_EXIT_MAX", ""),
@@ -177,6 +186,7 @@ payload = {
     "controlled_ego_blocks_entrance": os.environ.get("CONTROLLED_EGO_BLOCKS_ENTRANCE", ""),
     "fleet_decision_period": os.environ.get("FLEET_DECISION_PERIOD", ""),
     "qwen_mode": os.environ.get("QWEN_MODE", ""),
+    "qwen_fleet_postprocess_mode": os.environ.get("QWEN_FLEET_POSTPROCESS_MODE", ""),
     "qwen_endpoint": os.environ.get("QWEN_ENDPOINT", ""),
     "qwen_timeout": os.environ.get("QWEN_TIMEOUT", ""),
     "early_stop": os.environ.get("EARLY_STOP", ""),
@@ -232,7 +242,7 @@ trap cleanup EXIT
 
 needs_qwen() {
   for agent in $AGENTS; do
-    if [[ "$agent" == "qwen_vla" ]]; then
+    if [[ "$agent" == "qwen_vla" || "$agent" == "mllm_direct" || "$agent" == "mllm_self_reflect" || "$agent" == "mllm_external_feedback" ]]; then
       return 0
     fi
   done
@@ -465,6 +475,7 @@ if schedule_path.exists():
         scheduled = []
 threshold = horizon + overrun
 max_sim_time = None
+sim_time_source = None
 latest_by_event = {}
 try:
     for line in events_path.read_text().splitlines():
@@ -481,8 +492,26 @@ try:
         max_sim_time = sim_time if max_sim_time is None else max(max_sim_time, sim_time)
 except Exception:
     raise SystemExit(1)
+for trace_path in sorted(log_dir.glob("vehicle_*_trace.jsonl")):
+    last = None
+    try:
+        with trace_path.open(errors="ignore") as handle:
+            for line in handle:
+                if line.strip():
+                    last = json.loads(line)
+    except Exception:
+        continue
+    if not isinstance(last, dict):
+        continue
+    value = last.get("sim_time", last.get("time"))
+    if value is None:
+        continue
+    value = float(value)
+    if max_sim_time is None or value > max_sim_time:
+        max_sim_time = value
+        sim_time_source = trace_path.name
 if max_sim_time is not None and max_sim_time >= threshold:
-    print(json.dumps({"reason": "traffic_sim_time_overrun", "max_sim_time": max_sim_time, "threshold": threshold}))
+    print(json.dumps({"reason": "traffic_sim_time_horizon", "max_sim_time": max_sim_time, "threshold": threshold, "source": sim_time_source}))
     raise SystemExit(0)
 if scheduled:
     all_events_done = True
@@ -521,7 +550,6 @@ wait_for_stop_condition() {
     if [[ "$TRAFFIC_HORIZON_STOP" == "1" ]] && traffic_horizon_exceeded "$log_dir" >/dev/null 2>&1; then
       STOP_REASON="traffic_horizon"
       echo "traffic_horizon_stop exceeded long-horizon evaluation window -> $log_dir"
-      sleep "$TRAFFIC_COMPLETION_GRACE_SECONDS"
       cleanup_ros_processes
       return 0
     fi
@@ -614,12 +642,21 @@ run_episode() {
   mkdir -p "$log_dir"
   echo "running scenario=$scenario_id agent=$agent fleet_mode=$FLEET_CONTROL_MODE entry_agent=$entry_agent exit_agent=$exit_agent sim_duration=$DURATION wall_timeout=$WALL_TIMEOUT -> $run_dir"
   cleanup_ros_processes
-  if [[ "$agent" == "qwen_vla" ]]; then
+  if [[ "$agent" == "qwen_vla" || "$agent" == "mllm_direct" || "$agent" == "mllm_self_reflect" || "$agent" == "mllm_external_feedback" || "$agent" == "fleet_min_cost" ]]; then
     fleet_enabled=true
     fleet_run_id="$scenario_id-$agent"
+    local policy_mode="direct"
+    if [[ "$agent" == "mllm_self_reflect" ]]; then
+      policy_mode="self_reflect"
+    elif [[ "$agent" == "mllm_external_feedback" ]]; then
+      policy_mode="external_feedback"
+    elif [[ "$agent" == "fleet_min_cost" ]]; then
+      policy_mode="fleet_min_cost"
+    fi
     PYTHONPATH="$DLP_ROOT${PYTHONPATH:+:$PYTHONPATH}" ros2 run parksim fleet_coordinator_node.py --ros-args \
       -p qwen_endpoint:="$qwen_endpoint_param" -p qwen_timeout:="$QWEN_TIMEOUT" \
       -p decision_period:="$FLEET_DECISION_PERIOD" \
+      -p policy_mode:="$policy_mode" \
       -p run_id:="$fleet_run_id" -p decision_log_path:="$fleet_epochs" \
       > "$fleet_log" 2>&1 &
     sleep 1
@@ -646,11 +683,15 @@ run_episode() {
     -p av_entry_vehicle_role:="$av_entry_role" \
     -p av_exit_vehicle_role:="$av_exit_role" \
     -p traffic_flow_mode:="$TRAFFIC_FLOW_MODE" \
+    -p traffic_arrival_process:="$TRAFFIC_ARRIVAL_PROCESS" \
+    -p traffic_rate_profile:="$TRAFFIC_RATE_PROFILE" \
+    -p traffic_rate_window_seconds:="$TRAFFIC_RATE_WINDOW_SECONDS" \
     -p entry_vehicle_agent_type:="$entry_agent" \
     -p exit_vehicle_agent_type:="$exit_agent" \
     -p entry_vehicle_role:="$entry_role" \
     -p exit_vehicle_role:="$exit_role" \
     -p long_horizon_duration:="$LONG_HORIZON_DURATION" \
+    -p hard_stop_at_long_horizon:="$HARD_STOP_AT_LONG_HORIZON" \
     -p restore_obstacles_as_exit_vehicles:="$RESTORE_OBSTACLES_AS_EXIT_VEHICLES" \
     -p static_obstacle_exit_fraction:="$STATIC_OBSTACLE_EXIT_FRACTION" \
     -p static_obstacle_exit_max:="$STATIC_OBSTACLE_EXIT_MAX" \
