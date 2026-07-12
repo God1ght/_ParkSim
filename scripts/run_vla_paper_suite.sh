@@ -32,6 +32,7 @@ QWEN_TIMEOUT="${PARKSIM_SUITE_QWEN_TIMEOUT:-120.0}"
 QWEN_STARTUP_TIMEOUT="${PARKSIM_SUITE_QWEN_STARTUP_TIMEOUT:-900}"
 QWEN_PORT="${PARKSIM_SUITE_QWEN_PORT:-18100}"
 QWEN_BENCH_MODE="$QWEN_MODE"
+QWEN_REQUIRED="0"
 QWEN_MANAGED="0"
 QWEN_READY="0"
 qwen_pid=""
@@ -120,6 +121,7 @@ payload = {
     "long_horizon_av_exit_interval_mean": os.environ.get("LONG_HORIZON_AV_EXIT_INTERVAL_MEAN", ""),
     "spot_index": os.environ.get("SPOT_INDEX", ""),
     "qwen_mode": os.environ.get("QWEN_MODE", ""),
+    "qwen_required": os.environ.get("QWEN_REQUIRED", ""),
     "qwen_endpoint": os.environ.get("QWEN_ENDPOINT", ""),
     "qwen_timeout": os.environ.get("QWEN_TIMEOUT", ""),
     "qwen_port": os.environ.get("QWEN_PORT", ""),
@@ -211,12 +213,16 @@ FAILURE_JSON
 
 needs_qwen() {
   for agent in $AGENTS; do
-    if [[ "$agent" == "qwen_vla" ]]; then
-      return 0
-    fi
+    case "$agent" in
+      qwen_vla|mllm_direct|mllm_self_reflect|mllm_external_feedback) return 0 ;;
+    esac
   done
   return 1
 }
+if needs_qwen; then
+  QWEN_REQUIRED="1"
+fi
+export QWEN_REQUIRED
 
 cleanup() {
   if [[ -n "$qwen_pid" ]] && kill -0 "$qwen_pid" 2>/dev/null; then
@@ -356,6 +362,7 @@ manifest = {
     },
     "qwen": {
         "mode": os.environ.get("QWEN_MODE", ""),
+        "required": os.environ.get("QWEN_REQUIRED", ""),
         "bench_mode": os.environ.get("QWEN_BENCH_MODE", ""),
         "managed": os.environ.get("QWEN_MANAGED", ""),
         "ready": os.environ.get("QWEN_READY", ""),
