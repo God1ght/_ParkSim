@@ -115,6 +115,7 @@
     "Use python -m parksim.vla.paper_gate to distinguish pilot-complete suites from paper-ready suites and to export actionable missing-coverage checks.",
     "Cross-vehicle safety metrics, conflict reconstruction, and visual comparisons synchronize only by simulator time; wall-clock timestamps and Qwen response latency are audit-only.",
     "Formal accelerated runs preserve a 0.1 s simulator integration step, use one paired simulation_speedup value, and are rejected if any vehicle trace skips a simulator step.",
+    "Before real-Qwen calibration, same-seed 1x and accelerated mixed-traffic runs must agree on demand events, safety events, fleet barrier counts, acknowledgement integrity, and rule-based plus synchronous mock-MLLM trajectories.",
     "Use scripts/run_vla_paper_suite.sh for paper-scale orchestration across background modes, density levels, seeds, and agents.",
     "The suite runner delegates each condition to run_vla_benchmark.sh, validates each benchmark directory, and then calls parksim.vla.paper_report for final tables.",
     "Paper-suite replay mode skips non-empty density configs by default because replay ignores random entering/exiting spawn density.",
