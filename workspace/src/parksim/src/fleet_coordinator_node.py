@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """ROS transport for synchronized ParkSim cloud-fleet VLA epochs."""
 import json
-import math
 import os
 import time
 
@@ -12,6 +11,12 @@ from std_msgs.msg import Bool, Float32, String
 from parksim.vla.fleet_client import QwenFleetPolicyClient
 from parksim.vla.fleet_coordinator import FleetEpochCoordinator
 from parksim.vla.fleet_shield import VLAFleetSafetyShield
+from parksim.vla.sync_barrier import (
+    barrier_audit_fields,
+    decision_barrier_status,
+    validate_decision_ack,
+    validate_pause_ack,
+)
 
 
 class FleetCoordinatorNode(Node):
@@ -103,15 +108,14 @@ class FleetCoordinatorNode(Node):
             return
         try:
             payload = json.loads(msg.data)
-            ack_time = float(payload.get("sim_time"))
         except (TypeError, ValueError):
             return
-        if not isinstance(payload, dict) or not self._same_run(payload) or not bool(payload.get("paused")):
-            return
-        requested_time = float(self.pause_requested_sim_time or 0.0)
-        if ack_time + 1e-9 < requested_time:
-            return
-        self.pause_ack_payload = payload
+        self.pause_ack_payload = validate_pause_ack(
+            payload,
+            self.run_id,
+            float(self.pause_requested_sim_time or 0.0),
+            epoch_active=self.coordinator.active_epoch is not None,
+        )
 
     def _decision_ack_cb(self, msg):
         pending = self.pending_decision_payload
@@ -119,47 +123,21 @@ class FleetCoordinatorNode(Node):
             return
         try:
             payload = json.loads(msg.data)
-            epoch_id = int(payload.get("epoch_id"))
-            vehicle_id = int(payload.get("vehicle_id"))
         except (TypeError, ValueError):
             return
-        if not isinstance(payload, dict) or not self._same_run(payload):
-            return
-        if epoch_id != int(pending.get("epoch_id", -1)):
-            return
-        expected = {int(item.get("vehicle_id")) for item in pending.get("fleet_decisions", [])}
-        if vehicle_id in expected:
-            decision_sim_time = float(pending.get("sim_time", 0.0))
-            try:
-                ack_decision_time = float(payload.get("decision_sim_time"))
-                vehicle_sim_time = float(payload.get("vehicle_sim_time"))
-            except (TypeError, ValueError):
-                ack_decision_time = float("nan")
-                vehicle_sim_time = float("nan")
-            if (
-                not math.isfinite(ack_decision_time)
-                or not math.isfinite(vehicle_sim_time)
-                or abs(ack_decision_time - decision_sim_time) > 1e-6
-                or abs(vehicle_sim_time - decision_sim_time) > 1e-6
-            ):
-                payload["applied"] = False
-                payload["error"] = "decision acknowledgement violated frozen simulation-time barrier"
-            self.decision_ack_payloads[vehicle_id] = payload
+        accepted = validate_decision_ack(payload, self.run_id, pending)
+        if accepted is not None:
+            self.decision_ack_payloads[accepted[0]] = accepted[1]
 
     def _finish_decision_barrier(self, now):
         payload = self.pending_decision_payload
-        expected = sorted(int(item.get("vehicle_id")) for item in payload.get("fleet_decisions", []))
-        received = sorted(self.decision_ack_payloads)
-        payload["decision_ack_expected_vehicle_ids"] = expected
-        payload["decision_ack_received_vehicle_ids"] = received
-        payload["decision_acknowledgements"] = [self.decision_ack_payloads[item] for item in received]
-        payload["decision_ack_failed_vehicle_ids"] = sorted(
-            vehicle_id for vehicle_id, ack in self.decision_ack_payloads.items() if not bool(ack.get("applied"))
-        )
-        payload["decision_apply_wait_seconds"] = float(now - float(self.decision_published_wall_time or now))
-        payload["decision_barrier_status"] = "applied" if expected else "no_action_required"
-        payload["simulation_time_policy"] = "decision_then_advance"
-        payload["wall_clock_latency_in_performance_metrics"] = False
+        payload.update(barrier_audit_fields(
+            payload,
+            self.decision_ack_payloads,
+            now,
+            self.decision_published_wall_time,
+            "applied",
+        ))
         self._append_log(payload)
         self._publish_pause(False)
         self.pause_requested = False
@@ -171,18 +149,13 @@ class FleetCoordinatorNode(Node):
 
     def _fail_decision_barrier(self, now, status):
         payload = self.pending_decision_payload
-        expected = sorted(int(item.get("vehicle_id")) for item in payload.get("fleet_decisions", []))
-        received = sorted(self.decision_ack_payloads)
-        payload["decision_ack_expected_vehicle_ids"] = expected
-        payload["decision_ack_received_vehicle_ids"] = received
-        payload["decision_acknowledgements"] = [self.decision_ack_payloads[item] for item in received]
-        payload["decision_ack_failed_vehicle_ids"] = sorted(
-            vehicle_id for vehicle_id, ack in self.decision_ack_payloads.items() if not bool(ack.get("applied"))
-        )
-        payload["decision_apply_wait_seconds"] = float(now - float(self.decision_published_wall_time or now))
-        payload["decision_barrier_status"] = str(status)
-        payload["simulation_time_policy"] = "decision_then_advance"
-        payload["wall_clock_latency_in_performance_metrics"] = False
+        payload.update(barrier_audit_fields(
+            payload,
+            self.decision_ack_payloads,
+            now,
+            self.decision_published_wall_time,
+            status,
+        ))
         self._append_log(payload)
         self.barrier_terminal_failure = True
         self.get_logger().error("Fleet decision barrier failed: %s; simulator remains paused" % status)
@@ -201,20 +174,17 @@ class FleetCoordinatorNode(Node):
         if self.barrier_terminal_failure:
             return
         if self.pending_decision_payload is not None:
-            expected = {
-                int(item.get("vehicle_id"))
-                for item in self.pending_decision_payload.get("fleet_decisions", [])
-            }
-            failed = {
-                vehicle_id for vehicle_id, ack in self.decision_ack_payloads.items()
-                if not bool(ack.get("applied"))
-            }
-            if failed:
-                self._fail_decision_barrier(now, "decision_apply_failed")
-            elif expected.issubset(self.decision_ack_payloads):
+            status = decision_barrier_status(
+                self.pending_decision_payload,
+                self.decision_ack_payloads,
+                now,
+                self.decision_published_wall_time,
+                self.decision_ack_timeout,
+            )
+            if status == "applied":
                 self._finish_decision_barrier(now)
-            elif now - float(self.decision_published_wall_time or now) >= self.decision_ack_timeout:
-                self._fail_decision_barrier(now, "decision_ack_timeout")
+            elif status not in ("pending", "idle"):
+                self._fail_decision_barrier(now, status)
             return
         active = self.coordinator.active_epoch
         if active is None:
