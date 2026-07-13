@@ -109,12 +109,15 @@ def main():
         assert first["delta_av_waiting_time_s"] > 0.0
         assert first["delta_system_near_miss_event_count"] >= 0.0
         assert first["delta_shield_rejection_count"] == 1.0
+        assert first["delta_feedback_repair_attempt_count"] == 1.0
+        assert first["delta_decision_barrier_failure_count"] == 0.0
         assert first["degradation_score"] > 0.0
 
         out_dir = Path(tmp) / "out"
         manifest = write_outputs(suite, out_dir, baseline, target, 300.0)
         assert manifest["row_count"] == 4
         assert manifest["paired_window_count"] == 2
+        assert "预冻结加权分数" in manifest["degradation_score_definition_zh"]
         for name in (
             "window_metrics.csv",
             "window_paired_deltas.csv",

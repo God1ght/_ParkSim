@@ -22,17 +22,30 @@ from parksim.vla.safety_metrics import (
 WINDOW_METRICS = [
     "av_released_count",
     "av_completed_count",
+    "av_cumulative_backlog_count",
+    "av_cumulative_service_rate",
     "av_throughput_per_sim_hour",
     "av_path_length_m",
     "av_waiting_time_s",
+    "av_idle_time_s",
     "av_non_idle_time_s",
+    "av_exposure_vehicle_hours",
+    "system_min_distance_m",
     "system_near_miss_event_count",
     "system_collision_proxy_event_count",
     "trajectory_conflict_event_count",
     "mixed_intent_conflict_event_count",
+    "traffic_delayed_count",
+    "traffic_skipped_count",
+    "fleet_epoch_count",
+    "fleet_event_trigger_epoch_count",
+    "fleet_watchdog_epoch_count",
     "fleet_actionable_epoch_count",
     "shield_rejection_count",
     "qwen_fallback_count",
+    "feedback_repair_attempt_count",
+    "feedback_repair_success_count",
+    "decision_barrier_failure_count",
     "window_operating_cost",
 ]
 
@@ -427,13 +440,18 @@ def paired_window_deltas(
             item["delta_" + metric] = target_value - base_value
         item["degradation_score"] = round(
             250.0 * max(0.0, -_float(item.get("delta_av_completed_count")))
+            + 100.0 * max(0.0, _float(item.get("delta_av_cumulative_backlog_count")))
             + max(0.0, _float(item.get("delta_av_path_length_m")))
             + max(0.0, _float(item.get("delta_av_waiting_time_s")))
             + 50.0 * max(0.0, _float(item.get("delta_system_collision_proxy_event_count")))
             + 10.0 * max(0.0, _float(item.get("delta_system_near_miss_event_count")))
             + 5.0 * max(0.0, _float(item.get("delta_trajectory_conflict_event_count")))
             + 5.0 * max(0.0, _float(item.get("delta_mixed_intent_conflict_event_count")))
-            + 5.0 * max(0.0, _float(item.get("delta_shield_rejection_count"))),
+            + 20.0 * max(0.0, _float(item.get("delta_traffic_delayed_count")))
+            + 20.0 * max(0.0, _float(item.get("delta_traffic_skipped_count")))
+            + 5.0 * max(0.0, _float(item.get("delta_shield_rejection_count")))
+            + 5.0 * max(0.0, _float(item.get("delta_qwen_fallback_count")))
+            + 1000.0 * max(0.0, _float(item.get("delta_decision_barrier_failure_count"))),
             6,
         )
         output.append(item)
@@ -467,6 +485,10 @@ def write_outputs(
         "metric_definitions_zh": METRIC_DEFINITIONS_ZH,
         "latency_policy": "Qwen wall-clock response latency is excluded; all windows use simulator time.",
         "degradation_rank_usage": "diagnostic event localization only; not a statistical significance test",
+        "degradation_score_definition_zh": (
+            "仅用于关键窗口定位的预冻结加权分数：任务完成损失、积压、路径、等待、安全事件、"
+            "需求延迟/跳过、shield/fallback 与决策栅栏失败的目标方法减基线正向退化量加权和。"
+        ),
         "outputs": [
             "window_metrics.csv",
             "window_paired_deltas.csv",

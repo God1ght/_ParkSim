@@ -7,6 +7,7 @@ from parksim.vla.critical_state_analysis import (
     _critical_traffic_events,
     _critical_trajectory_intervals,
     _discover_epoch_paths,
+    _window_mechanism_evidence,
     _write_summary,
 )
 
@@ -111,7 +112,7 @@ def main():
         _write_jsonl(run_dir / "logs" / "vehicle_1_trace.jsonl", trace)
 
         paths = _discover_epoch_paths(suite, None)
-        assert paths == [run_dir / "fleet_epochs.jsonl"]
+        assert paths == [(run_dir / "fleet_epochs.jsonl").resolve()]
         events = _critical_events(paths, suite)
         event_types = {row["event_type"] for row in events}
         assert {
@@ -135,11 +136,45 @@ def main():
         assert any(row["event_type"] == "blocked_wait_interval" and row["duration_s"] == "6.000" for row in intervals), intervals
         assert any(row["event_type"] == "deadlock_release" for row in intervals)
 
+        window_mechanisms = _window_mechanism_evidence([{
+            "pair_key": "mixed_medium|synthetic|window_00",
+            "benchmark_id": "mixed_medium",
+            "scenario_id": "mixed_seed3_spot7_human_enter2_human_exit1_av_enter2_av_exit1",
+            "seed": "3",
+            "background_mode": "mixed",
+            "window_id": "0",
+            "window_start_s": "0.000",
+            "window_end_s": "300.000",
+            "baseline_agent": "rule_based",
+            "target_agent": "mllm_external_feedback",
+            "degradation_rank": "1",
+            "degradation_score": "120.0",
+            "delta_av_completed_count": "-1",
+            "delta_av_cumulative_backlog_count": "1",
+            "delta_av_path_length_m": "10",
+            "delta_av_waiting_time_s": "20",
+            "delta_system_near_miss_event_count": "1",
+            "delta_system_collision_proxy_event_count": "0",
+            "delta_trajectory_conflict_event_count": "1",
+            "delta_mixed_intent_conflict_event_count": "1",
+            "delta_traffic_delayed_count": "1",
+            "delta_shield_rejection_count": "1",
+            "delta_qwen_fallback_count": "1",
+            "delta_decision_barrier_failure_count": "0",
+        }], events, traffic, intervals)
+        assert len(window_mechanisms) == 1
+        mechanism = window_mechanisms[0]
+        assert mechanism["mechanism_class"] == "bottleneck_risk_underestimation", mechanism
+        assert mechanism["target_event_count"] > 0
+        assert "high_conflict_action_executed" in mechanism["excess_event_counts_json"]
+        assert mechanism["evidence_interpretation"] == "diagnostic association; not causal proof"
+
         summary = Path(tmp) / "summary.md"
-        _write_summary(summary, [], events, traffic, intervals)
+        _write_summary(summary, [], events, traffic, intervals, window_mechanisms)
         text = summary.read_text()
         assert "关键状态分析" in text
         assert "不使用 Qwen 墙钟响应时间" in text
+        assert "关键窗口机制证据" in text
     print("parksim.vla critical-state analysis smoke ok")
 
 

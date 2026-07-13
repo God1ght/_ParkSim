@@ -170,6 +170,7 @@ TRC_ANALYSIS_FILES = [
     "critical_states/window_paired_deltas.csv",
     "critical_states/critical_window_rank.csv",
     "critical_states/window_metrics_manifest.json",
+    "critical_states/critical_window_mechanism_evidence.csv",
     "critical_states/critical_metric_drivers.csv",
     "critical_states/critical_state_events.csv",
     "critical_states/critical_traffic_events.csv",

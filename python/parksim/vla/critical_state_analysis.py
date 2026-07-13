@@ -148,6 +148,28 @@ EVENT_SUGGESTIONS = {
     "high_intent_uncertainty": "增加基于历史轨迹的意图置信度和保守时间窗，但不泄漏真值路径。",
 }
 
+WINDOW_MECHANISM_LABELS_ZH = {
+    "decision_integrity_failure": "同步决策完整性失败",
+    "bottleneck_risk_underestimation": "瓶颈或隐藏意图风险低估",
+    "late_shield_or_fallback_recovery": "安全盾或回退后的恢复代价",
+    "over_conservative_fleet_wait": "车队过度保守同步等待",
+    "traffic_release_or_capacity_blocking": "需求释放或容量阻塞",
+    "assignment_or_route_inefficiency": "泊位分配或路径选择低效",
+    "mixed_window_degradation": "多因素窗口退化",
+    "target_gain_or_neutral": "目标方法窗口改善或无退化",
+}
+
+WINDOW_MECHANISM_SUGGESTIONS = {
+    "decision_integrity_failure": "先修复暂停确认、ACK 覆盖和仿真时刻一致性；该窗口及运行不得进入性能结论。",
+    "bottleneck_risk_underestimation": "提高瓶颈时间窗、最小距离和隐藏意图熵的候选代价，并要求 critic 指明冲突车辆对。",
+    "late_shield_or_fallback_recovery": "把 shield 拒绝原因和 fallback 后恢复期限反馈给下一轮 Qwen，避免重复生成同类非法动作。",
+    "over_conservative_fleet_wait": "加入等待年龄、阻塞车辆和通行优先级，限制多车同时 WAIT 并设置公平性释放条件。",
+    "traffic_release_or_capacity_blocking": "联合优化入口通行、离场优先级和泊位周转，避免已释放需求长期占用入口或可离场泊位。",
+    "assignment_or_route_inefficiency": "提高系统路径代价与后续瓶颈占用权重，不仅按目标泊位距离排序候选 bundle。",
+    "mixed_window_degradation": "复核该窗口的决策、交通和轨迹事件序列，再调整候选代价；不从单一共现事件作因果结论。",
+    "target_gain_or_neutral": "保留该窗口作为成功对照，并检查改善是否跨种子和负载层稳定。",
+}
+
 
 def _as_float(value: Any, default: float = 0.0) -> float:
     try:
@@ -159,7 +181,7 @@ def _as_float(value: Any, default: float = 0.0) -> float:
 def _relative_case(path: Path, root: Optional[Path]) -> str:
     if root is not None:
         try:
-            return "/".join(path.parent.relative_to(root).parts)
+            return "/".join(path.parent.resolve().relative_to(root.resolve()).parts)
         except ValueError:
             pass
     return "/".join(path.parent.parts[-3:])
@@ -427,13 +449,186 @@ def _critical_trajectory_intervals(
     return output
 
 
+def _row_matches_run(row: Dict[str, Any], benchmark_id: str, scenario: str, agent_type: str) -> bool:
+    if str(row.get("agent_type", "")) != agent_type:
+        return False
+    case_parts = str(row.get("case", "")).split("/")
+    if benchmark_id and benchmark_id not in case_parts:
+        return False
+    explicit = str(row.get("scenario", ""))
+    if explicit:
+        return explicit == scenario
+    return scenario in case_parts
+
+
+def _events_in_window(
+    rows: Sequence[Dict[str, Any]],
+    benchmark_id: str,
+    scenario: str,
+    agent_type: str,
+    start: float,
+    end: float,
+    interval_rows: bool = False,
+) -> List[Dict[str, Any]]:
+    selected: List[Dict[str, Any]] = []
+    for row in rows:
+        if not _row_matches_run(row, benchmark_id, scenario, agent_type):
+            continue
+        if interval_rows:
+            event_start = _as_float(row.get("start_sim_time"))
+            event_end = _as_float(row.get("end_sim_time"), event_start)
+            if event_start < end and event_end >= start:
+                selected.append(row)
+        else:
+            sim_time = _as_float(row.get("sim_time"))
+            if start <= sim_time < end:
+                selected.append(row)
+    return selected
+
+
+def _mechanism_class(window: Dict[str, str], excess: Counter) -> str:
+    if _num(window, "delta_decision_barrier_failure_count") > 0:
+        return "decision_integrity_failure"
+    safety_worse = (
+        _num(window, "delta_system_collision_proxy_event_count") > 0
+        or _num(window, "delta_system_near_miss_event_count") > 0
+        or _num(window, "delta_trajectory_conflict_event_count") > 0
+        or _num(window, "delta_mixed_intent_conflict_event_count") > 0
+    )
+    if safety_worse and (
+        excess["high_conflict_action_executed"] > 0
+        or excess["high_intent_uncertainty"] > 0
+    ):
+        return "bottleneck_risk_underestimation"
+    if safety_worse and (
+        excess["shield_rejection"] > 0
+        or excess["fallback_or_duplicate_target"] > 0
+    ):
+        return "late_shield_or_fallback_recovery"
+    service_worse = (
+        _num(window, "delta_av_completed_count") < 0
+        or _num(window, "delta_av_cumulative_backlog_count") > 0
+        or _num(window, "delta_av_waiting_time_s") > 0
+    )
+    if service_worse and (
+        excess["fleet_synchronized_wait"] > 0
+        or excess["blocked_wait_interval"] > 0
+        or excess["yield_braking_interval"] > 0
+    ):
+        return "over_conservative_fleet_wait"
+    if service_worse and (
+        excess["traffic_demand_delayed"] > 0
+        or excess["traffic_demand_skipped"] > 0
+    ):
+        return "traffic_release_or_capacity_blocking"
+    if _num(window, "delta_av_path_length_m") > 0:
+        return "assignment_or_route_inefficiency"
+    if _num(window, "degradation_score") <= 0:
+        return "target_gain_or_neutral"
+    return "mixed_window_degradation"
+
+
+def _window_mechanism_evidence(
+    windows: Sequence[Dict[str, str]],
+    events: Sequence[Dict[str, Any]],
+    traffic_events: Sequence[Dict[str, Any]],
+    trajectory_intervals: Sequence[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    output: List[Dict[str, Any]] = []
+    for window in windows:
+        scenario = str(window.get("scenario_id", ""))
+        benchmark_id = str(window.get("benchmark_id", ""))
+        baseline_agent = str(window.get("baseline_agent", ""))
+        target_agent = str(window.get("target_agent", ""))
+        if not scenario or not baseline_agent or not target_agent:
+            continue
+        start = _num(window, "window_start_s")
+        end = _num(window, "window_end_s")
+        target_rows = (
+            _events_in_window(events, benchmark_id, scenario, target_agent, start, end)
+            + _events_in_window(traffic_events, benchmark_id, scenario, target_agent, start, end)
+            + _events_in_window(trajectory_intervals, benchmark_id, scenario, target_agent, start, end, interval_rows=True)
+        )
+        baseline_rows = (
+            _events_in_window(events, benchmark_id, scenario, baseline_agent, start, end)
+            + _events_in_window(traffic_events, benchmark_id, scenario, baseline_agent, start, end)
+            + _events_in_window(trajectory_intervals, benchmark_id, scenario, baseline_agent, start, end, interval_rows=True)
+        )
+        target_counts = Counter(str(row.get("event_type", "")) for row in target_rows if row.get("event_type"))
+        baseline_counts = Counter(str(row.get("event_type", "")) for row in baseline_rows if row.get("event_type"))
+        deltas = Counter({
+            key: target_counts[key] - baseline_counts[key]
+            for key in set(target_counts) | set(baseline_counts)
+        })
+        excess = Counter({key: value for key, value in deltas.items() if value > 0})
+        mechanism = _mechanism_class(window, excess)
+        samples = []
+        for row in sorted(
+            target_rows,
+            key=lambda item: _as_float(item.get("sim_time", item.get("start_sim_time"))),
+        )[:12]:
+            samples.append({
+                "event_type": row.get("event_type", ""),
+                "event_type_zh": row.get("event_type_zh", ""),
+                "sim_time": row.get("sim_time", row.get("start_sim_time", "")),
+                "vehicle_ids": row.get("vehicle_ids", row.get("vehicle_id", "")),
+                "action_ids": row.get("action_ids", ""),
+                "duration_s": row.get("duration_s", ""),
+                "video_lookup": row.get("video_lookup", ""),
+            })
+        visual_lookups = list(dict.fromkeys(
+            str(row.get("video_lookup"))
+            for row in target_rows
+            if row.get("video_lookup")
+        ))
+        output.append({
+            "pair_key": window.get("pair_key", ""),
+            "benchmark_id": benchmark_id,
+            "scenario_id": scenario,
+            "seed": window.get("seed", ""),
+            "background_mode": window.get("background_mode", ""),
+            "window_id": window.get("window_id", ""),
+            "window_start_s": window.get("window_start_s", ""),
+            "window_end_s": window.get("window_end_s", ""),
+            "baseline_agent": baseline_agent,
+            "target_agent": target_agent,
+            "degradation_rank": window.get("degradation_rank", ""),
+            "degradation_score": window.get("degradation_score", ""),
+            "delta_av_completed_count": window.get("delta_av_completed_count", ""),
+            "delta_av_cumulative_backlog_count": window.get("delta_av_cumulative_backlog_count", ""),
+            "delta_av_path_length_m": window.get("delta_av_path_length_m", ""),
+            "delta_av_waiting_time_s": window.get("delta_av_waiting_time_s", ""),
+            "delta_system_near_miss_event_count": window.get("delta_system_near_miss_event_count", ""),
+            "delta_system_collision_proxy_event_count": window.get("delta_system_collision_proxy_event_count", ""),
+            "delta_trajectory_conflict_event_count": window.get("delta_trajectory_conflict_event_count", ""),
+            "delta_mixed_intent_conflict_event_count": window.get("delta_mixed_intent_conflict_event_count", ""),
+            "delta_traffic_delayed_count": window.get("delta_traffic_delayed_count", ""),
+            "delta_shield_rejection_count": window.get("delta_shield_rejection_count", ""),
+            "delta_qwen_fallback_count": window.get("delta_qwen_fallback_count", ""),
+            "mechanism_class": mechanism,
+            "mechanism_class_zh": WINDOW_MECHANISM_LABELS_ZH[mechanism],
+            "target_event_count": len(target_rows),
+            "baseline_event_count": len(baseline_rows),
+            "target_event_counts_json": json.dumps(target_counts, ensure_ascii=False, sort_keys=True),
+            "baseline_event_counts_json": json.dumps(baseline_counts, ensure_ascii=False, sort_keys=True),
+            "excess_event_counts_json": json.dumps(excess, ensure_ascii=False, sort_keys=True),
+            "target_event_samples_json": json.dumps(samples, ensure_ascii=False, sort_keys=True),
+            "target_visual_lookups": " | ".join(visual_lookups[:4]),
+            "optimization_suggestion": WINDOW_MECHANISM_SUGGESTIONS[mechanism],
+            "evidence_interpretation": "diagnostic association; not causal proof",
+        })
+    return output
+
+
 def _write_summary(
     path: Path,
     drivers: List[Dict[str, Any]],
     events: List[Dict[str, Any]],
     traffic_events: List[Dict[str, Any]],
     trajectory_intervals: List[Dict[str, Any]],
+    window_mechanisms: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
+    window_mechanisms = window_mechanisms or []
     driver_counts = Counter(row["critical_driver"] for row in drivers)
     event_counts = Counter(row["event_type"] for row in events)
     traffic_counts = Counter(row["event_type"] for row in traffic_events)
@@ -449,6 +644,23 @@ def _write_summary(
         lines.append(f"- {key}: {count}")
     if not driver_counts:
         lines.append("- 当前没有可配对的基线与目标方法行")
+    lines.extend(["", "## 关键窗口机制证据"])
+    for row in sorted(window_mechanisms, key=lambda item: _as_float(item.get("degradation_rank"), 1e9))[:20]:
+        lines.append(
+            "- rank %s, %s, %.1f--%.1f s: %s; target/base events=%s/%s; %s"
+            % (
+                row.get("degradation_rank", ""),
+                row.get("scenario_id", ""),
+                _as_float(row.get("window_start_s")),
+                _as_float(row.get("window_end_s")),
+                row.get("mechanism_class_zh", ""),
+                row.get("target_event_count", 0),
+                row.get("baseline_event_count", 0),
+                row.get("optimization_suggestion", ""),
+            )
+        )
+    if not window_mechanisms:
+        lines.append("- 当前没有 window-level 配对数据")
     lines.extend(["", "## 决策级关键事件"])
     for key, count in event_counts.most_common():
         lines.append(f"- {EVENT_LABELS_ZH.get(key, key)} ({key}): {count}")
@@ -471,6 +683,7 @@ def _write_summary(
         "- `linked_traffic_event`：关键决策前后 5 s 内最近的需求释放、延迟或离场事件。",
         "- `visual_lookup`/`video_lookup`：按同一仿真时刻检索 BEV、视频或动图片段。",
         "- `duration_s`：车辆持续受阻、让行或制动的仿真时长。",
+        "- `mechanism_class`：窗口差异与同窗事件的诊断性关联，不构成因果证明。",
     ])
     path.write_text("\n".join(lines) + "\n")
 
@@ -496,6 +709,13 @@ def main() -> None:
         run_dirs,
         root,
         max(0.0, args.minimum_interval_seconds),
+    )
+    window_rows = _read_csv(args.out_dir / "critical_window_rank.csv")
+    window_mechanisms = _window_mechanism_evidence(
+        window_rows,
+        events,
+        traffic_events,
+        trajectory_intervals,
     )
     args.out_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(args.out_dir / "critical_metric_drivers.csv", drivers, [
@@ -525,16 +745,30 @@ def main() -> None:
         "event_type", "event_type_zh", "task", "start_sim_time", "end_sim_time",
         "duration_s", "blocking_vehicle_ids", "mean_speed_mps", "trace_path",
     ])
+    _write_csv(args.out_dir / "critical_window_mechanism_evidence.csv", window_mechanisms, [
+        "pair_key", "benchmark_id", "scenario_id", "seed", "background_mode",
+        "window_id", "window_start_s", "window_end_s", "baseline_agent", "target_agent",
+        "degradation_rank", "degradation_score", "delta_av_completed_count",
+        "delta_av_cumulative_backlog_count", "delta_av_path_length_m", "delta_av_waiting_time_s",
+        "delta_system_near_miss_event_count", "delta_system_collision_proxy_event_count",
+        "delta_trajectory_conflict_event_count", "delta_mixed_intent_conflict_event_count",
+        "delta_traffic_delayed_count", "delta_shield_rejection_count", "delta_qwen_fallback_count",
+        "mechanism_class", "mechanism_class_zh", "target_event_count", "baseline_event_count",
+        "target_event_counts_json", "baseline_event_counts_json", "excess_event_counts_json",
+        "target_event_samples_json", "target_visual_lookups", "optimization_suggestion",
+        "evidence_interpretation",
+    ])
     _write_summary(
         args.out_dir / "critical_state_analysis.md",
         drivers,
         events,
         traffic_events,
         trajectory_intervals,
+        window_mechanisms,
     )
     print(
-        "critical_state_analysis=%s drivers=%d decision_events=%d traffic_events=%d trajectory_intervals=%d"
-        % (args.out_dir, len(drivers), len(events), len(traffic_events), len(trajectory_intervals))
+        "critical_state_analysis=%s drivers=%d decision_events=%d traffic_events=%d trajectory_intervals=%d window_mechanisms=%d"
+        % (args.out_dir, len(drivers), len(events), len(traffic_events), len(trajectory_intervals), len(window_mechanisms))
     )
 
 
