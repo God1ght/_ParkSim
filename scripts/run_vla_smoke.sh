@@ -13,5 +13,6 @@ python3 -m parksim.vla.sync_barrier_smoke
 python3 -m parksim.vla.critical_state_smoke
 python3 -m parksim.vla.window_metrics_smoke
 python3 -m parksim.vla.trc_analysis_smoke
+python3 -m parksim.vla.metric_contract_smoke
 python3 -m parksim.vla.http_smoke
 python3 -m parksim.vla.service_smoke

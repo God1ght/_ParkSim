@@ -702,8 +702,13 @@ def _nearest_time_row(rows: List[Dict[str, Any]], t: float, start_idx: int) -> T
 
 
 def _sync_time(row: Dict[str, Any]) -> float:
-    if row.get("wall_time") is not None:
-        return _safe_float(row.get("wall_time"))
+    """Return simulator time for all traffic-performance alignment.
+
+    Wall time is retained only for trace-integrity and engineering audits. Using
+    it here would let model inference delay change safety and conflict metrics.
+    """
+    if row.get("sim_time") is not None:
+        return _safe_float(row.get("sim_time"))
     return _safe_float(row.get("time"))
 
 

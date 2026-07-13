@@ -128,6 +128,8 @@ Mixed/replay runs reserve every DLP replay vehicle ID before launching controlle
 
 Cloud-controlled methods use a strict decision-then-advance barrier: the simulator is paused at the decision epoch, Qwen returns a fleet action set, the critic and system shield validate it, and every addressed AV acknowledges the action at the same simulator time before the next step. Qwen wall-clock response latency is audit-only and is excluded from all operational performance metrics. Paper suites additionally create `window_metrics.csv`, `window_paired_deltas.csv`, `critical_window_rank.csv`, `window_metrics_manifest.json`, and `critical_window_mechanism_evidence.csv` under the report `critical_states` directory. The default 300 s half-open simulator-time windows yield 12 comparable windows for every 3600 s episode without double-counting boundary conflicts.
 
+Cross-vehicle near-miss, collision-proxy, TTC, trajectory-conflict, critical-window, and visualizer comparisons are aligned by `sim_time` (falling back to the trace `time` field only when `sim_time` is absent). The trace `wall_time` field remains available for monotonicity and engineering audits but is never an alignment key for performance evidence.
+
 `critical_window_mechanism_evidence.csv` links each paired performance window to same-window fleet decisions, shield/fallback outcomes, traffic-release events, and overlapping trajectory/conflict intervals. Its mechanism label and optimization suggestion are diagnostic associations for case reconstruction; they are not causal proof. Causal claims require a pre-specified intervention or ablation and repeated-seed statistical validation.
 
 
