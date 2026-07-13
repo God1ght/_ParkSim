@@ -8,7 +8,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool, Float32, String
 
-from parksim.vla.fleet_client import QwenFleetPolicyClient
+from parksim.vla.fleet_client import QwenFleetPolicyClient, QwenFleetResponseError
 from parksim.vla.fleet_coordinator import FleetEpochCoordinator
 from parksim.vla.fleet_shield import VLAFleetSafetyShield
 from parksim.vla.sync_barrier import (
@@ -31,15 +31,18 @@ class FleetCoordinatorNode(Node):
         self.declare_parameter("decision_log_path", "")
         self.declare_parameter("policy_mode", "direct")
         self.declare_parameter("decision_ack_timeout", 10.0)
+        self.declare_parameter("require_qwen_response", False)
 
         self.run_id = str(self.get_parameter("run_id").value)
         self.batch_timeout = float(self.get_parameter("batch_timeout").value)
         self.policy_mode = str(self.get_parameter("policy_mode").value or "direct")
         self.decision_ack_timeout = max(0.1, float(self.get_parameter("decision_ack_timeout").value))
+        self.require_qwen_response = bool(self.get_parameter("require_qwen_response").value)
         self.client = QwenFleetPolicyClient(
             endpoint=str(self.get_parameter("qwen_endpoint").value),
             model=str(self.get_parameter("qwen_model").value),
             timeout=float(self.get_parameter("qwen_timeout").value),
+            strict_response=self.require_qwen_response,
         )
         self.decision_log_path = str(self.get_parameter("decision_log_path").value) or "fleet_epochs.jsonl"
         self.coordinator = FleetEpochCoordinator(
@@ -174,6 +177,37 @@ class FleetCoordinatorNode(Node):
         self.barrier_terminal_failure = True
         self.get_logger().error("Fleet decision barrier failed: %s; simulator remains paused" % status)
 
+    def _fail_qwen_response(self, active, started, error_message):
+        now = time.monotonic()
+        payload = {
+            "run_id": self.run_id,
+            "epoch_id": int(active.epoch_id),
+            "sim_time": float(active.sim_time),
+            "expected_vehicle_ids": list(active.expected_vehicle_ids),
+            "collected_vehicle_ids": sorted(active.contexts),
+            "fleet_decisions": [],
+            "decision_complete": False,
+            "decision_barrier_phase": "qwen_inference",
+            "decision_barrier_status": "qwen_response_failed",
+            "decision_ack_expected_vehicle_ids": [],
+            "decision_ack_received_vehicle_ids": [],
+            "decision_acknowledgements": [],
+            "decision_ack_failed_vehicle_ids": [],
+            "decision_ack_coverage_rate": 0.0,
+            "qwen_response_required": True,
+            "qwen_response_ok": False,
+            "qwen_response_failure_reason": str(error_message),
+            "latency_seconds": float(now - started),
+            "simulation_time_policy": "decision_then_advance",
+            "wall_clock_latency_in_performance_metrics": False,
+        }
+        self._append_log(payload)
+        self.barrier_terminal_failure = True
+        self.get_logger().error(
+            "Required Qwen response failed at frozen sim_time %.3f; simulator remains paused: %s"
+            % (active.sim_time, error_message)
+        )
+
     def _append_log(self, payload):
         directory = os.path.dirname(self.decision_log_path)
         if directory:
@@ -231,17 +265,25 @@ class FleetCoordinatorNode(Node):
             return
 
         started = time.monotonic()
-        payload = self.coordinator.finalize(
-            self.client,
-            self.shield,
-            run_id=self.run_id,
-            policy_mode=self.policy_mode,
-        )
+        try:
+            payload = self.coordinator.finalize(
+                self.client,
+                self.shield,
+                run_id=self.run_id,
+                policy_mode=self.policy_mode,
+            )
+        except QwenFleetResponseError as exc:
+            self._fail_qwen_response(active, started, exc)
+            return
         payload["latency_seconds"] = float(time.monotonic() - started)
         payload["batch_wait_seconds"] = float(started - active.started_wall_time)
         payload["pause_ack_sim_time"] = float((self.pause_ack_payload or {}).get("sim_time", active.sim_time))
         payload["simulation_time_policy"] = "decision_then_advance"
         payload["wall_clock_latency_in_performance_metrics"] = False
+        payload["qwen_response_required"] = bool(
+            self.require_qwen_response and payload.get("collected_vehicle_ids")
+        )
+        payload["qwen_response_ok"] = True
         message = String()
         message.data = json.dumps(payload)
         self.pending_decision_payload = payload

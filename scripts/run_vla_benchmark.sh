@@ -654,6 +654,7 @@ run_episode() {
   local exit_role="human_exiting"
   local av_entry_role="av_entering"
   local av_exit_role="av_exiting"
+  local require_qwen_response=false
   if [[ "$av_entry_agent" == "__agent__" ]]; then
     av_entry_agent="$agent"
   fi
@@ -674,10 +675,14 @@ run_episode() {
     elif [[ "$agent" == "fleet_min_cost" ]]; then
       policy_mode="fleet_min_cost"
     fi
+    if [[ "$agent" != "fleet_min_cost" ]]; then
+      require_qwen_response=true
+    fi
     PYTHONPATH="$DLP_ROOT${PYTHONPATH:+:$PYTHONPATH}" ros2 run parksim fleet_coordinator_node.py --ros-args \
       -p qwen_endpoint:="$qwen_endpoint_param" -p qwen_timeout:="$QWEN_TIMEOUT" \
       -p decision_period:="$FLEET_DECISION_PERIOD" \
       -p decision_ack_timeout:="$FLEET_DECISION_ACK_TIMEOUT" \
+      -p require_qwen_response:="$require_qwen_response" \
       -p policy_mode:="$policy_mode" \
       -p run_id:="$fleet_run_id" -p decision_log_path:="$fleet_epochs" \
       > "$fleet_log" 2>&1 &

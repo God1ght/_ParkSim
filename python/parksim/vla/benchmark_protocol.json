@@ -121,6 +121,7 @@
     "Suite manifests record qwen.mode, qwen.bench_mode, qwen.managed, qwen.ready, endpoint, health payload, and service-log presence.",
     "Cloud-fleet experiments use a two-phase decision barrier: the simulator confirms a frozen epoch before context collection, and every addressed AV confirms action application at the same simulation time before advancement resumes.",
     "Qwen wall-clock response time is retained only in raw JSONL for engineering audit and is excluded from performance metrics and statistical comparisons.",
+    "Formal MLLM runs require a usable Qwen response before simulator advancement; endpoint errors, timeouts, and malformed responses leave the simulator frozen and invalidate the episode rather than executing a client-generated rule fallback.",
     "VLA baseline agents share the same valid action bundle interface as Qwen-VLA so comparisons isolate high-level selection rather than low-level control.",
     "Bundle-aware baselines evaluate executable spot-route-wait candidates using route length, expected wait, dynamic conflict risk, and conflicting vehicle count.",
     "Entry parking tasks do not expose cruise_to_exit as a valid action; exit actions are generated only for exiting or UNPARK task semantics.",

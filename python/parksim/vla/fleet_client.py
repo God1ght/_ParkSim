@@ -2,7 +2,6 @@ import base64
 import json
 import mimetypes
 import re
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib import error, request
@@ -13,15 +12,20 @@ from parksim.vla.qwen_client import _select_lowest_cost_fallback
 from parksim.vla.schema import VLACandidateAction
 
 
+class QwenFleetResponseError(RuntimeError):
+    """Raised when a strict fleet epoch did not obtain a usable model response."""
+
+
 class QwenFleetPolicyClient:
-    def __init__(self, endpoint: str = "", model: str = "Qwen2.5-VL-7B-Instruct", timeout: float = 15.0):
+    def __init__(self, endpoint: str = "", model: str = "Qwen2.5-VL-7B-Instruct", timeout: float = 15.0, strict_response: bool = False):
         self.endpoint = endpoint.rstrip("/") if endpoint else ""
         self.model = model
         self.timeout = float(timeout)
+        self.strict_response = bool(strict_response)
 
     def decide_fleet(self, context: VLAFleetContext) -> VLAFleetResponse:
         if not self.endpoint:
-            return self._fallback(context, reason="qwen endpoint is not configured")
+            return self._failure(context, reason="qwen endpoint is not configured")
         payload = self._build_payload(context)
         return self._request_payload(payload, context, failure_label="qwen fleet request")
 
@@ -34,7 +38,7 @@ class QwenFleetPolicyClient:
     ) -> VLAFleetResponse:
         """Request one bounded revision with or without deterministic critic evidence."""
         if not self.endpoint:
-            return self._fallback(context, reason="qwen endpoint is not configured for repair")
+            return self._failure(context, reason="qwen endpoint is not configured for repair")
         packet = build_fleet_decision_packet(context)
         if mode == "self_reflect":
             feedback = {
@@ -58,7 +62,6 @@ class QwenFleetPolicyClient:
     def _request_payload(self, payload: Dict[str, Any], context: VLAFleetContext, failure_label: str) -> VLAFleetResponse:
         data = json.dumps(payload).encode("utf-8")
         req = request.Request(self.endpoint, data=data, headers={"Content-Type": "application/json"}, method="POST")
-        started = time.time()
         try:
             with request.urlopen(req, timeout=self.timeout) as resp:
                 body = resp.read().decode("utf-8", errors="replace")
@@ -67,14 +70,12 @@ class QwenFleetPolicyClient:
                 detail = exc.read().decode("utf-8", errors="replace")
             except Exception:
                 detail = str(exc)
-            return self._fallback(context, reason="%s failed: http %s: %s" % (failure_label, exc.code, detail[:400]))
+            return self._failure(context, reason="%s failed: http %s: %s" % (failure_label, exc.code, detail[:400]))
         except (error.URLError, TimeoutError, OSError) as exc:
-            return self._fallback(context, reason="%s failed: %s" % (failure_label, exc))
+            return self._failure(context, reason="%s failed: %s" % (failure_label, exc))
         response = self._parse_response(body, context)
         for decision in response.decisions:
             decision.raw_response = body
-            if decision.confidence <= 0.0:
-                decision.confidence = max(0.1, 1.0 - min(time.time() - started, 10.0) / 20.0)
         response.raw_response = body
         return response
 
@@ -145,7 +146,7 @@ class QwenFleetPolicyClient:
             vehicle_id = _first_vehicle_id(context)
             raw_decisions = [dict(parsed, vehicle_id=vehicle_id)]
         if not isinstance(raw_decisions, list):
-            return self._fallback(context, reason="qwen response did not contain fleet_decisions")
+            return self._failure(context, reason="qwen response did not contain fleet_decisions")
         decisions: List[VLAFleetDecision] = []
         for item in raw_decisions:
             if not isinstance(item, dict):
@@ -164,8 +165,26 @@ class QwenFleetPolicyClient:
                 used_fallback=bool(item.get("used_fallback", False)),
             ))
         if not decisions:
-            return self._fallback(context, reason="qwen response did not contain usable fleet decisions")
+            return self._failure(context, reason="qwen response did not contain usable fleet decisions")
+        if self.strict_response:
+            expected_ids = {int(item) for item in context.to_dict().get("automated_vehicle_ids", [])}
+            received_ids = [int(item.vehicle_id) for item in decisions]
+            missing_ids = sorted(expected_ids - set(received_ids))
+            unexpected_ids = sorted(set(received_ids) - expected_ids)
+            if missing_ids or unexpected_ids or len(received_ids) != len(set(received_ids)):
+                return self._failure(
+                    context,
+                    reason=(
+                        "qwen response vehicle coverage mismatch: missing=%s unexpected=%s duplicates=%s"
+                        % (missing_ids, unexpected_ids, len(received_ids) != len(set(received_ids)))
+                    ),
+                )
         return VLAFleetResponse(decisions=decisions, raw_response=text)
+
+    def _failure(self, context: VLAFleetContext, reason: str) -> VLAFleetResponse:
+        if self.strict_response:
+            raise QwenFleetResponseError(reason)
+        return self._fallback(context, reason=reason)
 
     def _fallback(self, context: VLAFleetContext, reason: str) -> VLAFleetResponse:
         decisions: List[VLAFleetDecision] = []

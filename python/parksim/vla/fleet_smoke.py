@@ -1,4 +1,4 @@
-from parksim.vla.fleet_client import QwenFleetPolicyClient
+from parksim.vla.fleet_client import QwenFleetPolicyClient, QwenFleetResponseError
 from parksim.vla.fleet_critic import FleetDecisionCritic
 from parksim.vla.fleet_coordinator import FleetEpochCoordinator
 from parksim.vla.fleet_protocol import build_fleet_decision_packet
@@ -45,6 +45,35 @@ def main():
     fallback = QwenFleetPolicyClient(endpoint="").decide_fleet(fleet)
     assert fallback.decision_for(1).target_spot_index == 3
     assert fallback.decision_for(2).target_spot_index == 5, fallback.to_dict()
+
+    strict_client = QwenFleetPolicyClient(endpoint="", strict_response=True)
+    try:
+        strict_client.decide_fleet(fleet)
+    except QwenFleetResponseError as exc:
+        assert "not configured" in str(exc)
+    else:
+        raise AssertionError("strict fleet client accepted a missing Qwen response")
+    try:
+        strict_client._parse_response("not-json", fleet)
+    except QwenFleetResponseError as exc:
+        assert "fleet_decisions" in str(exc)
+    else:
+        raise AssertionError("strict fleet client accepted a malformed Qwen response")
+    try:
+        strict_client._parse_response(
+            '{"fleet_decisions":[{"vehicle_id":1,"action_id":"wait_2s_v1"}]}', fleet
+        )
+    except QwenFleetResponseError as exc:
+        assert "coverage mismatch" in str(exc)
+    else:
+        raise AssertionError("strict fleet client accepted an incomplete fleet response")
+    parsed = strict_client._parse_response(
+        '{"fleet_decisions":['
+        '{"vehicle_id":1,"action_id":"wait_2s_v1","confidence":0.0},'
+        '{"vehicle_id":2,"action_id":"wait_2s_v2","confidence":0.0}'
+        ']}', fleet
+    )
+    assert all(item.confidence == 0.0 for item in parsed.decisions)
 
     duplicate = VLAFleetResponse(decisions=[
         VLAFleetDecision(vehicle_id=1, action_id="v1_cruise_to_spot_3", target_spot_index=3),
