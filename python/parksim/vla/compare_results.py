@@ -266,7 +266,10 @@ def collect_mode_metrics(experiment_dir: Path, mode: str) -> Dict[str, Any]:
         "audit_qwen_wall_latency_max": max(qwen_latencies, default=0.0),
         "audit_fleet_batch_wall_wait_mean": _mean(fleet_batch_waits),
         "audit_fleet_batch_wall_wait_max": max(fleet_batch_waits, default=0.0),
-        "simulation_time_policy": str(first_fleet_epoch.get("simulation_time_policy", "")),
+        "simulation_time_policy": str(
+            first_fleet_epoch.get("simulation_time_policy", "decision_then_advance")
+            if fleet_epochs else "not_applicable"
+        ),
         "wall_clock_latency_in_performance_metrics": bool(first_fleet_epoch.get("wall_clock_latency_in_performance_metrics", False)),
         "decision_barrier_epoch_count": len(barrier_epochs),
         "decision_barrier_complete_count": len(barrier_epochs) - len(barrier_failures),

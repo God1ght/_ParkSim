@@ -152,3 +152,9 @@ PARKSIM_VIS_QWEN_MODE=real ./scripts/run_visualizer_policy_videos.sh
 Use `PARKSIM_VIS_QWEN_MODE=mock` for a fast pipeline check, `real` to start the local Qwen service, or `external` with `PARKSIM_VIS_QWEN_ENDPOINT` for an already running service. The script runs under `xvfb`, records frames from `visualizer_node.py`, writes `frame_times.jsonl` with each frame sim time, and writes per-policy MP4/GIF files plus simulation-time-aligned `rule_vs_qwen_vla.mp4` and `rule_vs_qwen_vla.gif` under `experiments/qwen_vla_visualizer_videos/<timestamp>/`. The side-by-side outputs are resampled by visualizer `sim_time`, not by Qwen wall-clock response time.
 
 Runtime dependencies on `172.16.0.250` are `xvfb`, `xauth`, `ffmpeg`, Mesa GL packages, and `dearpygui`. DearPyGUI must run under `LIBGL_ALWAYS_SOFTWARE=1` in headless mode, which the script sets automatically.
+
+## Staged TR-C Experiment Matrix
+
+`run_vla_trc_calibration.sh` executes one 3600 s mixed-medium calibration cell with real Qwen before the formal matrix. The dedicated `calibration` gate is strict about trace integrity, real-Qwen health, cloud-fleet decision logs, the synchronous decision barrier, and unsafe actions, while intentionally requiring only one seed and one traffic cell.
+
+`run_vla_trc_staged_suite.sh` splits the formal 630-episode TR-C matrix into `core`, `mixed_density`, `human_behavior`, and `replication`. Each stage writes and strictly validates its own CSV/JSON report before the next stage is started manually. `finalize` merges the four validated stages, regenerates the paired statistical and critical-state reports, and applies the full TR-C gate. This preserves intermediate review without changing the final 9-method x 10-seed x 7-scenario design.

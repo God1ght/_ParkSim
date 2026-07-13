@@ -1,11 +1,34 @@
 import argparse
 import csv
 import json
+import math
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 
 PROFILE_DEFAULTS: Dict[str, Dict[str, Any]] = {
+    "calibration": {
+        "required_agents": [
+            "rule_based",
+            "reservation_bundle",
+            "centralized_min_cost",
+            "fleet_min_cost",
+            "mllm_direct",
+            "mllm_external_feedback",
+        ],
+        "min_agents": 6,
+        "min_seeds": 1,
+        "min_background_modes": 1,
+        "min_density_labels": 1,
+        "min_spawn_profiles": 1,
+        "min_scenarios": 1,
+        "min_rows": 6,
+        "require_real_qwen": True,
+        "require_cloud_fleet": True,
+        "require_trc_analysis": True,
+        "max_reference_unsafe_actions": 0.0,
+        "max_reference_collision_proxy": 0.0,
+    },
     "pilot": {
         "required_agents": ["risk_aware_rule", "qwen_vla"],
         "min_agents": 2,
@@ -250,8 +273,47 @@ def _as_bool(value: Any) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _required_metric_value_complete(metric: str, value: Any) -> bool:
+    if value in (None, ""):
+        return False
+    if metric == "simulation_time_policy":
+        return bool(str(value).strip())
+    if metric in {"wall_clock_latency_in_performance_metrics", "trace_integrity_ok"}:
+        return str(value).strip().lower() in {
+            "0", "0.0", "1", "1.0", "false", "true", "no", "yes", "off", "on"
+        }
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
 def _csv_values(rows: Iterable[Dict[str, str]], key: str) -> Set[str]:
     return {str(row.get(key)) for row in rows if row.get(key) not in (None, "")}
+
+
+def _benchmark_dirs(suite_dir: Path) -> List[Path]:
+    paths: List[Path] = []
+    for item in _load_jsonl(suite_dir / "benchmarks.jsonl"):
+        raw = str(item.get("benchmark_dir", ""))
+        if not raw:
+            continue
+        path = Path(raw)
+        if not path.is_absolute():
+            path = (suite_dir / path).resolve()
+        if path.exists():
+            paths.append(path)
+    return sorted(set(paths))
+
+
+def _suite_artifacts(suite_dir: Path, pattern: str) -> List[Path]:
+    roots = [suite_dir] + _benchmark_dirs(suite_dir)
+    return sorted({
+        path.resolve()
+        for root in roots
+        for path in root.glob(pattern)
+        if path.is_file()
+    })
 
 
 def _resolve_report_dir(suite_dir: Path, suite_manifest: Dict[str, Any], report_dir_arg: Optional[Path]) -> Path:
@@ -325,7 +387,7 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
 
     missing_files = [name for name in REQUIRED_REPORT_FILES if not (resolved_report_dir / name).exists()]
     gate.require("required_report_files", not missing_files, "all paper report artifacts must exist", {"missing": missing_files, "report_dir": str(resolved_report_dir)})
-    if profile == "trc":
+    if profile == "trc" or bool(config.get("require_trc_analysis", False)):
         missing_trc_analysis = [name for name in TRC_ANALYSIS_FILES if not (resolved_report_dir / name).exists()]
         gate.require("trc_csv_first_analysis_files", not missing_trc_analysis, "TR-C profile requires CSV-first analysis outputs generated from paper_report CSV files", {"missing": missing_trc_analysis, "report_dir": str(resolved_report_dir)})
 
@@ -341,6 +403,23 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
         metric_columns = set()
     missing_metric_columns = sorted(set(REQUIRED_METRIC_COLUMNS) - metric_columns)
     gate.require("required_metric_columns", not missing_metric_columns, "paper rows must include safety, efficiency, coordination, and synchronous-decision integrity metrics", {"missing": missing_metric_columns})
+    incomplete_required_metrics = {
+        metric: sum(
+            1 for row in rows
+            if not _required_metric_value_complete(metric, row.get(metric))
+        )
+        for metric in REQUIRED_METRIC_COLUMNS
+        if metric not in missing_metric_columns
+    }
+    incomplete_required_metrics = {
+        metric: count for metric, count in incomplete_required_metrics.items() if count
+    }
+    gate.require(
+        "required_metric_completeness",
+        not incomplete_required_metrics,
+        "required paper metrics must contain a finite value in every paired result row",
+        {"incomplete_row_counts": incomplete_required_metrics},
+    )
     invalid_integrity_rows = [
         "%s/%s" % (row.get("scenario_id"), row.get("agent_type"))
         for row in rows
@@ -418,7 +497,7 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
     qwen_health = qwen.get("health") if isinstance(qwen, dict) else None
     qwen_ok = bool(isinstance(qwen_health, dict) and qwen_health.get("ok"))
     gate.require("qwen_health_ok", qwen_ok, "Qwen health payload must be present and ok", {"qwen": qwen})
-    qwen_decision_logs = list(suite_dir.glob("**/qwen_vla_decisions.jsonl"))
+    qwen_decision_logs = _suite_artifacts(suite_dir, "**/qwen_vla_decisions.jsonl")
     gate.require("qwen_decision_logs", bool(qwen_decision_logs), "Qwen/baseline decision logs must be present for replayable audit", {"log_count": len(qwen_decision_logs)})
     if bool(config.get("require_cloud_fleet", False)):
         fleet_protocol_records = 0
@@ -446,10 +525,10 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
             "every cloud-fleet run must apply all decisions at the frozen decision time before simulation advances",
             {"invalid_rows": invalid_barrier_rows[:50], "invalid_count": len(invalid_barrier_rows)},
         )
-    decision_audits = list(suite_dir.glob("**/decision_audit.json"))
+    decision_audits = _suite_artifacts(suite_dir, "**/decision_audit.json")
     gate.require("decision_audit_artifacts", bool(decision_audits), "decision audit artifacts must be present", {"audit_count": len(decision_audits)})
     if bool(config.get("require_video_evidence", False)):
-        video_manifests = list(suite_dir.glob("**/video_manifest.json")) + list(resolved_report_dir.glob("**/video_manifest.json"))
+        video_manifests = _suite_artifacts(suite_dir, "**/video_manifest.json") + list(resolved_report_dir.glob("**/video_manifest.json"))
         gate.require("video_evidence", bool(video_manifests), "journal profile requires visualizer video/GIF evidence manifests", {"video_manifest_count": len(video_manifests)})
     if bool(config["require_real_qwen"]):
         is_mock = bool(isinstance(qwen_health, dict) and qwen_health.get("mock"))
