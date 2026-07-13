@@ -151,6 +151,8 @@ def collect_system_traffic_metrics(
     completed_av = int(completion_metrics.get("completed_automated_vehicle_count", 0))
     horizon = _safe_float(metrics.get("sim_horizon_seconds"))
     metrics["automated_demand_released_count"] = released_av
+    metrics["automated_demand_completed_count"] = completed_av
+    metrics["automated_demand_backlog_count"] = max(0, released_av - completed_av)
     metrics["automated_demand_service_rate"] = completed_av / released_av if released_av else 0.0
     metrics["automated_throughput_per_sim_hour"] = completed_av * 3600.0 / horizon if horizon > 0.0 else 0.0
 

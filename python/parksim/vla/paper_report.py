@@ -13,6 +13,8 @@ DEFAULT_METRICS = [
     "cloud_served_vehicle_completion_rate",
     "automated_demand_service_rate",
     "automated_throughput_per_sim_hour",
+    "automated_demand_completed_count",
+    "automated_demand_backlog_count",
     "system_near_miss_events_per_100_vehicle_km",
     "system_collision_proxy_events_per_100_vehicle_km",
     "trajectory_conflicts_per_100_vehicle_km",
@@ -22,6 +24,8 @@ DEFAULT_METRICS = [
     "objective_score",
     "fleet_total_automated_path_length",
     "fleet_total_automated_waiting_time",
+    "fleet_mean_automated_path_length",
+    "fleet_mean_automated_waiting_time",
     "fleet_total_automated_non_idle_time",
     "fleet_mean_automated_total_time",
     "path_length",
@@ -66,6 +70,7 @@ HIGHER_IS_BETTER_METRICS = {
     "cloud_served_vehicle_completion_rate",
     "automated_demand_service_rate",
     "automated_throughput_per_sim_hour",
+    "automated_demand_completed_count",
     "feedback_repair_success_rate",
     "feedback_hard_violation_reduction_rate",
     "feedback_quality_warning_reduction_rate",
@@ -86,9 +91,12 @@ STRATIFY_FIELDS = [
 MARKDOWN_TEST_METRICS = [
     "automated_demand_service_rate",
     "automated_throughput_per_sim_hour",
+    "automated_demand_backlog_count",
     "fleet_mean_automated_total_time",
-    "fleet_total_automated_waiting_time",
+    "fleet_mean_automated_waiting_time",
+    "fleet_mean_automated_path_length",
     "system_near_miss_events_per_100_vehicle_km",
+    "system_collision_proxy_events_per_100_vehicle_km",
     "trajectory_conflicts_per_100_vehicle_km",
     "objective_score",
     "path_length",
@@ -115,6 +123,14 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except Exception:
         return default
+
+
+def _available_metric_values(rows: Iterable[Dict[str, Any]], metric: str) -> List[float]:
+    return [
+        _safe_float(row.get(metric))
+        for row in rows
+        if metric in row and row.get(metric) not in (None, "")
+    ]
 
 
 def _mean(values: Iterable[float]) -> float:
@@ -338,7 +354,9 @@ def summarize(rows: List[Dict[str, Any]], metrics: List[str]) -> List[Dict[str, 
         for metric in metrics:
             if metric == "completed":
                 continue
-            values = [_safe_float(row.get(metric)) for row in group]
+            values = _available_metric_values(group, metric)
+            if not values:
+                continue
             item[metric + "_mean"] = _mean(values)
             item[metric + "_std"] = _std(values)
             item[metric + "_ci95"] = _ci95(values)
@@ -368,6 +386,13 @@ def paired_deltas(rows: List[Dict[str, Any]], reference_agent: str, metrics: Lis
             for metric in metrics:
                 if metric == "completed":
                     continue
+                if (
+                    metric not in row
+                    or row.get(metric) in (None, "")
+                    or metric not in reference
+                    or reference.get(metric) in (None, "")
+                ):
+                    continue
                 item[metric + "_delta_vs_ref"] = _safe_float(row.get(metric)) - _safe_float(reference.get(metric))
             deltas.append(item)
     return deltas
@@ -385,7 +410,9 @@ def summarize_deltas(deltas: List[Dict[str, Any]], metrics: List[str]) -> List[D
             if metric == "completed":
                 continue
             key = metric + "_delta_vs_ref"
-            values = [_safe_float(row.get(key)) for row in group]
+            values = _available_metric_values(group, key)
+            if not values:
+                continue
             item[key + "_mean"] = _mean(values)
             item[key + "_std"] = _std(values)
             item[key + "_ci95"] = _ci95(values)
@@ -404,7 +431,7 @@ def statistical_tests(deltas: List[Dict[str, Any]], metrics: List[str]) -> List[
             if metric == "completed":
                 continue
             key = metric + "_delta_vs_ref"
-            values = [_safe_float(row.get(key)) for row in group]
+            values = _available_metric_values(group, key)
             if not values:
                 continue
             sign = _sign_test(values)
@@ -471,7 +498,9 @@ def stratified_summary(rows: List[Dict[str, Any]], metrics: List[str], factors: 
             for metric in metrics:
                 if metric == "completed":
                     continue
-                values = [_safe_float(row.get(metric)) for row in group]
+                values = _available_metric_values(group, metric)
+                if not values:
+                    continue
                 item[metric + "_mean"] = _mean(values)
                 item[metric + "_ci95"] = _ci95(values)
             output.append(item)
@@ -486,6 +515,15 @@ def reproducibility_manifest(
     metrics: List[str],
 ) -> Dict[str, Any]:
     agents = sorted({str(row.get("agent_type")) for row in rows})
+    metric_coverage = {
+        metric: {
+            "present_row_count": len(_available_metric_values(rows, metric)),
+            "missing_row_count": len(rows) - len(_available_metric_values(rows, metric)),
+            "complete": len(_available_metric_values(rows, metric)) == len(rows),
+        }
+        for metric in metrics
+        if metric != "completed"
+    }
     return {
         "type": "parksim_vla_reproducibility_manifest",
         "inputs": [str(path.resolve()) for path in inputs],
@@ -503,6 +541,8 @@ def reproducibility_manifest(
         "git_commits": sorted({str(row.get("git_commit")) for row in rows if row.get("git_commit")}),
         "git_branches": sorted({str(row.get("git_branch")) for row in rows if row.get("git_branch")}),
         "validated_inputs_only": True,
+        "missing_metric_policy": "missing values remain missing and are excluded from aggregation; formal gate rejects required incomplete columns",
+        "metric_coverage": metric_coverage,
         "warnings": warnings,
         "outputs": [
             "paper_rows.csv",
@@ -560,7 +600,7 @@ def write_markdown(
             "| {agent_type} | {episodes:d} | {success_rate_mean:.3f} | {objective_score_mean:.3f} +/- {objective_score_ci95:.3f} | "
             "{path_length_mean:.3f} +/- {path_length_ci95:.3f} | {total_non_idle_time_mean:.3f} +/- {total_non_idle_time_ci95:.3f} | "
             "{near_miss_event_count_mean:.3f} | {collision_proxy_event_count_mean:.3f} | "
-            "{decision_barrier_ack_coverage_rate_mean:.3f} | {decision_barrier_failure_count_mean:.3f} |".format(**_with_defaults(row))
+            "{decision_barrier_ack_coverage_rate_mean:.3f} | {decision_barrier_failure_count_mean:.3f} |".format_map(_with_defaults(row))
         )
     lines.extend([
         "",
@@ -576,7 +616,7 @@ def write_markdown(
             "| {agent_type} | {paired_count:d} | {objective_score_delta_vs_ref_mean:.3f} +/- {objective_score_delta_vs_ref_ci95:.3f} | "
             "{path_length_delta_vs_ref_mean:.3f} | {total_non_idle_time_delta_vs_ref_mean:.3f} | "
             "{near_miss_event_count_delta_vs_ref_mean:.3f} | {collision_proxy_event_count_delta_vs_ref_mean:.3f} | "
-            "{unsafe_occupancy_action_count_delta_vs_ref_mean:.3f} |".format(**_with_defaults(row))
+            "{unsafe_occupancy_action_count_delta_vs_ref_mean:.3f} |".format_map(_with_defaults(row))
         )
     lines.extend([
         "",
@@ -592,7 +632,7 @@ def write_markdown(
             continue
         lines.append(
             "| {agent_type} | {metric} | {paired_count:d} | {delta_mean:.3f} | {delta_ci95:.3f} | {effect_dz:.3f} | "
-            "{reference_better_count:d} | {agent_better_count:d} | {tie_count:d} | {sign_test_p:.4f} | {wilcoxon_p_normal_approx:.4f} |".format(**_with_defaults(row))
+            "{reference_better_count:d} | {agent_better_count:d} | {tie_count:d} | {sign_test_p:.4f} | {wilcoxon_p_normal_approx:.4f} |".format_map(_with_defaults(row))
         )
     lines.extend([
         "",

@@ -89,8 +89,13 @@ REQUIRED_MANUSCRIPT_FILES = [
 REQUIRED_METRIC_COLUMNS = [
     "objective_score",
     "automated_demand_released_count",
+    "automated_demand_completed_count",
+    "automated_demand_backlog_count",
     "automated_demand_service_rate",
     "automated_throughput_per_sim_hour",
+    "fleet_mean_automated_path_length",
+    "fleet_mean_automated_waiting_time",
+    "fleet_mean_automated_total_time",
     "censored_automated_vehicle_count",
     "system_exposure_vehicle_km",
     "system_exposure_vehicle_hours",
@@ -130,7 +135,7 @@ REQUIRED_METRIC_COLUMNS = [
 ]
 
 TRC_METRIC_GROUPS = {
-    "fleet_efficiency": ["automated_demand_service_rate", "automated_throughput_per_sim_hour", "fleet_mean_automated_total_time", "fleet_total_automated_waiting_time"],
+    "fleet_efficiency": ["automated_demand_service_rate", "automated_throughput_per_sim_hour", "automated_demand_backlog_count", "fleet_mean_automated_total_time", "fleet_mean_automated_waiting_time", "fleet_mean_automated_path_length"],
     "operational_safety": ["system_near_miss_events_per_100_vehicle_km", "system_collision_proxy_events_per_100_vehicle_km", "trajectory_conflicts_per_100_vehicle_km"],
     "cloud_coordination": ["feedback_hard_violation_reduction_rate", "feedback_route_conflict_reduction_rate", "cloud_fleet_decision_count", "shield_rejection_count", "qwen_fallback_count"],
     "mixed_human_traffic": ["human_like_vehicle_count", "replay_vehicle_count", "hidden_intent_vehicle_count"],
@@ -142,8 +147,9 @@ TRC_PRIMARY_TEST_METRICS = [
     "automated_demand_service_rate",
     "automated_throughput_per_sim_hour",
     "fleet_mean_automated_total_time",
-    "fleet_total_automated_waiting_time",
+    "fleet_mean_automated_waiting_time",
     "system_near_miss_events_per_100_vehicle_km",
+    "system_collision_proxy_events_per_100_vehicle_km",
     "trajectory_conflicts_per_100_vehicle_km",
 ]
 
@@ -161,10 +167,13 @@ REQUIRED_REPORT_FILES = [
 ]
 
 TRC_ANALYSIS_FILES = [
+    "trc_metric_definitions_zh.csv",
     "trc_metric_group_summary.csv",
     "trc_reference_improvements.csv",
+    "trc_group_result_summary_zh.csv",
     "trc_stratified_findings.csv",
     "trc_key_findings.md",
+    "trc_key_findings_zh.md",
     "trc_analysis_manifest.json",
     "critical_states/window_metrics.csv",
     "critical_states/window_paired_deltas.csv",

@@ -75,6 +75,8 @@ Use `python -m parksim.vla.paper_gate <suite-dir> --profile pilot --strict` to v
 
 Use `--profile trc` for Transportation Research Part C oriented evidence. This profile is CSV/JSON-first: it checks fleet efficiency, operational safety, cloud coordination, mixed-human traffic, synchronous-decision integrity, real Qwen health, decision audits, video evidence, and open-science manifests. It does not treat Qwen response latency as a performance metric and does not require a TeX manuscript; manuscript writing should be based on the CSV/JSON analysis outputs.
 
+TR-C analysis writes `trc_metric_definitions_zh.csv`, `trc_metric_group_summary.csv`, `trc_reference_improvements.csv`, `trc_group_result_summary_zh.csv`, `trc_stratified_findings.csv`, and `trc_key_findings_zh.md`. The group summary is a long-form paired comparison with Chinese names, definitions, units, predeclared direction, effect, and Holm-corrected significance. It never sums heterogeneous units into a synthetic group score, never includes Qwen wall-clock latency, and never edits TeX automatically.
+
 Fleet epochs are event-triggered by a newly registered AV, an idle high-level task boundary, or a stalled/yielding maneuver that is eligible for replanning. A simulation-time watchdog provides bounded state staleness; the TR-C protocol uses 30 s. CSV outputs distinguish event-triggered, watchdog, actionable, and empty epochs. Qwen wall-clock latency remains audit-only, while the simulator stays frozen until all addressed vehicles acknowledge applying the decision at the same simulation time.
 
 Before launching the full 630-episode matrix, run the single-seed medium-density 3600 s calibration:
