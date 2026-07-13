@@ -166,6 +166,11 @@ TRC_ANALYSIS_FILES = [
     "trc_stratified_findings.csv",
     "trc_key_findings.md",
     "trc_analysis_manifest.json",
+    "critical_states/critical_metric_drivers.csv",
+    "critical_states/critical_state_events.csv",
+    "critical_states/critical_traffic_events.csv",
+    "critical_states/critical_trajectory_intervals.csv",
+    "critical_states/critical_state_analysis.md",
 ]
 
 

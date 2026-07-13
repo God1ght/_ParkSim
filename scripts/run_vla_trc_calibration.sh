@@ -42,16 +42,10 @@ export PARKSIM_SUITE_GATE_REQUIRE_VIDEO=0
 export PARKSIM_SUITE_GATE_SKIP_VIDEO=1
 export PARKSIM_SUITE_GATE_SKIP_MANUSCRIPT=1
 export PARKSIM_SUITE_TRC_ANALYSIS=1
+export PARKSIM_SUITE_CRITICAL_STATE_ANALYSIS=1
 export PARKSIM_SUITE_RESUME=1
 export PARKSIM_SUITE_CONTINUE_ON_FAIL=0
 export PARKSIM_SUITE_PROTECT_ACTIVE_TRAINING=1
 export PARKSIM_SUITE_ALLOW_DURING_TRAINING=0
 
 "$ROOT/scripts/run_vla_paper_suite.sh"
-
-REPORT_DIR="$OUT_DIR/reports/$REPORT_NAME"
-PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" python3 -m parksim.vla.critical_state_analysis \
-  --report-dir "$REPORT_DIR" \
-  --out-dir "$REPORT_DIR/critical_states" \
-  --baseline-agent rule_based \
-  --target-agent mllm_external_feedback
