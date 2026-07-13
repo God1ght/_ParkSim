@@ -44,6 +44,9 @@ REFERENCE_AGENT="${PARKSIM_SUITE_REFERENCE_AGENT:-qwen_vla}"
 REPLAY_ALL_DENSITIES="${PARKSIM_SUITE_REPLAY_ALL_DENSITIES:-0}"
 REPORT_NAME="${PARKSIM_SUITE_REPORT_NAME:-paper_report}"
 TRC_ANALYSIS="${PARKSIM_SUITE_TRC_ANALYSIS:-1}"
+WINDOW_METRICS="${PARKSIM_SUITE_WINDOW_METRICS:-1}"
+WINDOW_SECONDS="${PARKSIM_SUITE_WINDOW_SECONDS:-300.0}"
+export WINDOW_METRICS WINDOW_SECONDS
 CRITICAL_STATE_ANALYSIS="${PARKSIM_SUITE_CRITICAL_STATE_ANALYSIS:-1}"
 GATE_PROFILE="${PARKSIM_SUITE_GATE_PROFILE:-pilot}"
 GATE_STRICT="${PARKSIM_SUITE_GATE_STRICT:-0}"
@@ -140,6 +143,8 @@ payload = {
     "reference_agent": os.environ.get("REFERENCE_AGENT", ""),
     "trc_analysis": os.environ.get("TRC_ANALYSIS", ""),
     "critical_state_analysis": os.environ.get("CRITICAL_STATE_ANALYSIS", ""),
+    "window_metrics": os.environ.get("WINDOW_METRICS", ""),
+    "window_seconds": os.environ.get("WINDOW_SECONDS", ""),
     "replay_all_densities": os.environ.get("REPLAY_ALL_DENSITIES", ""),
     "gate_profile": os.environ.get("GATE_PROFILE", ""),
     "gate_strict": os.environ.get("GATE_STRICT", ""),
@@ -498,6 +503,14 @@ report_dir="$OUT_DIR/reports/$REPORT_NAME"
 PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" python3 -m parksim.vla.paper_report "$report_dir" --inputs "${benchmark_dirs[@]}" --reference-agent "$REFERENCE_AGENT"
 if [[ "$TRC_ANALYSIS" == "1" ]]; then
   PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" python3 -m parksim.vla.trc_analysis "$report_dir" --out-dir "$report_dir" --reference-agent "$REFERENCE_AGENT"
+fi
+if [[ "$WINDOW_METRICS" == "1" ]]; then
+  PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" python3 -m parksim.vla.window_metrics \
+    --suite-dir "$OUT_DIR" \
+    --out-dir "$report_dir/critical_states" \
+    --window-seconds "$WINDOW_SECONDS" \
+    --baseline-agent rule_based \
+    --target-agent "$REFERENCE_AGENT"
 fi
 if [[ "$CRITICAL_STATE_ANALYSIS" == "1" ]]; then
   PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" python3 -m parksim.vla.critical_state_analysis \
