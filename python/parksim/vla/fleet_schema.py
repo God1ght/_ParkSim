@@ -156,7 +156,7 @@ def fleet_context_for_single_vehicle(context: VLAContext) -> VLAFleetContext:
             "decision_scope": "shared_cloud_endpoint_single_vehicle_trigger",
             "controlled_automated_vehicle_count": 1,
             "human_vehicle_control": "replay_rule_random_mixed_only",
-            "sim_time_alignment": "latency is logged but does not advance simulation time",
+            "sim_time_alignment": "decision is obtained and applied at a frozen epoch before simulation advances; wall-clock latency is audit-only",
         },
         vehicle_contexts=[context],
         bev_image_path=context.bev_image_path,

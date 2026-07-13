@@ -41,7 +41,8 @@ def build_fleet_qwen_prompt(packet: Dict[str, Any]) -> str:
         "Never assign the same parking target to two automated vehicles in one fleet decision. "
         "Replay, rule-random, and mixed human vehicles are not controllable by you; treat hidden human intent as uncertainty. "
         "Optimize system-level efficiency and safety: completion, wait time, path length, near-miss risk, trajectory conflicts, and reservation conflicts. "
-        "Qwen latency is an online cost metric only and must not change simulation-time ordering.\n\n"
+        "The simulator is frozen until every returned action is applied. Wall-clock Qwen latency is audit-only, "
+        "is excluded from all performance metrics, and must not change simulation-time ordering.\n\n"
         "compact_fleet_decision_packet:\n" + packet_json
     )
 

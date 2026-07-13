@@ -13,7 +13,7 @@ PREFERRED_FIELDS = [
     "model_id", "model_revision", "fleet_protocol_version", "prompt_version", "traffic_schedule_hash",
     "completed", "objective_score", "total_time", "total_non_idle_time",
     "path_length", "idle_time", "low_speed_time", "waiting_time", "decision_count",
-    "qwen_fallback_count", "shield_rejection_count", "qwen_latency_mean",
+    "qwen_fallback_count", "shield_rejection_count",
     "selected_spot_index", "executed_spot_index", "first_action_type",
     "other_vehicle_trace_count", "min_other_distance_m", "min_ttc_s",
     "near_miss_event_count", "near_miss_time_s", "collision_proxy_event_count", "collision_proxy_time_s",
@@ -25,6 +25,9 @@ PREFERRED_FIELDS = [
     "human_rule_vehicle_count", "hidden_intent_vehicle_count", "cloud_fleet_decision_count",
     "cloud_fleet_vehicle_decision_count", "cloud_fleet_missing_vehicle_decision_count",
     "cloud_fleet_requested_vehicle_decision_count", "cloud_fleet_decision_coverage_rate",
+    "simulation_time_policy", "wall_clock_latency_in_performance_metrics", "decision_barrier_epoch_count",
+    "decision_barrier_complete_count", "decision_barrier_failure_count", "decision_barrier_ack_expected_count",
+    "decision_barrier_ack_received_count", "decision_barrier_ack_coverage_rate", "decision_barrier_sim_time_mismatch_count",
     "automated_demand_released_count", "automated_demand_service_rate", "automated_throughput_per_sim_hour",
     "system_exposure_vehicle_km", "system_exposure_vehicle_hours",
     "system_near_miss_events_per_100_vehicle_km", "system_near_miss_events_per_100_vehicle_hours",
@@ -124,7 +127,6 @@ def objective_score(metrics: Dict[str, Any]) -> float:
         + 2.0 * _safe_float(metrics.get("missing_reason_code_count"))
         + 5.0 * _safe_float(metrics.get("shield_rejection_count"))
         + 2.0 * _safe_float(metrics.get("qwen_fallback_count"))
-        + 0.05 * _safe_float(metrics.get("qwen_latency_mean"))
     )
 
 
@@ -183,7 +185,9 @@ def aggregate_by_agent(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "mean_decision_count": _mean(_safe_float(row.get("decision_count")) for row in group),
             "mean_fallback_count": _mean(_safe_float(row.get("qwen_fallback_count")) for row in group),
             "mean_shield_rejection_count": _mean(_safe_float(row.get("shield_rejection_count")) for row in group),
-            "mean_latency_s": _mean(_safe_float(row.get("qwen_latency_mean")) for row in group),
+            "mean_decision_barrier_ack_coverage": _mean(_safe_float(row.get("decision_barrier_ack_coverage_rate")) for row in group),
+            "mean_decision_barrier_failures": _mean(_safe_float(row.get("decision_barrier_failure_count")) for row in group),
+            "mean_decision_barrier_sim_time_mismatches": _mean(_safe_float(row.get("decision_barrier_sim_time_mismatch_count")) for row in group),
             "mean_min_other_distance_m": _mean_or_none(_safe_float(row.get("min_other_distance_m")) for row in group if row.get("min_other_distance_m") is not None),
             "mean_near_miss_events": _mean(_safe_float(row.get("near_miss_event_count")) for row in group),
             "mean_collision_proxy_events": _mean(_safe_float(row.get("collision_proxy_event_count")) for row in group),
@@ -216,12 +220,12 @@ def write_summary(out_dir: Path, rows: List[Dict[str, Any]]) -> None:
     lines = [
         "# ParkSim-VLA-Bench Summary",
         "",
-        "| agent | episodes | success | objective | path_m | non_idle_s | min_dist_m | near_miss | collision_proxy | unsafe_spot | decisions | latency_s |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| agent | episodes | success | objective | path_m | non_idle_s | min_dist_m | near_miss | collision_proxy | unsafe_spot | decisions | barrier_coverage | barrier_failures |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in grouped:
         lines.append(
-            "| %s | %d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |"
+            "| %s | %d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |"
             % (
                 row.get("agent_type", ""),
                 int(row.get("episodes", 0)),
@@ -234,12 +238,13 @@ def write_summary(out_dir: Path, rows: List[Dict[str, Any]]) -> None:
                 _format_metric(row.get("mean_collision_proxy_events")),
                 _format_metric(row.get("mean_unsafe_occupancy_actions")),
                 _format_metric(row.get("mean_decision_count")),
-                _format_metric(row.get("mean_latency_s")),
+                _format_metric(row.get("mean_decision_barrier_ack_coverage")),
+                _format_metric(row.get("mean_decision_barrier_failures")),
             )
         )
     lines.extend([
         "",
-        "Objective score is lower-is-better: path/time cost plus incomplete, near-miss, collision-proxy, unsafe-spot, malformed, shield, fallback, and latency penalties.",
+        "Objective score is lower-is-better: path/time cost plus incomplete, near-miss, collision-proxy, unsafe-spot, malformed, shield, and fallback penalties. Qwen wall-clock latency is excluded.",
         "Use `metrics.csv` for statistical tests and `preference_dataset.jsonl` for Qwen policy optimization data.",
         "Use `validation.json` and `manifest.json` to verify artifact completeness before including a run in paper tables.",
     ])

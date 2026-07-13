@@ -17,7 +17,7 @@ import json
 from dlp.dataset import Dataset
 from dlp.visualizer import Visualizer as DlpVisualizer
 
-from std_msgs.msg import Int16MultiArray, Bool, Float32
+from std_msgs.msg import Int16MultiArray, Bool, Float32, String
 from parksim.msg import VehicleStateMsg
 from parksim.srv import OccupancySrv
 from parksim.base_node import MPClabNode, parksim_path
@@ -239,6 +239,7 @@ class SimulatorNode(MPClabNode):
         self.sim_is_running = True
         self.fleet_paused = False
         self.fleet_pause_sub = self.create_subscription(Bool, '/vla/fleet_pause', self.fleet_pause_cb, 10)
+        self.fleet_pause_ack_pub = self.create_publisher(String, '/vla/fleet_pause_ack', 10)
 
         self.occupancy_pub = self.create_publisher(Int16MultiArray, 'occupancy', 10)
 
@@ -251,6 +252,13 @@ class SimulatorNode(MPClabNode):
 
     def fleet_pause_cb(self, msg: Bool):
         self.fleet_paused = bool(msg.data)
+        ack = String()
+        ack.data = json.dumps({
+            'run_id': str(self.fleet_run_id),
+            'paused': bool(self.fleet_paused),
+            'sim_time': float(self.sim_time),
+        })
+        self.fleet_pause_ack_pub.publish(ack)
 
     def occupancy_srv_callback(self, request, response):
         vehicle_id = request.vehicle_id

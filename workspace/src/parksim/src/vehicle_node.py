@@ -132,6 +132,7 @@ class VehicleNode(MPClabNode):
         self._fleet_mode_active = False
         self.fleet_registry_pub = self.create_publisher(String, '/vla/fleet_registry', 10)
         self.fleet_context_pub = self.create_publisher(String, '/vla/fleet_context', 10)
+        self.fleet_decision_ack_pub = self.create_publisher(String, '/vla/fleet_decision_ack', 10)
         self.sim_time_sub = self.create_subscription(Float32, '/sim_time', self.sim_time_cb, 10)
         self.fleet_pause_sub = self.create_subscription(Bool, '/vla/fleet_pause', self.fleet_pause_cb, 10)
         self.fleet_epoch_sub = self.create_subscription(String, '/vla/fleet_epoch', self.fleet_epoch_cb, 10)
@@ -511,10 +512,30 @@ class VehicleNode(MPClabNode):
         run_id = str(payload.get('run_id', ''))
         if run_id and self.fleet_run_id and run_id != str(self.fleet_run_id):
             return
-        for decision in payload.get('fleet_decisions', []) or []:
-            if int(decision.get('vehicle_id', -1)) == int(self.vehicle_id):
-                self.vehicle.apply_fleet_epoch_decision(epoch_id, decision, sim_time)
-                break
+        decision = next((
+            item for item in payload.get('fleet_decisions', []) or []
+            if int(item.get('vehicle_id', -1)) == int(self.vehicle_id)
+        ), None)
+        if decision is None:
+            return
+        applied = False
+        error = ''
+        try:
+            applied = bool(self.vehicle.apply_fleet_epoch_decision(epoch_id, decision, sim_time))
+        except Exception as exc:
+            error = '%s: %s' % (type(exc).__name__, exc)
+        ack = String()
+        ack.data = json.dumps({
+            'run_id': str(self.fleet_run_id),
+            'epoch_id': int(epoch_id),
+            'vehicle_id': int(self.vehicle_id),
+            'decision_sim_time': float(sim_time),
+            'vehicle_sim_time': float(self.sim_time),
+            'action_id': str(decision.get('action_id', '')),
+            'applied': bool(applied),
+            'error': error,
+        })
+        self.fleet_decision_ack_pub.publish(ack)
 
     def vehicle_state_cb(self, vehicle_id):
         def callback(msg):

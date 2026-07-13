@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """ROS transport for synchronized ParkSim cloud-fleet VLA epochs."""
 import json
+import math
 import os
 import time
 
@@ -24,10 +25,12 @@ class FleetCoordinatorNode(Node):
         self.declare_parameter("run_id", "")
         self.declare_parameter("decision_log_path", "")
         self.declare_parameter("policy_mode", "direct")
+        self.declare_parameter("decision_ack_timeout", 10.0)
 
         self.run_id = str(self.get_parameter("run_id").value)
         self.batch_timeout = float(self.get_parameter("batch_timeout").value)
         self.policy_mode = str(self.get_parameter("policy_mode").value or "direct")
+        self.decision_ack_timeout = max(0.1, float(self.get_parameter("decision_ack_timeout").value))
         self.client = QwenFleetPolicyClient(
             endpoint=str(self.get_parameter("qwen_endpoint").value),
             model=str(self.get_parameter("qwen_model").value),
@@ -40,6 +43,13 @@ class FleetCoordinatorNode(Node):
         )
         self.shield = VLAFleetSafetyShield()
         self.sim_time = None
+        self.pause_requested = False
+        self.pause_requested_sim_time = None
+        self.pause_ack_payload = None
+        self.pending_decision_payload = None
+        self.decision_ack_payloads = {}
+        self.decision_published_wall_time = None
+        self.barrier_terminal_failure = False
 
         self.pause_pub = self.create_publisher(Bool, "/vla/fleet_pause", 10)
         self.epoch_pub = self.create_publisher(String, "/vla/fleet_epoch", 10)
@@ -47,6 +57,8 @@ class FleetCoordinatorNode(Node):
         self.create_subscription(Float32, "/sim_time", self._sim_time_cb, 10)
         self.create_subscription(String, "/vla/fleet_registry", self._registry_cb, 10)
         self.create_subscription(String, "/vla/fleet_context", self._context_cb, 10)
+        self.create_subscription(String, "/vla/fleet_pause_ack", self._pause_ack_cb, 10)
+        self.create_subscription(String, "/vla/fleet_decision_ack", self._decision_ack_cb, 10)
         self.timer = self.create_timer(0.05, self._timer_cb)
         self.get_logger().info("Fleet coordinator initialized run_id=%s" % self.run_id)
 
@@ -86,6 +98,95 @@ class FleetCoordinatorNode(Node):
         message.data = bool(paused)
         self.pause_pub.publish(message)
 
+    def _pause_ack_cb(self, msg):
+        if not self.pause_requested or self.coordinator.active_epoch is not None:
+            return
+        try:
+            payload = json.loads(msg.data)
+            ack_time = float(payload.get("sim_time"))
+        except (TypeError, ValueError):
+            return
+        if not isinstance(payload, dict) or not self._same_run(payload) or not bool(payload.get("paused")):
+            return
+        requested_time = float(self.pause_requested_sim_time or 0.0)
+        if ack_time + 1e-9 < requested_time:
+            return
+        self.pause_ack_payload = payload
+
+    def _decision_ack_cb(self, msg):
+        pending = self.pending_decision_payload
+        if pending is None:
+            return
+        try:
+            payload = json.loads(msg.data)
+            epoch_id = int(payload.get("epoch_id"))
+            vehicle_id = int(payload.get("vehicle_id"))
+        except (TypeError, ValueError):
+            return
+        if not isinstance(payload, dict) or not self._same_run(payload):
+            return
+        if epoch_id != int(pending.get("epoch_id", -1)):
+            return
+        expected = {int(item.get("vehicle_id")) for item in pending.get("fleet_decisions", [])}
+        if vehicle_id in expected:
+            decision_sim_time = float(pending.get("sim_time", 0.0))
+            try:
+                ack_decision_time = float(payload.get("decision_sim_time"))
+                vehicle_sim_time = float(payload.get("vehicle_sim_time"))
+            except (TypeError, ValueError):
+                ack_decision_time = float("nan")
+                vehicle_sim_time = float("nan")
+            if (
+                not math.isfinite(ack_decision_time)
+                or not math.isfinite(vehicle_sim_time)
+                or abs(ack_decision_time - decision_sim_time) > 1e-6
+                or abs(vehicle_sim_time - decision_sim_time) > 1e-6
+            ):
+                payload["applied"] = False
+                payload["error"] = "decision acknowledgement violated frozen simulation-time barrier"
+            self.decision_ack_payloads[vehicle_id] = payload
+
+    def _finish_decision_barrier(self, now):
+        payload = self.pending_decision_payload
+        expected = sorted(int(item.get("vehicle_id")) for item in payload.get("fleet_decisions", []))
+        received = sorted(self.decision_ack_payloads)
+        payload["decision_ack_expected_vehicle_ids"] = expected
+        payload["decision_ack_received_vehicle_ids"] = received
+        payload["decision_acknowledgements"] = [self.decision_ack_payloads[item] for item in received]
+        payload["decision_ack_failed_vehicle_ids"] = sorted(
+            vehicle_id for vehicle_id, ack in self.decision_ack_payloads.items() if not bool(ack.get("applied"))
+        )
+        payload["decision_apply_wait_seconds"] = float(now - float(self.decision_published_wall_time or now))
+        payload["decision_barrier_status"] = "applied" if expected else "no_action_required"
+        payload["simulation_time_policy"] = "decision_then_advance"
+        payload["wall_clock_latency_in_performance_metrics"] = False
+        self._append_log(payload)
+        self._publish_pause(False)
+        self.pause_requested = False
+        self.pause_requested_sim_time = None
+        self.pause_ack_payload = None
+        self.pending_decision_payload = None
+        self.decision_ack_payloads = {}
+        self.decision_published_wall_time = None
+
+    def _fail_decision_barrier(self, now, status):
+        payload = self.pending_decision_payload
+        expected = sorted(int(item.get("vehicle_id")) for item in payload.get("fleet_decisions", []))
+        received = sorted(self.decision_ack_payloads)
+        payload["decision_ack_expected_vehicle_ids"] = expected
+        payload["decision_ack_received_vehicle_ids"] = received
+        payload["decision_acknowledgements"] = [self.decision_ack_payloads[item] for item in received]
+        payload["decision_ack_failed_vehicle_ids"] = sorted(
+            vehicle_id for vehicle_id, ack in self.decision_ack_payloads.items() if not bool(ack.get("applied"))
+        )
+        payload["decision_apply_wait_seconds"] = float(now - float(self.decision_published_wall_time or now))
+        payload["decision_barrier_status"] = str(status)
+        payload["simulation_time_policy"] = "decision_then_advance"
+        payload["wall_clock_latency_in_performance_metrics"] = False
+        self._append_log(payload)
+        self.barrier_terminal_failure = True
+        self.get_logger().error("Fleet decision barrier failed: %s; simulator remains paused" % status)
+
     def _append_log(self, payload):
         directory = os.path.dirname(self.decision_log_path)
         if directory:
@@ -97,12 +198,39 @@ class FleetCoordinatorNode(Node):
         if self.sim_time is None:
             return
         now = time.monotonic()
+        if self.barrier_terminal_failure:
+            return
+        if self.pending_decision_payload is not None:
+            expected = {
+                int(item.get("vehicle_id"))
+                for item in self.pending_decision_payload.get("fleet_decisions", [])
+            }
+            failed = {
+                vehicle_id for vehicle_id, ack in self.decision_ack_payloads.items()
+                if not bool(ack.get("applied"))
+            }
+            if failed:
+                self._fail_decision_barrier(now, "decision_apply_failed")
+            elif expected.issubset(self.decision_ack_payloads):
+                self._finish_decision_barrier(now)
+            elif now - float(self.decision_published_wall_time or now) >= self.decision_ack_timeout:
+                self._fail_decision_barrier(now, "decision_ack_timeout")
+            return
         active = self.coordinator.active_epoch
         if active is None:
-            epoch = self.coordinator.start(self.sim_time, now)
+            if not self.coordinator.should_start(self.sim_time):
+                return
+            if not self.pause_requested:
+                self.pause_requested = True
+                self.pause_requested_sim_time = float(self.sim_time)
+                self.pause_ack_payload = None
+                self._publish_pause(True)
+                return
+            if self.pause_ack_payload is None:
+                return
+            epoch = self.coordinator.start(float(self.pause_ack_payload["sim_time"]), now)
             if epoch is None:
                 return
-            self._publish_pause(True)
             message = String()
             message.data = json.dumps({
                 "run_id": self.run_id,
@@ -124,11 +252,17 @@ class FleetCoordinatorNode(Node):
         )
         payload["latency_seconds"] = float(time.monotonic() - started)
         payload["batch_wait_seconds"] = float(started - active.started_wall_time)
-        self._append_log(payload)
+        payload["pause_ack_sim_time"] = float((self.pause_ack_payload or {}).get("sim_time", active.sim_time))
+        payload["simulation_time_policy"] = "decision_then_advance"
+        payload["wall_clock_latency_in_performance_metrics"] = False
         message = String()
         message.data = json.dumps(payload)
+        self.pending_decision_payload = payload
+        self.decision_ack_payloads = {}
+        self.decision_published_wall_time = time.monotonic()
         self.decisions_pub.publish(message)
-        self._publish_pause(False)
+        if not payload.get("fleet_decisions"):
+            self._finish_decision_barrier(time.monotonic())
 
 
 def main(args=None):

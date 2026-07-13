@@ -46,7 +46,7 @@ Set `QWEN_MODEL_ID`, `QWEN_MODEL_CACHE`, `QWEN_VLA_PORT`, `QWEN_TORCH_DTYPE`, `Q
 
 Each Qwen-controlled vehicle uses the shared cloud endpoint. The default runtime packet is `ParkSim-Qwen-VLA-Fleet-Decision-v1`, which asks Qwen to return strict JSON with `fleet_decisions`. Each item contains `vehicle_id`, `action_id`, `target_spot_index`, `priority`, `reason_code`, `reason`, and `confidence`. The older `ParkSim-Qwen-VLA-Decision-v1` single-vehicle packet is retained for compatibility and smoke tests.
 
-The fleet decision packet contains `automated_vehicle_ids`, one `automated_vehicles` entry per AV needing a high-level decision, parking-lot-level state, and optional BEV evidence. Current ROS vehicle nodes trigger requests independently, but all Qwen-VLA AVs share the same cloud service and log fleet packets. The suite runner can set scheduled entering/exiting vehicles to the evaluated agent, so `qwen_vla` means all automated entering/exiting vehicles are served by the same Qwen cloud endpoint; replay/rule vehicles remain non-Qwen human-like traffic.
+The fleet decision packet contains `automated_vehicle_ids`, one `automated_vehicles` entry per AV needing a high-level decision, parking-lot-level state, and optional BEV evidence. A centralized ROS fleet coordinator creates one synchronized epoch for all eligible AVs. It first waits for the simulator to confirm that simulation time is frozen, then collects vehicle contexts, obtains and shields the joint decision, waits for every addressed AV to confirm application at the same simulation time, and only then resumes simulation. Qwen wall-clock response time is retained only in raw JSONL for engineering audit and is excluded from traffic-performance metrics. Replay/rule vehicles remain non-Qwen human-like traffic.
 
 The required structured fields are:
 
@@ -73,7 +73,7 @@ Audit decision logs with `python -m parksim.vla.decision_audit <benchmark-or-log
 
 Use `python -m parksim.vla.paper_gate <suite-dir> --profile pilot --strict` to verify that a suite is structurally valid for pilot evidence. Use `--profile paper` to check paper-scale coverage requirements such as all baseline agents, at least three seeds, full background/density coverage, statistical report outputs, real Qwen health, and zero unsafe applied actions by the reference Qwen-VLA agent.
 
-Use `--profile trc` for Transportation Research Part C oriented evidence. This profile is CSV/JSON-first: it checks fleet efficiency, operational safety, cloud-coordination, mixed-human-traffic, online-cost metrics, real Qwen health, decision audits, video evidence, and open-science manifests. It does not require a TeX manuscript; manuscript writing should be based on the CSV/JSON analysis outputs.
+Use `--profile trc` for Transportation Research Part C oriented evidence. This profile is CSV/JSON-first: it checks fleet efficiency, operational safety, cloud coordination, mixed-human traffic, synchronous-decision integrity, real Qwen health, decision audits, video evidence, and open-science manifests. It does not treat Qwen response latency as a performance metric and does not require a TeX manuscript; manuscript writing should be based on the CSV/JSON analysis outputs.
 
 ## Policy comparison artifacts
 

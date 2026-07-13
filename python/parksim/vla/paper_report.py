@@ -46,7 +46,9 @@ DEFAULT_METRICS = [
     "missing_reason_code_count",
     "shield_rejection_count",
     "qwen_fallback_count",
-    "qwen_latency_mean",
+    "decision_barrier_ack_coverage_rate",
+    "decision_barrier_failure_count",
+    "decision_barrier_sim_time_mismatch_count",
     "trace_integrity_ok",
     "trace_integrity_invalid_file_count",
     "trace_identity_conflict_count",
@@ -68,6 +70,7 @@ HIGHER_IS_BETTER_METRICS = {
     "min_ttc_s",
     "system_min_distance_m",
     "trace_integrity_ok",
+    "decision_barrier_ack_coverage_rate",
 }
 
 STRATIFY_FIELDS = [
@@ -545,15 +548,15 @@ def write_markdown(
         "",
         "## Agent Summary",
         "",
-        "| agent | episodes | success | objective | path_m | non_idle_s | near_miss | collision_proxy | unsafe_spot | latency_s |",
+        "| agent | episodes | success | objective | path_m | non_idle_s | near_miss | collision_proxy | barrier_coverage | barrier_failures |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in summary:
         lines.append(
             "| {agent_type} | {episodes:d} | {success_rate_mean:.3f} | {objective_score_mean:.3f} +/- {objective_score_ci95:.3f} | "
             "{path_length_mean:.3f} +/- {path_length_ci95:.3f} | {total_non_idle_time_mean:.3f} +/- {total_non_idle_time_ci95:.3f} | "
-            "{near_miss_event_count_mean:.3f} | {collision_proxy_event_count_mean:.3f} | {unsafe_occupancy_action_count_mean:.3f} | "
-            "{qwen_latency_mean_mean:.3f} |".format(**_with_defaults(row))
+            "{near_miss_event_count_mean:.3f} | {collision_proxy_event_count_mean:.3f} | "
+            "{decision_barrier_ack_coverage_rate_mean:.3f} | {decision_barrier_failure_count_mean:.3f} |".format(**_with_defaults(row))
         )
     lines.extend([
         "",

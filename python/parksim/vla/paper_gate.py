@@ -110,7 +110,12 @@ REQUIRED_METRIC_COLUMNS = [
     "unsafe_occupancy_action_count",
     "shield_rejection_count",
     "qwen_fallback_count",
-    "qwen_latency_mean",
+    "decision_barrier_epoch_count",
+    "decision_barrier_ack_coverage_rate",
+    "decision_barrier_failure_count",
+    "decision_barrier_sim_time_mismatch_count",
+    "simulation_time_policy",
+    "wall_clock_latency_in_performance_metrics",
     "automated_vehicle_count",
     "cloud_served_vehicle_count",
     "human_like_vehicle_count",
@@ -129,7 +134,7 @@ TRC_METRIC_GROUPS = {
     "operational_safety": ["system_near_miss_events_per_100_vehicle_km", "system_collision_proxy_events_per_100_vehicle_km", "trajectory_conflicts_per_100_vehicle_km"],
     "cloud_coordination": ["feedback_hard_violation_reduction_rate", "feedback_route_conflict_reduction_rate", "cloud_fleet_decision_count", "shield_rejection_count", "qwen_fallback_count"],
     "mixed_human_traffic": ["human_like_vehicle_count", "replay_vehicle_count", "hidden_intent_vehicle_count"],
-    "online_cost": ["qwen_latency_mean"],
+    "synchronous_decision_integrity": ["decision_barrier_ack_coverage_rate", "decision_barrier_failure_count", "decision_barrier_sim_time_mismatch_count"],
     "data_integrity": ["trace_integrity_ok", "trace_integrity_invalid_file_count", "trace_identity_conflict_count", "trace_time_regression_count", "trace_wall_time_regression_count", "trace_kinematic_jump_count"],
 }
 
@@ -316,7 +321,7 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
     else:
         metric_columns = set()
     missing_metric_columns = sorted(set(REQUIRED_METRIC_COLUMNS) - metric_columns)
-    gate.require("required_metric_columns", not missing_metric_columns, "paper rows must include safety, efficiency, decision, and latency metrics", {"missing": missing_metric_columns})
+    gate.require("required_metric_columns", not missing_metric_columns, "paper rows must include safety, efficiency, coordination, and synchronous-decision integrity metrics", {"missing": missing_metric_columns})
     invalid_integrity_rows = [
         "%s/%s" % (row.get("scenario_id"), row.get("agent_type"))
         for row in rows
@@ -334,7 +339,7 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
             missing = [column for column in columns if column not in metric_columns]
             if missing:
                 missing_groups[group] = missing
-        gate.require("trc_csv_metric_groups", not missing_groups, "TR-C CSV-first evidence requires fleet efficiency, safety, coordination, mixed-human-traffic, and online-cost metric groups", {"missing_groups": missing_groups})
+        gate.require("trc_csv_metric_groups", not missing_groups, "TR-C CSV-first evidence requires fleet efficiency, safety, coordination, mixed-human-traffic, and synchronous-decision integrity groups", {"missing_groups": missing_groups})
 
     agents = set(repro.get("agents") or _csv_values(rows, "agent_type"))
     required_agents = set(config["required_agents"])
@@ -403,6 +408,25 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
             fleet_protocol_records += int(_safe_float(row.get("cloud_fleet_decision_count")))
             fleet_vehicle_decisions += int(_safe_float(row.get("cloud_fleet_vehicle_decision_count")))
         gate.require("cloud_fleet_decision_logs", fleet_protocol_records > 0 and fleet_vehicle_decisions > 0, "TR-C profile requires cloud fleet decision packets and fleet vehicle decisions in CSV evidence", {"cloud_fleet_decision_count": fleet_protocol_records, "cloud_fleet_vehicle_decision_count": fleet_vehicle_decisions})
+        synchronous_agents = {"qwen_vla", "mllm_direct", "mllm_self_reflect", "mllm_external_feedback", "fleet_min_cost"}
+        invalid_barrier_rows = [
+            "%s/%s" % (row.get("scenario_id"), row.get("agent_type"))
+            for row in rows
+            if row.get("agent_type") in synchronous_agents and (
+                _safe_float(row.get("decision_barrier_epoch_count")) <= 0
+                or _safe_float(row.get("decision_barrier_ack_coverage_rate")) < 1.0 - 1e-9
+                or _safe_float(row.get("decision_barrier_failure_count")) > 0
+                or _safe_float(row.get("decision_barrier_sim_time_mismatch_count")) > 0
+                or row.get("simulation_time_policy") != "decision_then_advance"
+                or _as_bool(row.get("wall_clock_latency_in_performance_metrics"))
+            )
+        ]
+        gate.require(
+            "synchronous_decision_barrier",
+            not invalid_barrier_rows,
+            "every cloud-fleet run must apply all decisions at the frozen decision time before simulation advances",
+            {"invalid_rows": invalid_barrier_rows[:50], "invalid_count": len(invalid_barrier_rows)},
+        )
     decision_audits = list(suite_dir.glob("**/decision_audit.json"))
     gate.require("decision_audit_artifacts", bool(decision_audits), "decision audit artifacts must be present", {"audit_count": len(decision_audits)})
     if bool(config.get("require_video_evidence", False)):

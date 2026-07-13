@@ -203,6 +203,19 @@ def collect_mode_metrics(experiment_dir: Path, mode: str) -> Dict[str, Any]:
     qwen_latencies = [_safe_float(row.get("latency_seconds")) for row in decisions]
     fleet_latencies = [_safe_float(row.get("latency_seconds")) for row in fleet_epochs]
     fleet_batch_waits = [_safe_float(row.get("batch_wait_seconds")) for row in fleet_epochs]
+    barrier_epochs = [row for row in fleet_epochs if row.get("decision_barrier_status")]
+    barrier_expected = sum(len(row.get("decision_ack_expected_vehicle_ids") or []) for row in barrier_epochs)
+    barrier_received = sum(len(row.get("decision_ack_received_vehicle_ids") or []) for row in barrier_epochs)
+    barrier_failures = [
+        row for row in barrier_epochs
+        if row.get("decision_barrier_status") not in ("applied", "no_action_required")
+    ]
+    barrier_time_mismatches = sum(
+        1
+        for row in barrier_epochs
+        for ack in row.get("decision_acknowledgements") or []
+        if "frozen simulation-time barrier" in str(ack.get("error", ""))
+    )
     pre_critiques = [row.get("pre_feedback_critique") or {} for row in fleet_epochs]
     post_critiques = [row.get("post_feedback_critique") or {} for row in fleet_epochs]
     belief_rows = [
@@ -249,10 +262,19 @@ def collect_mode_metrics(experiment_dir: Path, mode: str) -> Dict[str, Any]:
         "decision_count": len(decisions),
         "qwen_fallback_count": sum(1 for row in decisions if (row.get("decision") or {}).get("used_fallback")),
         "shield_rejection_count": sum(1 for row in decisions if row.get("shield_reason") != "ok"),
-        "qwen_latency_mean": _mean(qwen_latencies),
-        "qwen_latency_max": max(qwen_latencies, default=0.0),
-        "qwen_batch_wait_mean": _mean(fleet_batch_waits),
-        "qwen_batch_wait_max": max(fleet_batch_waits, default=0.0),
+        "audit_qwen_wall_latency_mean": _mean(qwen_latencies),
+        "audit_qwen_wall_latency_max": max(qwen_latencies, default=0.0),
+        "audit_fleet_batch_wall_wait_mean": _mean(fleet_batch_waits),
+        "audit_fleet_batch_wall_wait_max": max(fleet_batch_waits, default=0.0),
+        "simulation_time_policy": str(first_fleet_epoch.get("simulation_time_policy", "")),
+        "wall_clock_latency_in_performance_metrics": bool(first_fleet_epoch.get("wall_clock_latency_in_performance_metrics", False)),
+        "decision_barrier_epoch_count": len(barrier_epochs),
+        "decision_barrier_complete_count": len(barrier_epochs) - len(barrier_failures),
+        "decision_barrier_failure_count": len(barrier_failures),
+        "decision_barrier_ack_expected_count": barrier_expected,
+        "decision_barrier_ack_received_count": barrier_received,
+        "decision_barrier_ack_coverage_rate": barrier_received / barrier_expected if barrier_expected else (1.0 if barrier_epochs else 0.0),
+        "decision_barrier_sim_time_mismatch_count": barrier_time_mismatches,
         "cloud_fleet_deferred_vehicle_count": sum(len(row.get("deferred_vehicle_ids") or []) for row in fleet_epochs),
         "policy_variant": str(fleet_epochs[0].get("policy_mode", mode) if fleet_epochs else mode),
         "model_id": str(first_fleet_epoch.get("model_id", "")),
@@ -264,7 +286,7 @@ def collect_mode_metrics(experiment_dir: Path, mode: str) -> Dict[str, Any]:
         "feedback_repair_attempt_count": sum(1 for row in fleet_epochs if row.get("repair_attempted")),
         "feedback_repair_success_count": sum(1 for row in fleet_epochs if row.get("repair_success")),
         "feedback_changed_action_count": sum(int(row.get("changed_by_feedback_count", 0) or 0) for row in fleet_epochs),
-        "feedback_latency_mean": _mean(_safe_float(row.get("repair_latency_seconds")) for row in fleet_epochs if row.get("repair_attempted")),
+        "audit_feedback_wall_latency_mean": _mean(_safe_float(row.get("repair_latency_seconds")) for row in fleet_epochs if row.get("repair_attempted")),
         "pre_feedback_hard_violation_count": sum(int(row.get("hard_violation_count", 0) or 0) for row in pre_critiques),
         "post_feedback_hard_violation_count": sum(int(row.get("hard_violation_count", 0) or 0) for row in post_critiques),
         "pre_feedback_quality_warning_count": sum(int(row.get("quality_warning_count", 0) or 0) for row in pre_critiques),
@@ -317,7 +339,7 @@ def write_metrics(experiment_dir: Path, collected: Dict[str, Dict[str, Any]]) ->
         "mode", "ego_vehicle_id", "ego_is_controlled", "completed", "assigned_spot_index", "executed_spot_index", "selected_spot_index",
         "total_time", "total_non_idle_time", "path_length", "mean_speed", "max_speed",
         "idle_time", "low_speed_time", "brake_time", "waiting_time", "decision_count",
-        "qwen_fallback_count", "shield_rejection_count", "qwen_latency_mean", "qwen_latency_max", "first_action_type",
+        "qwen_fallback_count", "shield_rejection_count", "first_action_type",
         "other_vehicle_trace_count", "min_other_distance_m", "near_miss_event_count", "near_miss_time_s",
         "collision_proxy_event_count", "collision_proxy_time_s", "min_ttc_s", "unsafe_occupancy_action_count",
         "malformed_decision_count", "target_mismatch_decision_count", "missing_reason_code_count",
@@ -326,6 +348,9 @@ def write_metrics(experiment_dir: Path, collected: Dict[str, Dict[str, Any]]) ->
         "automated_vehicle_count", "cloud_served_vehicle_count", "human_like_vehicle_count", "replay_vehicle_count",
         "human_rule_vehicle_count", "hidden_intent_vehicle_count", "cloud_fleet_decision_count",
         "cloud_fleet_vehicle_decision_count", "cloud_fleet_missing_vehicle_decision_count",
+        "simulation_time_policy", "wall_clock_latency_in_performance_metrics", "decision_barrier_epoch_count",
+        "decision_barrier_complete_count", "decision_barrier_failure_count", "decision_barrier_ack_expected_count",
+        "decision_barrier_ack_received_count", "decision_barrier_ack_coverage_rate", "decision_barrier_sim_time_mismatch_count",
         "traffic_scheduled_count", "traffic_hidden_event_count",
         "traffic_spawned_count", "traffic_delayed_count", "traffic_skipped_count", "system_min_distance_m",
         "system_near_miss_event_count", "system_collision_proxy_event_count", "trajectory_conflict_event_count",
@@ -412,7 +437,8 @@ def write_summary(experiment_dir: Path, collected: Dict[str, Dict[str, Any]]) ->
         ("decision_count", "decisions"),
         ("qwen_fallback_count", "fallbacks"),
         ("shield_rejection_count", "shield_rejects"),
-        ("qwen_latency_mean", "qwen_latency_mean_s"),
+        ("decision_barrier_ack_coverage_rate", "decision_barrier_ack_coverage"),
+        ("decision_barrier_failure_count", "decision_barrier_failures"),
         ("min_other_distance_m", "min_dist_m"),
         ("near_miss_event_count", "near_miss_events"),
         ("collision_proxy_event_count", "collision_proxy_events"),
