@@ -144,6 +144,8 @@ REQUIRED_METRIC_COLUMNS = [
     "decision_barrier_sim_time_mismatch_count",
     "simulation_time_policy",
     "wall_clock_latency_in_performance_metrics",
+    "simulation_step_seconds",
+    "simulation_speedup",
     "automated_vehicle_count",
     "cloud_served_vehicle_count",
     "human_like_vehicle_count",
@@ -154,6 +156,7 @@ REQUIRED_METRIC_COLUMNS = [
     "trace_identity_conflict_count",
     "trace_time_regression_count",
     "trace_wall_time_regression_count",
+    "trace_sim_step_gap_count",
     "trace_kinematic_jump_count",
 ]
 
@@ -163,7 +166,7 @@ TRC_METRIC_GROUPS = {
     "cloud_coordination": ["feedback_hard_violation_reduction_rate", "feedback_route_conflict_reduction_rate", "cloud_fleet_decision_count", "shield_rejection_count", "qwen_fallback_count"],
     "mixed_human_traffic": ["human_like_vehicle_count", "replay_vehicle_count", "hidden_intent_vehicle_count"],
     "synchronous_decision_integrity": ["decision_barrier_ack_coverage_rate", "decision_barrier_failure_count", "decision_barrier_sim_time_mismatch_count"],
-    "data_integrity": ["trace_integrity_ok", "trace_integrity_invalid_file_count", "trace_identity_conflict_count", "trace_time_regression_count", "trace_wall_time_regression_count", "trace_kinematic_jump_count"],
+    "data_integrity": ["trace_integrity_ok", "trace_integrity_invalid_file_count", "trace_identity_conflict_count", "trace_time_regression_count", "trace_wall_time_regression_count", "trace_sim_step_gap_count", "trace_kinematic_jump_count"],
 }
 
 TRC_PRIMARY_TEST_METRICS = [
@@ -419,6 +422,31 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
         not incomplete_required_metrics,
         "required paper metrics must contain a finite value in every paired result row",
         {"incomplete_row_counts": incomplete_required_metrics},
+    )
+    simulation_steps = sorted({_safe_float(row.get("simulation_step_seconds")) for row in rows})
+    simulation_speedups = sorted({_safe_float(row.get("simulation_speedup")) for row in rows})
+    gate.require(
+        "uniform_simulation_step",
+        len(simulation_steps) == 1 and simulation_steps[0] > 0.0,
+        "all paired runs must use one positive simulator integration step",
+        {"simulation_step_seconds": simulation_steps},
+    )
+    gate.require(
+        "uniform_simulation_speedup",
+        len(simulation_speedups) == 1 and simulation_speedups[0] > 0.0,
+        "all paired runs must use one validated wall-clock acceleration factor",
+        {"simulation_speedup": simulation_speedups},
+    )
+    sim_step_gap_rows = [
+        "%s/%s" % (row.get("scenario_id"), row.get("agent_type"))
+        for row in rows
+        if _safe_float(row.get("trace_sim_step_gap_count")) > 0.0
+    ]
+    gate.require(
+        "no_simulation_step_gaps",
+        not sim_step_gap_rows,
+        "accelerated runs must not skip simulator integration steps",
+        {"invalid_rows": sim_step_gap_rows[:50], "invalid_count": len(sim_step_gap_rows)},
     )
     invalid_integrity_rows = [
         "%s/%s" % (row.get("scenario_id"), row.get("agent_type"))

@@ -190,10 +190,12 @@ def trace_integrity_metrics(traces: List[Tuple[Path, List[Dict[str, Any]]]]) -> 
     identity_conflicts = 0
     time_regressions = 0
     wall_time_regressions = 0
+    sim_step_gaps = 0
     kinematic_jumps = 0
     expected_maneuver_handoffs = 0
     invalid_files = 0
     max_step_distance = 0.0
+    max_sim_step_gap = 0.0
     for _, rows in traces:
         identities = {
             (
@@ -208,12 +210,21 @@ def trace_integrity_metrics(traces: List[Tuple[Path, List[Dict[str, Any]]]]) -> 
         file_identity_conflict = max(0, len(identities) - 1)
         file_time_regressions = 0
         file_wall_regressions = 0
+        file_sim_step_gaps = 0
         file_kinematic_jumps = 0
         file_expected_maneuver_handoffs = 0
         for prev, cur in zip(rows, rows[1:]):
             dt = _safe_float(cur.get("time")) - _safe_float(prev.get("time"))
             if dt < 0.0:
                 file_time_regressions += 1
+            expected_step = _safe_float(
+                cur.get("simulation_step_seconds"),
+                _safe_float(prev.get("simulation_step_seconds")),
+            )
+            if dt > 0.0 and expected_step > 0.0:
+                max_sim_step_gap = max(max_sim_step_gap, dt)
+                if dt > expected_step * 1.5 + 1e-9:
+                    file_sim_step_gaps += max(1, int(round(dt / expected_step)) - 1)
             if prev.get("wall_time") is not None and cur.get("wall_time") is not None:
                 if _safe_float(cur.get("wall_time")) < _safe_float(prev.get("wall_time")):
                     file_wall_regressions += 1
@@ -229,17 +240,20 @@ def trace_integrity_metrics(traces: List[Tuple[Path, List[Dict[str, Any]]]]) -> 
         identity_conflicts += file_identity_conflict
         time_regressions += file_time_regressions
         wall_time_regressions += file_wall_regressions
+        sim_step_gaps += file_sim_step_gaps
         kinematic_jumps += file_kinematic_jumps
         expected_maneuver_handoffs += file_expected_maneuver_handoffs
-        if file_identity_conflict or file_time_regressions or file_wall_regressions or file_kinematic_jumps:
+        if file_identity_conflict or file_time_regressions or file_wall_regressions or file_sim_step_gaps or file_kinematic_jumps:
             invalid_files += 1
-    ok = not (identity_conflicts or time_regressions or wall_time_regressions or kinematic_jumps)
+    ok = not (identity_conflicts or time_regressions or wall_time_regressions or sim_step_gaps or kinematic_jumps)
     return {
         "trace_integrity_ok": bool(ok),
         "trace_integrity_invalid_file_count": int(invalid_files),
         "trace_identity_conflict_count": int(identity_conflicts),
         "trace_time_regression_count": int(time_regressions),
         "trace_wall_time_regression_count": int(wall_time_regressions),
+        "trace_sim_step_gap_count": int(sim_step_gaps),
+        "trace_max_sim_step_gap_seconds": round(max_sim_step_gap, 9),
         "trace_kinematic_jump_count": int(kinematic_jumps),
         "trace_expected_maneuver_handoff_count": int(expected_maneuver_handoffs),
         "trace_max_step_distance_m": round(max_step_distance, 6),

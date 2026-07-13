@@ -73,6 +73,7 @@ class SimulatorNodeParams(NodeParamTemplate):
     def __init__(self):
         self.dlp_path = parksim_path('python', 'parksim', 'priorFiles', 'data', 'DJI_0012')
         self.timer_period = 0.1
+        self.simulation_speedup = 1.0
         self.random_seed = 0
 
         self.blocked_spots = []
@@ -157,6 +158,12 @@ class SimulatorNode(MPClabNode):
         param_template = SimulatorNodeParams()
         self.autodeclare_parameters(param_template, namespace)
         self.autoload_parameters(param_template, namespace)
+        self.timer_period = max(1e-4, float(self.timer_period))
+        self.simulation_speedup = max(1e-3, float(self.simulation_speedup))
+        self.wall_timer_period = max(1e-4, self.timer_period / self.simulation_speedup)
+        self.get_logger().info(
+            'Simulation timing: step=%.4fs speedup=%.3fx wall_period=%.4fs'
+            % (self.timer_period, self.simulation_speedup, self.wall_timer_period))
 
         np.random.seed(self.random_seed)
 
@@ -229,7 +236,7 @@ class SimulatorNode(MPClabNode):
             self.spawn_entering_time = list(np.random.exponential(self.spawn_interval_mean, self.spawn_entering))
             self.spawn_exiting_time = list(np.random.exponential(self.spawn_interval_mean, self.spawn_exiting))
 
-        self.timer = self.create_timer(self.timer_period, self.timer_callback)
+        self.timer = self.create_timer(self.wall_timer_period, self.timer_callback)
 
         # Publish the simulation time
         self.sim_time_pub = self.create_publisher(Float32, '/sim_time', 10)
@@ -314,6 +321,8 @@ class SimulatorNode(MPClabNode):
             "ros2", "launch", "parksim", "vehicle.launch.py",
             "vehicle_id:=%d" % vehicle_id,
             "spot_index:=%d" % spot_index,
+            "timer_period:=%s" % self.timer_period,
+            "simulation_speedup:=%s" % self.simulation_speedup,
             "agent_type:=%s" % agent_type,
             "is_controlled_ego:=%s" % str(bool(is_controlled_ego)).lower(),
             "vehicle_role:=%s" % vehicle_role,
@@ -386,6 +395,8 @@ class SimulatorNode(MPClabNode):
                     "ros2", "launch", "parksim", "vehicle.launch.py",
                     "vehicle_id:=%d" % vehicle_id,
                     "spot_index:=%d" % 0,
+                    "timer_period:=%s" % self.timer_period,
+                    "simulation_speedup:=%s" % self.simulation_speedup,
                     "use_existing:=1",
                     "vehicle_role:=replay_%s" % declared_operation,
                     "intent_observable:=false",
@@ -481,6 +492,9 @@ class SimulatorNode(MPClabNode):
             'traffic_rate_window_seconds': _safe_float(self.traffic_rate_window_seconds, 300.0),
             'background_mode': str(self.background_mode),
             'long_horizon_duration': _safe_float(self.long_horizon_duration, 0.0),
+            'simulation_step_seconds': float(self.timer_period),
+            'simulation_speedup': float(self.simulation_speedup),
+            'wall_timer_period_seconds': float(self.wall_timer_period),
             'spawn_entering': _safe_int(self.spawn_entering, 0),
             'spawn_exiting': _safe_int(self.spawn_exiting, 0),
             'av_spawn_entering': _safe_int(self.av_spawn_entering, 0),

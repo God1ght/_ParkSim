@@ -22,6 +22,8 @@ def generate_launch_description():
         SetEnvironmentVariable('PARKSIM_ROOT', project_root),
         DeclareLaunchArgument('vehicle_id', default_value='0'),
         DeclareLaunchArgument('spot_index', default_value='3'),
+        DeclareLaunchArgument('timer_period', default_value='0.1'),
+        DeclareLaunchArgument('simulation_speedup', default_value='1.0'),
         DeclareLaunchArgument('use_existing', default_value='0'),
         DeclareLaunchArgument('agent_type', default_value='rule_based'),
         DeclareLaunchArgument('is_controlled_ego', default_value='false'),
@@ -53,6 +55,8 @@ def generate_launch_description():
             parameters=[vehicle_params] + global_params + [{
                 'vehicle_id': LaunchConfiguration('vehicle_id'),
                 'spot_index': LaunchConfiguration('spot_index'),
+                'timer_period': LaunchConfiguration('timer_period'),
+                'simulation_speedup': LaunchConfiguration('simulation_speedup'),
                 'use_existing': LaunchConfiguration('use_existing'),
                 'agent_type': LaunchConfiguration('agent_type'),
                 'is_controlled_ego': LaunchConfiguration('is_controlled_ego'),

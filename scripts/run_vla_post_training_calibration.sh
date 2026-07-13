@@ -108,6 +108,7 @@ fi
 
 run_phase offline_smoke "$ROOT/scripts/run_vla_smoke.sh"
 run_phase ros_build "$ROOT/scripts/build_parksim_ros.sh" --symlink-install
+run_phase simulation_speedup_equivalence "$ROOT/scripts/run_vla_speedup_equivalence_smoke.sh"
 run_phase ros_synchronous_barrier_smoke "$ROOT/scripts/run_qwen_vla_ros_smoke.sh"
 wait_for_idle
 run_phase trc_3600s_calibration env \

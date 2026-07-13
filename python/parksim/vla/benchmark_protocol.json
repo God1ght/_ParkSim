@@ -28,6 +28,12 @@
     "controlled_ego_spot_index": [
       7
     ],
+    "simulation_step_seconds": [
+      0.1
+    ],
+    "simulation_speedup": [
+      5.0
+    ],
     "spawn_entering": [
       0,
       3
@@ -61,6 +67,7 @@
     "trace_identity_conflict_count",
     "trace_time_regression_count",
     "trace_wall_time_regression_count",
+    "trace_sim_step_gap_count",
     "trace_kinematic_jump_count"
   ],
   "outputs": [
@@ -107,6 +114,7 @@
     "Paper reports also export paired sign tests, Wilcoxon signed-rank normal approximations, paired effect sizes, scenario-factor stratification, and a reproducibility manifest for method replication.",
     "Use python -m parksim.vla.paper_gate to distinguish pilot-complete suites from paper-ready suites and to export actionable missing-coverage checks.",
     "Cross-vehicle safety metrics, conflict reconstruction, and visual comparisons synchronize only by simulator time; wall-clock timestamps and Qwen response latency are audit-only.",
+    "Formal accelerated runs preserve a 0.1 s simulator integration step, use one paired simulation_speedup value, and are rejected if any vehicle trace skips a simulator step.",
     "Use scripts/run_vla_paper_suite.sh for paper-scale orchestration across background modes, density levels, seeds, and agents.",
     "The suite runner delegates each condition to run_vla_benchmark.sh, validates each benchmark directory, and then calls parksim.vla.paper_report for final tables.",
     "Paper-suite replay mode skips non-empty density configs by default because replay ignores random entering/exiting spawn density.",

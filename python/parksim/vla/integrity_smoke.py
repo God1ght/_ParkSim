@@ -44,6 +44,12 @@ def main():
     jump = trace_integrity_metrics([(Path("vehicle_21_trace.jsonl"), [_row(0, 0, 21), _row(1, 20, 21)])])
     assert jump["trace_integrity_ok"] is False
     assert jump["trace_kinematic_jump_count"] == 1
+    step_rows = [_row(0.0, 0.0, 21), _row(0.2, 0.2, 21)]
+    for row in step_rows:
+        row["simulation_step_seconds"] = 0.1
+    step_gap = trace_integrity_metrics([(Path("vehicle_21_trace.jsonl"), step_rows)])
+    assert step_gap["trace_integrity_ok"] is False
+    assert step_gap["trace_sim_step_gap_count"] == 1
 
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = Path(tmp)

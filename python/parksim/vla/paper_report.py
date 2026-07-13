@@ -62,6 +62,7 @@ DEFAULT_METRICS = [
     "trace_identity_conflict_count",
     "trace_time_regression_count",
     "trace_wall_time_regression_count",
+    "trace_sim_step_gap_count",
     "trace_kinematic_jump_count",
 ]
 

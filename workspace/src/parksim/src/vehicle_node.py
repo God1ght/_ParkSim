@@ -50,6 +50,7 @@ class VehicleNodeParams(NodeParamTemplate):
     """
     def __init__(self):
         self.timer_period = 0.1
+        self.simulation_speedup = 1.0
         self.warm_start_time = 0.2
 
         self.random_seed =0
@@ -108,8 +109,6 @@ class VehicleNode(MPClabNode):
         self.autodeclare_parameters(param_template, namespace)
         self.autoload_parameters(param_template, namespace)
 
-        self.timer = self.create_timer(self.timer_period, self.timer_callback)
-
         self.declare_parameter('vehicle_id', 0)
         self.vehicle_id = self.get_parameter('vehicle_id').get_parameter_value().integer_value
 
@@ -117,6 +116,10 @@ class VehicleNode(MPClabNode):
         self.spot_index = self.get_parameter('spot_index').get_parameter_value().integer_value
 
         self._load_launch_overrides()
+        self.timer_period = max(1e-4, float(self.timer_period))
+        self.simulation_speedup = max(1e-3, float(self.simulation_speedup))
+        self.wall_timer_period = max(1e-4, self.timer_period / self.simulation_speedup)
+        self.timer = self.create_timer(self.wall_timer_period, self.timer_callback)
 
         self.get_logger().info("Spot Index: " + str(self.spot_index))
         self.get_logger().info("Agent Type: " + str(self.agent_type))
@@ -330,6 +333,8 @@ class VehicleNode(MPClabNode):
         self.use_existing_agents = _as_bool(self._get_plain_launch_parameter('use_existing_agents', self.use_existing_agents))
         self.use_existing_agents = _as_bool(self._get_plain_launch_parameter('use_existing', self.use_existing_agents))
         for name in (
+            'timer_period',
+            'simulation_speedup',
             'agent_type',
             'is_controlled_ego',
             'vehicle_role',
@@ -379,6 +384,9 @@ class VehicleNode(MPClabNode):
             "sim_time": float(sim_time),
             "time": float(sim_time),
             "wall_time": float(wall_time),
+            "simulation_step_seconds": float(self.timer_period),
+            "simulation_speedup": float(self.simulation_speedup),
+            "wall_timer_period_seconds": float(self.wall_timer_period),
             "vehicle_id": int(self.vehicle_id),
             "agent_type": str(self.agent_type),
             "is_controlled_ego": bool(self.is_controlled_ego),
@@ -424,6 +432,9 @@ class VehicleNode(MPClabNode):
             "intent_observable": bool(self.intent_observable),
             "intent_label": str(self.intent_label),
             "spawn_event_id": str(self.spawn_event_id),
+            "simulation_step_seconds": float(self.timer_period),
+            "simulation_speedup": float(self.simulation_speedup),
+            "wall_timer_period_seconds": float(self.wall_timer_period),
             "spot_index": int(self.spot_index),
             "vehicle_spot_index": int(getattr(self.vehicle, "spot_index", 0) or 0),
             "completed": completed,

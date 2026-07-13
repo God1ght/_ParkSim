@@ -37,6 +37,9 @@ def _trace_row(vehicle_id: int, agent_type: str, sim_time: float, wall_time: flo
         "sim_time": sim_time,
         "time": sim_time,
         "wall_time": wall_time,
+        "simulation_step_seconds": 1.0,
+        "simulation_speedup": 5.0,
+        "wall_timer_period_seconds": 0.2,
         "x": x,
         "y": 0.0,
         "speed": 0.2,
@@ -184,11 +187,14 @@ def main() -> None:
         baseline = _build_metric_fixture(root / "baseline", "rule_based", synchronous=False)
         qwen = _build_metric_fixture(root / "qwen", "mllm_direct", synchronous=True)
         assert baseline["simulation_time_policy"] == "not_applicable"
+        assert baseline["simulation_step_seconds"] == 1.0
+        assert baseline["simulation_speedup"] == 5.0
         assert qwen["simulation_time_policy"] == "decision_then_advance"
         assert qwen["decision_barrier_ack_coverage_rate"] == 1.0
         assert qwen["decision_barrier_failure_count"] == 0
         assert qwen["audit_qwen_wall_latency_mean"] == 999.0
         assert qwen["wall_clock_latency_in_performance_metrics"] is False
+        assert qwen["trace_sim_step_gap_count"] == 0
         _assert_sim_time_alignment(root)
 
     paper_metrics = set(DEFAULT_METRICS) | set(MARKDOWN_TEST_METRICS)

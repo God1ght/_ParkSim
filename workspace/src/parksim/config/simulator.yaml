@@ -1,6 +1,7 @@
 /simulator:
   ros__parameters:
     timer_period: 0.05
+    simulation_speedup: 1.0
 
     # Map related
     spots_data_path: "${PARKSIM_ROOT}/python/parksim/priorFiles/spots_data.pickle"

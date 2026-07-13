@@ -1,6 +1,7 @@
 /**:
   ros__parameters:
     timer_period: 0.1
+    simulation_speedup: 1.0
 
     warm_start_time: 0.3
 

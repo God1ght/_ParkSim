@@ -16,10 +16,13 @@ SIM_LOG="$LOG_DIR/parksim_qwen_vla_ros_smoke.log"
 FLEET_LOG="$LOG_DIR/parksim_qwen_vla_ros_smoke_fleet.log"
 FLEET_EPOCH_LOG="$(mktemp "$LOG_DIR/parksim_qwen_vla_ros_smoke_epochs.XXXXXX.jsonl")"
 RUN_ID="ros-smoke-$PORT"
-DECISION_LOG="$ROOT/vehicle_log/qwen_vla_decisions.jsonl"
 SPOT_INDEX="${PARKSIM_VLA_SMOKE_SPOT_INDEX:-7}"
 BACKGROUND_MODE="${PARKSIM_VLA_SMOKE_BACKGROUND_MODE:-rule_random}"
 QWEN_TIMEOUT="${PARKSIM_VLA_SMOKE_QWEN_TIMEOUT:-60.0}"
+SIMULATION_STEP="${PARKSIM_VLA_ROS_SMOKE_SIMULATION_STEP:-0.1}"
+SIMULATION_SPEEDUP="${PARKSIM_VLA_ROS_SMOKE_SIMULATION_SPEEDUP:-5.0}"
+VEHICLE_LOG_DIR="$(mktemp -d "$LOG_DIR/parksim_qwen_vla_ros_smoke_vehicle.XXXXXX")"
+DECISION_LOG="$VEHICLE_LOG_DIR/qwen_vla_decisions.jsonl"
 
 # ROS Foxy on Ubuntu 20.04 is built against the system Python 3.8.
 # Keep Conda from shadowing rclpy when this script is launched from a Conda shell.
@@ -113,6 +116,8 @@ fi
 export PYTHONPATH="$DLP_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 set +e
 timeout "$DURATION" ros2 run parksim simulator_node.py --ros-args \
+  -p timer_period:="$SIMULATION_STEP" \
+  -p simulation_speedup:="$SIMULATION_SPEEDUP" \
   -p spawn_qwen_ego:=true \
   -p qwen_ego_spawn_time:=0.5 \
   -p qwen_ego_spot_index:="$SPOT_INDEX" \
@@ -120,6 +125,7 @@ timeout "$DURATION" ros2 run parksim simulator_node.py --ros-args \
   -p qwen_timeout:="$QWEN_TIMEOUT" \
   -p fleet_coordinator_enabled:=true \
   -p fleet_run_id:="$RUN_ID" \
+  -p log_path:="$VEHICLE_LOG_DIR" \
   -p background_mode:="$BACKGROUND_MODE" \
   -p spawn_entering:=0 \
   -p spawn_exiting:=0 \
@@ -179,6 +185,35 @@ print("applied_action_type=%s" % applied.get("action_type"))
 print("sim_log=%s" % sim_log)
 print("qwen_log=%s" % qwen_log)
 PYCHECK
+
+PYTHONPATH="$ROOT/python${PYTHONPATH:+:$PYTHONPATH}" python3 - "$VEHICLE_LOG_DIR" "$SIMULATION_STEP" "$SIMULATION_SPEEDUP" <<'PYTIMING'
+import json
+import sys
+from pathlib import Path
+
+from parksim.vla.safety_metrics import collect_system_traffic_metrics
+
+log_dir = Path(sys.argv[1])
+expected_step = float(sys.argv[2])
+expected_speedup = float(sys.argv[3])
+traces = sorted(log_dir.glob("vehicle_*_trace.jsonl"))
+if not traces:
+    raise SystemExit("accelerated ROS smoke produced no vehicle traces")
+first = json.loads(next(line for line in traces[0].read_text().splitlines() if line.strip()))
+if abs(float(first.get("simulation_step_seconds", 0.0)) - expected_step) > 1e-9:
+    raise SystemExit("trace simulation step mismatch: %s" % first)
+if abs(float(first.get("simulation_speedup", 0.0)) - expected_speedup) > 1e-9:
+    raise SystemExit("trace speedup mismatch: %s" % first)
+metrics = collect_system_traffic_metrics(log_dir)
+if metrics.get("trace_sim_step_gap_count") != 0:
+    raise SystemExit("accelerated ROS smoke skipped simulator steps: %s" % metrics)
+if metrics.get("trace_integrity_ok") is not True:
+    raise SystemExit("accelerated ROS smoke failed trace integrity: %s" % metrics)
+print("parksim accelerated timing smoke ok")
+print("simulation_step_seconds=%s" % expected_step)
+print("simulation_speedup=%s" % expected_speedup)
+print("vehicle_log_dir=%s" % log_dir)
+PYTIMING
 
 python3 - "$FLEET_EPOCH_LOG" "$SIM_LOG" "$FLEET_LOG" <<'PYFLEET'
 import json
