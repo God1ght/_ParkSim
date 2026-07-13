@@ -112,6 +112,8 @@ def validate_stage(suite_dir: Path, stage: str) -> Dict[str, Any]:
     manifest = _load_json(suite_dir / "suite_manifest.json", {})
     config = _load_json(suite_dir / "suite_config.json", {})
     gate = _load_json(suite_dir / "reports" / "paper_gate" / "paper_gate.json", {})
+    qwen = manifest.get("qwen", {}) if isinstance(manifest, dict) else {}
+    qwen_health = qwen.get("health", {}) if isinstance(qwen, dict) else {}
     rows = _load_csv(_report_dir(suite_dir, manifest) / "paper_rows.csv")
     expected_agents = set(FORMAL_AGENTS)
     expected_seeds: Set[str] = spec["seeds"]
@@ -162,6 +164,9 @@ def validate_stage(suite_dir: Path, stage: str) -> Dict[str, Any]:
         "calibration_gate_passed": bool(gate.get("ok")),
         "duration_3600s": str(config.get("duration")) == "3600s",
         "real_qwen": str(config.get("qwen_mode")) == "real",
+        "real_qwen_health": bool(qwen_health.get("ok")) and not bool(qwen_health.get("mock")),
+        "qwen_model_identity": bool(str(qwen_health.get("model", "")).strip()),
+        "raw_qwen_fleet_postprocess": str(qwen_health.get("fleet_postprocess_mode", "")) == "raw",
         "reference_agent": str(config.get("reference_agent")) == "mllm_external_feedback",
         "exact_agents": actual_agents == expected_agents,
         "exact_seeds": actual_seeds == expected_seeds,
@@ -254,9 +259,19 @@ def prepare_aggregate(out_dir: Path, stage_dirs: Sequence[Path]) -> Dict[str, An
     stage_names = [row["stage"] for row in stage_records]
     stage_set_complete = len(stage_names) == len(STAGE_SPECS) and set(stage_names) == set(STAGE_SPECS)
     benchmark_dirs = _unique(row.get("benchmark_dir", "") for row in benchmark_rows)
+    model_ids = _unique(row.get("model", "") for row in health_records)
+    postprocess_modes = _unique(row.get("fleet_postprocess_mode", "") for row in health_records)
+    model_identity_consistent = len(model_ids) == 1
+    raw_postprocess_consistent = postprocess_modes == ["raw"]
     aggregate_health = {
-        "ok": bool(health_records) and all(bool(row.get("ok")) for row in health_records),
+        "ok": bool(health_records) and all(bool(row.get("ok")) for row in health_records) and model_identity_consistent and raw_postprocess_consistent,
         "mock": any(bool(row.get("mock")) for row in health_records),
+        "model": model_ids[0] if model_identity_consistent else "",
+        "model_ids": model_ids,
+        "model_identity_consistent": model_identity_consistent,
+        "fleet_postprocess_mode": "raw" if raw_postprocess_consistent else "",
+        "fleet_postprocess_modes": postprocess_modes,
+        "raw_postprocess_consistent": raw_postprocess_consistent,
         "stage_health_count": len(health_records),
         "stage_health": health_records,
     }
@@ -315,6 +330,8 @@ def prepare_aggregate(out_dir: Path, stage_dirs: Sequence[Path]) -> Dict[str, An
         "out_dir": str(out_dir.resolve()),
         "stage_count": len(stage_records),
         "stage_set_complete": stage_set_complete,
+        "model_identity_consistent": model_identity_consistent,
+        "raw_postprocess_consistent": raw_postprocess_consistent,
         "benchmark_count": len(benchmark_rows),
         "benchmark_dir_count": len(benchmark_dirs),
         "failure_count": len(failures),

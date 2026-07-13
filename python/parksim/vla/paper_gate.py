@@ -497,6 +497,14 @@ def evaluate(suite_dir: Path, report_dir: Optional[Path], profile: str, config: 
     qwen_health = qwen.get("health") if isinstance(qwen, dict) else None
     qwen_ok = bool(isinstance(qwen_health, dict) and qwen_health.get("ok"))
     gate.require("qwen_health_ok", qwen_ok, "Qwen health payload must be present and ok", {"qwen": qwen})
+    if bool(config.get("require_cloud_fleet", False)):
+        postprocess_mode = str((qwen_health or {}).get("fleet_postprocess_mode", ""))
+        gate.require(
+            "raw_qwen_fleet_postprocess",
+            postprocess_mode == "raw",
+            "cloud-fleet evidence must preserve the raw Qwen proposal before critic and shield processing",
+            {"fleet_postprocess_mode": postprocess_mode},
+        )
     qwen_decision_logs = _suite_artifacts(suite_dir, "**/qwen_vla_decisions.jsonl")
     gate.require("qwen_decision_logs", bool(qwen_decision_logs), "Qwen/baseline decision logs must be present for replayable audit", {"log_count": len(qwen_decision_logs)})
     if bool(config.get("require_cloud_fleet", False)):
