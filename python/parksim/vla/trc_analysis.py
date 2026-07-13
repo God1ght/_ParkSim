@@ -38,6 +38,7 @@ METRIC_GROUPS = {
     "fleet_efficiency": ["automated_demand_service_rate", "automated_throughput_per_sim_hour", "fleet_mean_automated_total_time", "fleet_total_automated_waiting_time", "objective_score"],
     "operational_safety": ["system_near_miss_events_per_100_vehicle_km", "system_collision_proxy_events_per_100_vehicle_km", "trajectory_conflicts_per_100_vehicle_km", "mixed_intent_conflicts_per_100_vehicle_km", "unsafe_occupancy_action_count"],
     "cloud_coordination": ["feedback_hard_violation_reduction_rate", "feedback_route_conflict_reduction_rate", "shield_rejection_count", "qwen_fallback_count", "cloud_fleet_missing_vehicle_decision_count"],
+    "cloud_invocation_budget": ["cloud_fleet_event_trigger_epoch_count", "cloud_fleet_watchdog_epoch_count", "cloud_fleet_actionable_epoch_count", "cloud_fleet_empty_epoch_count", "cloud_fleet_vehicle_decision_count"],
     "mixed_traffic_scale": ["automated_vehicle_count", "cloud_served_vehicle_count", "human_like_vehicle_count", "hidden_intent_vehicle_count"],
     "synchronous_decision_integrity": ["decision_barrier_ack_coverage_rate", "decision_barrier_failure_count", "decision_barrier_sim_time_mismatch_count"],
     "data_integrity": ["trace_integrity_ok", "trace_integrity_invalid_file_count", "trace_identity_conflict_count", "trace_time_regression_count", "trace_wall_time_regression_count", "trace_kinematic_jump_count"],

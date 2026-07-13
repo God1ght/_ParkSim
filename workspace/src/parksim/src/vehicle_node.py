@@ -130,7 +130,10 @@ class VehicleNode(MPClabNode):
         self.last_sim_time = None
         self.fleet_paused = False
         self._fleet_mode_active = False
+        self._last_fleet_trigger_reason = ''
+        self._last_fleet_trigger_sim_time = float('-inf')
         self.fleet_registry_pub = self.create_publisher(String, '/vla/fleet_registry', 10)
+        self.fleet_decision_trigger_pub = self.create_publisher(String, '/vla/fleet_decision_trigger', 10)
         self.fleet_context_pub = self.create_publisher(String, '/vla/fleet_context', 10)
         self.fleet_decision_ack_pub = self.create_publisher(String, '/vla/fleet_decision_ack', 10)
         self.sim_time_sub = self.create_subscription(Float32, '/sim_time', self.sim_time_cb, 10)
@@ -463,6 +466,20 @@ class VehicleNode(MPClabNode):
         })
         self.fleet_registry_pub.publish(message)
 
+    def _publish_fleet_decision_trigger(self, reason, sim_time):
+        if not self._fleet_mode_active:
+            return
+        message = String()
+        message.data = json.dumps({
+            'run_id': str(self.fleet_run_id),
+            'vehicle_id': int(self.vehicle_id),
+            'sim_time': float(sim_time),
+            'reason': str(reason),
+        })
+        self.fleet_decision_trigger_pub.publish(message)
+        self._last_fleet_trigger_reason = str(reason)
+        self._last_fleet_trigger_sim_time = float(sim_time)
+
     def fleet_epoch_cb(self, msg):
         if not self._fleet_mode_active:
             return
@@ -712,6 +729,20 @@ class VehicleNode(MPClabNode):
             if self.sim_is_running and not self.fleet_paused:
                 if self.start_solving:
                     self.vehicle.solve(time=sim_time)
+                if self._fleet_mode_active:
+                    reason = str(self.vehicle.fleet_decision_trigger_reason(sim_time) or '')
+                    trigger_period = max(0.1, float(getattr(self.vehicle, 'decision_period', 3.0)))
+                    trigger_due = (
+                        reason
+                        and (
+                            reason != self._last_fleet_trigger_reason
+                            or sim_time - self._last_fleet_trigger_sim_time >= trigger_period
+                        )
+                    )
+                    if trigger_due:
+                        self._publish_fleet_decision_trigger(reason, sim_time)
+                    elif not reason:
+                        self._last_fleet_trigger_reason = ''
                 self._append_trace_record(sim_time, wall_time=wall_time)
             self.last_sim_time = sim_time
         elif not self.sim_is_running and self.write_log and len(self.vehicle.logger) > 0:

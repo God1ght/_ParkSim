@@ -113,8 +113,11 @@ def main():
     coordinator = FleetEpochCoordinator(decision_period=3.0)
     coordinator.register(1)
     coordinator.register(2)
+    assert coordinator.should_start(0.0)
     epoch = coordinator.start(sim_time=3.0, wall_time=0.0)
     assert epoch is not None
+    assert epoch.trigger_type == "event"
+    assert epoch.trigger_reasons == {1: "vehicle_registered", 2: "vehicle_registered"}
     assert coordinator.accept_context({"epoch_id": epoch.epoch_id, "vehicle_id": 1, "context": left.to_dict()})
     assert coordinator.accept_context({"epoch_id": epoch.epoch_id, "vehicle_id": 2, "context": right.to_dict()})
     coordinated = coordinator.finalize(ScriptedRepairClient(), policy_mode="external_feedback")
@@ -123,6 +126,13 @@ def main():
     humans = coordinated["fleet_context"]["state"]["observable_human_vehicle_states"]
     assert [row["vehicle_id"] for row in humans] == [90], humans
     assert coordinated["fleet_context"]["state"]["human_information_boundary"]["target_spot_observable"] is False
+    assert not coordinator.should_start(4.0)
+    assert coordinator.request_epoch(1, "idle_task_boundary")
+    assert coordinator.should_start(4.0)
+    triggered = coordinator.start(sim_time=4.0, wall_time=1.0)
+    assert triggered is not None
+    assert triggered.trigger_type == "event"
+    assert triggered.trigger_reasons == {1: "idle_task_boundary"}
 
     from parksim.vla.intent_belief import HumanIntentBeliefTracker
     tracker = HumanIntentBeliefTracker()

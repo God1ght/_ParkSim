@@ -55,6 +55,8 @@ class FleetEpoch:
     sim_time: float
     expected_vehicle_ids: List[int]
     started_wall_time: float
+    trigger_type: str
+    trigger_reasons: Dict[int, str]
     contexts: Dict[int, VLAContext] = field(default_factory=dict)
     deferred_vehicle_ids: Set[int] = field(default_factory=set)
     deferred_reasons: Dict[int, str] = field(default_factory=dict)
@@ -76,16 +78,21 @@ class FleetEpochCoordinator:
         self.next_epoch_sim_time = 0.0
         self.epoch_counter = 0
         self.active_epoch: Optional[FleetEpoch] = None
+        self.pending_trigger_reasons: Dict[int, str] = {}
         self.critic = FleetDecisionCritic()
         self.human_belief_tracker = HumanIntentBeliefTracker()
         self.previous_outcome_summary: Dict[str, Any] = {}
 
     def register(self, vehicle_id: int) -> None:
-        self.registered_vehicle_ids.add(int(vehicle_id))
+        vehicle_id = int(vehicle_id)
+        if vehicle_id not in self.registered_vehicle_ids:
+            self.registered_vehicle_ids.add(vehicle_id)
+            self.pending_trigger_reasons[vehicle_id] = "vehicle_registered"
 
     def unregister(self, vehicle_id: int) -> None:
         vehicle_id = int(vehicle_id)
         self.registered_vehicle_ids.discard(vehicle_id)
+        self.pending_trigger_reasons.pop(vehicle_id, None)
         if self.active_epoch is not None:
             self.active_epoch.expected_vehicle_ids = [
                 item for item in self.active_epoch.expected_vehicle_ids if item != vehicle_id
@@ -93,23 +100,41 @@ class FleetEpochCoordinator:
             self.active_epoch.contexts.pop(vehicle_id, None)
             self.active_epoch.deferred_reasons.pop(vehicle_id, None)
 
+    def request_epoch(self, vehicle_id: int, reason: str) -> bool:
+        vehicle_id = int(vehicle_id)
+        if vehicle_id not in self.registered_vehicle_ids:
+            return False
+        self.pending_trigger_reasons[vehicle_id] = str(reason or "unspecified_high_level_event")
+        return True
+
     def should_start(self, sim_time: float) -> bool:
+        event_pending = bool(set(self.pending_trigger_reasons).intersection(self.registered_vehicle_ids))
         return (
             self.active_epoch is None
             and bool(self.registered_vehicle_ids)
-            and float(sim_time) + 1e-9 >= self.next_epoch_sim_time
+            and (event_pending or float(sim_time) + 1e-9 >= self.next_epoch_sim_time)
         )
 
     def start(self, sim_time: float, wall_time: float) -> Optional[FleetEpoch]:
         if not self.should_start(sim_time):
             return None
         self.epoch_counter += 1
+        expected_vehicle_ids = sorted(self.registered_vehicle_ids)
+        trigger_reasons = {
+            vehicle_id: self.pending_trigger_reasons[vehicle_id]
+            for vehicle_id in expected_vehicle_ids
+            if vehicle_id in self.pending_trigger_reasons
+        }
         self.active_epoch = FleetEpoch(
             epoch_id=self.epoch_counter,
             sim_time=float(sim_time),
-            expected_vehicle_ids=sorted(self.registered_vehicle_ids),
+            expected_vehicle_ids=expected_vehicle_ids,
             started_wall_time=float(wall_time),
+            trigger_type="event" if trigger_reasons else "watchdog",
+            trigger_reasons=trigger_reasons,
         )
+        for vehicle_id in expected_vehicle_ids:
+            self.pending_trigger_reasons.pop(vehicle_id, None)
         self.next_epoch_sim_time = float(sim_time) + self.decision_period
         return self.active_epoch
 
@@ -200,6 +225,9 @@ class FleetEpochCoordinator:
             "deferred_reasons": {str(key): value for key, value in sorted(epoch.deferred_reasons.items())},
             "decision_scope": "synchronized_fleet_epoch",
             "decision_complete": not missing_ids,
+            "trigger_type": str(epoch.trigger_type),
+            "trigger_vehicle_ids": sorted(epoch.trigger_reasons),
+            "trigger_reasons": {str(key): value for key, value in sorted(epoch.trigger_reasons.items())},
             "fleet_context": fleet_context.to_dict(),
             "fleet_bev_path": fleet_bev_path,
             "fleet_decisions": [],
@@ -290,6 +318,9 @@ class FleetEpochCoordinator:
             "sim_time": float(epoch.sim_time),
             "epoch_id": int(epoch.epoch_id),
             "registered_av_ids": list(epoch.expected_vehicle_ids),
+            "trigger_type": str(epoch.trigger_type),
+            "trigger_vehicle_ids": sorted(epoch.trigger_reasons),
+            "trigger_reasons": {str(key): value for key, value in sorted(epoch.trigger_reasons.items())},
             "context_received_av_ids": sorted(epoch.contexts),
             "context_missing_av_ids": list(missing_ids),
             "deferred_vehicle_ids": sorted(epoch.deferred_vehicle_ids),

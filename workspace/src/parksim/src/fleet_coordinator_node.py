@@ -61,6 +61,7 @@ class FleetCoordinatorNode(Node):
         self.decisions_pub = self.create_publisher(String, "/vla/fleet_decisions", 10)
         self.create_subscription(Float32, "/sim_time", self._sim_time_cb, 10)
         self.create_subscription(String, "/vla/fleet_registry", self._registry_cb, 10)
+        self.create_subscription(String, "/vla/fleet_decision_trigger", self._trigger_cb, 10)
         self.create_subscription(String, "/vla/fleet_context", self._context_cb, 10)
         self.create_subscription(String, "/vla/fleet_pause_ack", self._pause_ack_cb, 10)
         self.create_subscription(String, "/vla/fleet_decision_ack", self._decision_ack_cb, 10)
@@ -86,6 +87,19 @@ class FleetCoordinatorNode(Node):
             self.coordinator.unregister(vehicle_id)
         else:
             self.coordinator.register(vehicle_id)
+
+    def _trigger_cb(self, msg):
+        try:
+            payload = json.loads(msg.data)
+            vehicle_id = int(payload.get("vehicle_id"))
+        except (TypeError, ValueError):
+            return
+        if not isinstance(payload, dict) or not self._same_run(payload):
+            return
+        self.coordinator.request_epoch(
+            vehicle_id,
+            str(payload.get("reason", "unspecified_high_level_event")),
+        )
 
     def _context_cb(self, msg):
         try:
@@ -207,6 +221,9 @@ class FleetCoordinatorNode(Node):
                 "epoch_id": epoch.epoch_id,
                 "sim_time": epoch.sim_time,
                 "expected_vehicle_ids": epoch.expected_vehicle_ids,
+                "trigger_type": epoch.trigger_type,
+                "trigger_vehicle_ids": sorted(epoch.trigger_reasons),
+                "trigger_reasons": {str(key): value for key, value in sorted(epoch.trigger_reasons.items())},
             })
             self.epoch_pub.publish(message)
             return

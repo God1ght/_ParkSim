@@ -121,6 +121,25 @@ class QwenVLAVehicle(RuleBasedStanleyVehicle):
             return True
         return False
 
+    def fleet_decision_trigger_reason(self, sim_time: float) -> str:
+        """Return an observable high-level event that warrants a cloud epoch."""
+        if not self.fleet_coordinator_enabled or self.is_all_done():
+            return ""
+        if not occupancy_ready(self):
+            return ""
+        task = str(self.current_task or "").upper()
+        elapsed = float(sim_time) - float(self._last_vla_decision_time)
+        if task in ("", "NONE"):
+            return "initial_task_selection"
+        if task == "IDLE" and elapsed >= max(0.1, self.decision_period):
+            return "idle_task_boundary"
+        if (
+            task in ("UNPARK", "CRUISE", "PARK")
+            and self._active_maneuver_replan_due(sim_time)
+        ):
+            return "stalled_or_yielding_replan"
+        return ""
+
     def _hold_for_world_state(self) -> None:
         if self.current_task == "IDLE" and self.idle_duration is not None:
             return

@@ -25,6 +25,8 @@ PREFERRED_FIELDS = [
     "human_rule_vehicle_count", "hidden_intent_vehicle_count", "cloud_fleet_decision_count",
     "cloud_fleet_vehicle_decision_count", "cloud_fleet_missing_vehicle_decision_count",
     "cloud_fleet_requested_vehicle_decision_count", "cloud_fleet_decision_coverage_rate",
+    "cloud_fleet_event_trigger_epoch_count", "cloud_fleet_watchdog_epoch_count",
+    "cloud_fleet_actionable_epoch_count", "cloud_fleet_empty_epoch_count",
     "simulation_time_policy", "wall_clock_latency_in_performance_metrics", "decision_barrier_epoch_count",
     "decision_barrier_complete_count", "decision_barrier_failure_count", "decision_barrier_ack_expected_count",
     "decision_barrier_ack_received_count", "decision_barrier_ack_coverage_rate", "decision_barrier_sim_time_mismatch_count",

@@ -732,6 +732,7 @@ run_episode() {
     -p log_path:="$log_dir" \
     -p qwen_endpoint:="$qwen_endpoint_param" \
     -p qwen_timeout:="$QWEN_TIMEOUT" \
+    -p qwen_decision_period:="$FLEET_DECISION_PERIOD" \
     -p fleet_coordinator_enabled:="$fleet_enabled" \
     -p fleet_run_id:="$fleet_run_id" \
     > "$sim_log" 2>&1 &
