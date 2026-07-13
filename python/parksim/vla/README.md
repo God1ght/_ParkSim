@@ -75,6 +75,22 @@ Use `python -m parksim.vla.paper_gate <suite-dir> --profile pilot --strict` to v
 
 Use `--profile trc` for Transportation Research Part C oriented evidence. This profile is CSV/JSON-first: it checks fleet efficiency, operational safety, cloud coordination, mixed-human traffic, synchronous-decision integrity, real Qwen health, decision audits, video evidence, and open-science manifests. It does not treat Qwen response latency as a performance metric and does not require a TeX manuscript; manuscript writing should be based on the CSV/JSON analysis outputs.
 
+Fleet epochs are event-triggered by a newly registered AV, an idle high-level task boundary, or a stalled/yielding maneuver that is eligible for replanning. A simulation-time watchdog provides bounded state staleness; the TR-C protocol uses 30 s. CSV outputs distinguish event-triggered, watchdog, actionable, and empty epochs. Qwen wall-clock latency remains audit-only, while the simulator stays frozen until all addressed vehicles acknowledge applying the decision at the same simulation time.
+
+Before launching the full 630-episode matrix, run the single-seed medium-density 3600 s calibration:
+
+```bash
+./scripts/run_vla_trc_calibration.sh
+```
+
+The calibration writes only CSV/JSON/Markdown analysis artifacts. It does not edit manuscript or TeX files. On a host shared with MAPPO/MAHAN/HAN/IPPO training, queue the protected workflow instead:
+
+```bash
+nohup ./scripts/run_vla_post_training_calibration.sh > post_training_calibration.log 2>&1 &
+```
+
+The queued workflow waits for both the protected training regex and GPU compute process list to remain empty, then runs offline smoke tests, rebuilds ROS, validates the synchronous decision barrier with the mock service, and finally starts the real-Qwen 3600 s calibration. Its `status.json` and calibration output path are stored under `experiments/qwen_vla_jobs/` and `experiments/qwen_vla_paper_suite/`.
+
 ## Policy comparison artifacts
 
 Run a reproducible headless comparison between the baseline rule-based policy and the Qwen-VLA high-level policy:
