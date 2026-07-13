@@ -199,9 +199,36 @@ if len(record.get("expected_vehicle_ids", [])) != len(record.get("collected_vehi
     raise SystemExit("fleet epoch is not a complete batch")
 if not record.get("fleet_decisions"):
     raise SystemExit("centralized fleet epoch has no decisions")
+if record.get("simulation_time_policy") != "decision_then_advance":
+    raise SystemExit("fleet epoch does not use decision_then_advance semantics")
+if record.get("wall_clock_latency_in_performance_metrics") is not False:
+    raise SystemExit("wall-clock latency must be excluded from performance metrics")
+if record.get("decision_barrier_status") not in ("applied", "no_action_required"):
+    raise SystemExit("fleet decision barrier did not complete: %s" % record.get("decision_barrier_status"))
+expected_ack = {int(value) for value in record.get("decision_ack_expected_vehicle_ids", [])}
+received_ack = {int(value) for value in record.get("decision_ack_received_vehicle_ids", [])}
+if not expected_ack or expected_ack != received_ack:
+    raise SystemExit("fleet decision ACK coverage mismatch: expected=%s received=%s" % (
+        sorted(expected_ack), sorted(received_ack)))
+if abs(float(record.get("decision_ack_coverage_rate", 0.0)) - 1.0) > 1e-9:
+    raise SystemExit("fleet decision ACK coverage is not 100%")
+if record.get("decision_ack_failed_vehicle_ids"):
+    raise SystemExit("fleet decision ACK contains failed vehicles: %s" % record["decision_ack_failed_vehicle_ids"])
+frozen_time = float(record.get("sim_time"))
+acknowledgements = record.get("decision_acknowledgements") or []
+if len(acknowledgements) != len(expected_ack):
+    raise SystemExit("fleet decision ACK payload count mismatch")
+for ack in acknowledgements:
+    if not ack.get("applied"):
+        raise SystemExit("fleet decision was not applied: %s" % ack)
+    if abs(float(ack.get("decision_sim_time")) - frozen_time) > 1e-6:
+        raise SystemExit("decision ACK is not aligned with frozen simulation time: %s" % ack)
+    if abs(float(ack.get("vehicle_sim_time")) - frozen_time) > 1e-6:
+        raise SystemExit("vehicle advanced while Qwen decision was pending: %s" % ack)
 print("parksim centralized fleet epoch smoke ok")
 print("fleet_epoch_id=%s" % record.get("epoch_id"))
 print("fleet_sim_time=%s" % record.get("sim_time"))
+print("fleet_decision_ack_coverage=%s" % record.get("decision_ack_coverage_rate"))
 print("fleet_log=%s" % fleet_log)
 print("sim_log=%s" % sim_log)
 PYFLEET
