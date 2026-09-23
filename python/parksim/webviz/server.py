@@ -78,7 +78,7 @@ import numpy as np
 import yaml
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Bool, Float32, Int16, Int16MultiArray
+from std_msgs.msg import Bool, Float32, Int16, Int16MultiArray, String
 from aiohttp import web, WSMsgType
 import io as _pio
 from PIL import Image as _PILImage, ImageOps as _PILOps
@@ -98,6 +98,121 @@ DEFAULT_COLORS = {
 
 STATE_MSG = get_message('parksim/msg/VehicleStateMsg')
 INFO_MSG = get_message('parksim/msg/VehicleInfoMsg')
+
+
+# --------------------------------------------------------------------------
+# 运行状态机（stopped / starting / running / finished）——模块级单一事实来源
+# --------------------------------------------------------------------------
+
+class SimStateTracker(object):
+    """仿真运行状态机。
+
+    状态语义：
+      stopped   —— 无仿真进程（未启动 / 已停止 / 意外退出）
+      starting  —— restart/启动已触发，等待首帧 sim_time 前进
+                   （restart 期间前端沿用现有 'restarting' 广播，视同 starting）
+      running   —— 启动后收到 sim_time 前进的帧
+      finished  —— running 且「spawn 两队列余量均为 0 且当前帧车辆数为 0」
+                   持续 30 秒（只报一次；新车辆出现或 restart 重置）。
+                   从未收到 /webviz/spawn_status 时退化为
+                   「已进入过 running 且车辆数为 0 持续 30 秒」。
+
+    线程安全：ROS spin 线程（帧/spawn 回调）、aiohttp 事件循环（watchdog）、
+    WS 处理线程（stop/restart）都会访问，内部用一把锁保护。
+    note_frame() 返回**待广播事件列表**，由调用方（事件循环内）负责广播。
+    """
+
+    FINISH_GRACE_S = 30.0  # 零车 + 队列空 持续时长阈值
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.state = 'stopped'
+        self.spawn = None            # {'entering_remaining':int,'exiting_remaining':int} 或 None
+        self._last_t = None          # starting 期间已见帧的 sim_time（用于判定“前进”）
+        self._ever_running = False   # 本轮是否进入过 running（finished 退化判定用）
+        self._zero_since = None      # 进入「零车 + 队列空」条件的起始墙钟时刻
+
+    # ---------- 外部事件 ----------
+    def set_starting(self):
+        """启动/restart 已触发（广播 'restarting' 由现有路径负责）。"""
+        with self._lock:
+            self.state = 'starting'
+            self.spawn = None   # 上一轮 spawn 余量失效；新仿真的 spawn_status 会重建
+            self._last_t = None
+            self._ever_running = False
+            self._zero_since = None
+
+    def set_stopped(self):
+        """stop 完成 / restart 失败 / 仿真意外退出。"""
+        with self._lock:
+            self.state = 'stopped'
+            self.spawn = None   # 上一轮 spawn 余量随仿真停止失效；下轮由新话题消息重建
+            self._last_t = None
+            self._ever_running = False
+            self._zero_since = None
+
+    def note_spawn(self, entering_remaining, exiting_remaining):
+        """缓存最新 /webviz/spawn_status（随 init 下发为 spawn 字段）。"""
+        try:
+            entry = {'entering_remaining': int(entering_remaining),
+                     'exiting_remaining': int(exiting_remaining)}
+        except (TypeError, ValueError):
+            return
+        with self._lock:
+            self.spawn = entry
+
+    def snapshot(self):
+        """(state, spawn) —— 供 init 载荷使用。"""
+        with self._lock:
+            return self.state, (dict(self.spawn) if self.spawn is not None else None)
+
+    # ---------- 帧驱动的状态迁移 ----------
+    def _queues_empty_locked(self):
+        """spawn 余量均为 0；从未收到 spawn_status 时退化为「视为空」。"""
+        if self.spawn is None:
+            return True
+        return (self.spawn.get('entering_remaining') == 0
+                and self.spawn.get('exiting_remaining') == 0)
+
+    def note_frame(self, sim_t, n_vehicles, now=None):
+        """每收到一帧调用（watchdog 轮询）。返回待广播事件列表。"""
+        if now is None:
+            now = time.time()
+        events = []
+        with self._lock:
+            if self.state == 'starting':
+                # 首帧仅记录基准；sim_time 相对上一帧前进 → running
+                if self._last_t is None:
+                    self._last_t = sim_t
+                elif sim_t != self._last_t:
+                    self._last_t = sim_t
+                    self.state = 'running'
+                    self._ever_running = True
+                    self._zero_since = None
+                    events.append({'type': 'status', 'value': 'running'})
+            elif self.state in ('running', 'finished'):
+                self._last_t = sim_t
+                if n_vehicles > 0:
+                    # 新车辆出现：finished 闩锁重置，回到 running
+                    self._zero_since = None
+                    if self.state == 'finished':
+                        self.state = 'running'
+                        events.append({'type': 'status', 'value': 'running'})
+                elif self._ever_running and self._queues_empty_locked():
+                    if self._zero_since is None:
+                        self._zero_since = now
+                    elif (now - self._zero_since) >= self.FINISH_GRACE_S \
+                            and self.state != 'finished':
+                        self.state = 'finished'
+                        events.append({'type': 'status', 'value': 'finished'})
+                else:
+                    self._zero_since = None
+            # stopped：忽略帧（桥进程常驻，仿真停止后仍在出帧）
+        return events
+
+
+# 模块级单一事实来源
+sim_state_tracker = SimStateTracker()
 
 
 # --------------------------------------------------------------------------
@@ -136,6 +251,9 @@ class BridgeNode(Node):
         self.create_subscription(Float32, '/sim_time', self._sim_time_cb, 10)
         self.create_subscription(Int16MultiArray, '/occupancy', self._occupancy_cb, 10)
         self.create_subscription(Int16MultiArray, '/departing_spots', self._departing_cb, 10)
+        # 生成队列余量（simulator_node 以 1 Hz 发布 JSON：
+        # {"entering_remaining":int,"exiting_remaining":int}），供 finished 判定与 init 下发
+        self.create_subscription(String, '/webviz/spawn_status', self._spawn_status_cb, 10)
         self.status_pub = self.create_publisher(Bool, '/sim_status', 10) if control else None
 
         self._ghosts = []
@@ -169,6 +287,15 @@ class BridgeNode(Node):
             if data != self.shared.get('departing'):
                 self.shared['departing'] = data
                 self.shared['departing_seq'] = self.shared.get('departing_seq', 0) + 1
+
+    def _spawn_status_cb(self, msg):
+        """生成队列余量更新（std_msgs/String，JSON）。"""
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            return
+        sim_state_tracker.note_spawn(data.get('entering_remaining'),
+                                     data.get('exiting_remaining'))
 
     def _state_cb(self, vid):
         def cb(msg):
@@ -1735,7 +1862,12 @@ def create_app(shared, node):
         ws = web.WebSocketResponse(max_msg_size=2 ** 22, heartbeat=30)
         await ws.prepare(request)
         init = shared['init']
-        await ws.send_str(json.dumps(init, separators=(',', ':')))
+        # 新连接同步运行状态机快照：sim_state / spawn（spawn 从未收到时为 null）
+        _state, _spawn = sim_state_tracker.snapshot()
+        init_payload = dict(init)
+        init_payload['sim_state'] = _state
+        init_payload['spawn'] = _spawn
+        await ws.send_str(json.dumps(init_payload, separators=(',', ':')))
         # 连接时同步当前仿真状态（未启动→idle；已退出→sim_dead）
         sm = shared.get('sim_manager')
         if sm is not None:
@@ -1819,6 +1951,7 @@ def create_app(shared, node):
                             sim_manager = shared.get('sim_manager')
                             if sim_manager is not None:
                                 sim_manager.stop()
+                            sim_state_tracker.set_stopped()
                             node.clear_vehicles()
                             _reload_scene(map_name, loop2)
                             asyncio.run_coroutine_threadsafe(broadcast({
@@ -1860,7 +1993,9 @@ def create_app(shared, node):
                             shared['opts']['current'] = SimManager._clean(config)
                             asyncio.run_coroutine_threadsafe(broadcast({
                                 'type': 'status', 'value': 'restarting',
-                                'config': dict(sim_manager.config)}), loop)
+                                'config': SimManager._clean(config)}), loop)
+                            # restart 期间沿用 'restarting' 广播，状态机视同 starting
+                            sim_state_tracker.set_starting()
                             node.clear_vehicles()
                             if req_map and req_map != loaded_map:
                                 _reload_scene(req_map, loop)
@@ -1869,6 +2004,7 @@ def create_app(shared, node):
                                 'type': 'status', 'value': 'started',
                                 'config': dict(sim_manager.config), 'paused': False}), loop)
                         except Exception as exc:
+                            sim_state_tracker.set_stopped()
                             asyncio.run_coroutine_threadsafe(broadcast({
                                 'type': 'status', 'value': 'error',
                                 'message': str(exc)}), loop)
@@ -1876,6 +2012,55 @@ def create_app(shared, node):
                             sim_manager.busy = False
 
                     threading.Thread(target=_restart_worker, daemon=True).start()
+                elif mtype == 'stop':
+                    sim_manager = shared.get('sim_manager')
+                    if sim_manager is None or not node.control:
+                        await ws.send_str(json.dumps(
+                            {'type': 'stop_failed', 'message': '只读模式'},
+                            separators=(',', ':')))
+                        continue
+                    if sim_manager.busy:
+                        await ws.send_str(json.dumps(
+                            {'type': 'stop_failed',
+                             'message': '仿真忙（启动/重启进行中），请稍后'},
+                            separators=(',', ':')))
+                        continue
+                    sim_manager.busy = True
+                    loop = asyncio.get_event_loop()
+
+                    def _stop_worker():
+                        try:
+                            # SimManager.stop() 内部持 sim.lock 做 SIGINT→SIGTERM→SIGKILL 清理
+                            sim_manager.stop()
+                            node.clear_vehicles()
+                            sim_state_tracker.set_stopped()
+
+                            async def _notify_stopped():
+                                try:
+                                    await ws.send_str(json.dumps(
+                                        {'type': 'stopped'}, separators=(',', ':')))
+                                except Exception:
+                                    pass
+                                await broadcast({'type': 'status', 'value': 'stopped'})
+
+                            asyncio.run_coroutine_threadsafe(_notify_stopped(), loop)
+                            print('[webviz] simulator stopped via WS stop request')
+                        except Exception as exc:
+                            sim_state_tracker.set_stopped()
+
+                            async def _notify_failed():
+                                try:
+                                    await ws.send_str(json.dumps(
+                                        {'type': 'stop_failed', 'message': str(exc)},
+                                        separators=(',', ':')))
+                                except Exception:
+                                    pass
+
+                            asyncio.run_coroutine_threadsafe(_notify_failed(), loop)
+                        finally:
+                            sim_manager.busy = False
+
+                    threading.Thread(target=_stop_worker, daemon=True).start()
                 elif mtype == 'ping':
                     await ws.send_str(json.dumps({'type': 'pong', 't': data.get('t')}))
         except (asyncio.CancelledError, ConnectionResetError):
@@ -1938,14 +2123,21 @@ def create_app(shared, node):
                 if proc is not None:
                     code = proc.poll()
                     if code is not None:
+                        # 仿真意外退出（非 stop/restart 触发：那两条路径先把 proc 置 None）
+                        sim_state_tracker.set_stopped()
                         if state != ('dead', code):
                             state = ('dead', code)
                             await broadcast_all(shared, {
                                 'type': 'status', 'value': 'sim_dead', 'code': code,
                                 'message': '仿真进程已退出（code %s），可点击重启恢复' % code})
+                            await broadcast_all(shared, {'type': 'status', 'value': 'stopped'})
                         continue
                 frame = shared.get('frame')
                 if frame is not None:
+                    # 运行状态机的帧驱动迁移（starting→running→finished）
+                    for ev in sim_state_tracker.note_frame(
+                            frame.get('t'), len(frame.get('vehicles') or [])):
+                        await broadcast_all(shared, ev)
                     t = frame.get('t')
                     if t != last_t:
                         last_t = t
@@ -2107,6 +2299,7 @@ def main(argv=None):
         sim_manager = SimManager(root, initial=initial_config)
         shared['sim_manager'] = sim_manager
         if getattr(args, 'auto_start', False):
+            sim_state_tracker.set_starting()
             sim_manager.start()
         else:
             print('[webviz] 底图模式：仅加载底图；仿真由网页「开启仿真」按钮启动'

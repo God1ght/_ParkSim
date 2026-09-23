@@ -24,6 +24,7 @@
     <div class="chip"><span class="chip-label">FPS</span><span class="chip-value" id="vFps">--</span></div>
     <div class="chip"><span class="chip-label">延迟</span><span class="chip-value" id="vLat">--</span></div>
     <div class="chip chip-conn" id="chipConn"><span class="dot"></span><span id="vConn">连接中</span></div>
+    <div class="chip chip-sim hidden" id="chipSim"><span class="dot"></span><span id="vSim">--</span></div>
   </div>
 </header>
 
@@ -45,13 +46,15 @@
 
 <!-- 控制坞 -->
 <div id="dock">
+  <button id="btnStart" class="dock-btn btn-primary hidden">开启仿真</button>
   <button id="btnPause" class="dock-btn" disabled>暂停</button>
+  <button id="btnStop" class="dock-btn btn-danger hidden" disabled>停止</button>
   <span class="dock-sep"></span>
   <button id="btnReset" class="dock-btn">重置视图</button>
   <button id="btnTheme" class="dock-btn">主题</button>
   <button id="btnLayers" class="dock-btn">图层</button>
   <button id="btnMap" class="dock-btn">地图</button>
-  <button id="btnScheme" class="dock-btn">仿真方案</button>
+  <button id="btnScheme" class="dock-btn">仿真设置</button>
 </div>
 
 <!-- 图层抽屉 -->
@@ -78,6 +81,7 @@
   <button id="btnLoadMap" class="scheme-apply">加载底图</button>
 </div>
 <div id="scheme" class="hidden">
+  <div class="scheme-current" id="schemeCurrent">当前生效：--</div>
   <div class="scheme-row"><label>初始化</label><select id="scInitMode"></select></div>
   <div class="scheme-row"><label>泊位分配</label><select id="scAlloc"></select></div>
   <div class="scheme-row"><label>路由规划</label><select id="scRoute"></select></div>

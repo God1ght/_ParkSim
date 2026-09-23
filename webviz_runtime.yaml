@@ -19,4 +19,4 @@ replay:
   max_agents: 0
 custom:
   file: scenarios/example_custom.yaml
-maneuver_provider: per_spot
+allocation_method: balanced_rows

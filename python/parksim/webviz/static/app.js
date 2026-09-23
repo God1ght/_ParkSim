@@ -127,6 +127,7 @@ const S = {
   staticGarage: [],
   obstacleMode: 'dataset',
   sysBannerKind: null,
+  simState: null,   // 仿真生命周期状态：null=未知（未收到 sim_state，保持旧行为）
 };
 
 const P = { rows: null, slots: null, obstacles: null, waypoints: null };
@@ -136,6 +137,8 @@ const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
 const bgImg = document.getElementById('bg');
 const btnPause = document.getElementById('btnPause');
+const btnStart = document.getElementById('btnStart');
+const btnStop = document.getElementById('btnStop');
 const btnReset = document.getElementById('btnReset');
 const btnTheme = document.getElementById('btnTheme');
 const btnLayers = document.getElementById('btnLayers');
@@ -155,6 +158,7 @@ const scRef = document.getElementById('scRef');
 const scManeuver = document.getElementById('scManeuver');
 const btnApplyScheme = document.getElementById('btnApplyScheme');
 const schemeStatus = document.getElementById('schemeStatus');
+const schemeCurrent = document.getElementById('schemeCurrent');
 const sysBanner = document.getElementById('sysBanner');
 const sysBannerText = document.getElementById('sysBannerText');
 const btnSysRestart = document.getElementById('btnSysRestart');
@@ -177,6 +181,8 @@ const tooltipEl = document.getElementById('tooltip');
 const msgEl = document.getElementById('msg');
 const hintEl = document.getElementById('hint');
 const chipConn = document.getElementById('chipConn');
+const chipSim = document.getElementById('chipSim');
+const vSim = document.getElementById('vSim');
 const vTime = document.getElementById('vTime');
 const vVeh = document.getElementById('vVeh');
 const vFps = document.getElementById('vFps');
@@ -497,6 +503,12 @@ function connect() {
       S.rowFill = (m.row_fill !== false);   // 地图包（JTH）默认不画车位行底色
       applyLayerAvailability();
       initSchemePanel();
+      // 仿真生命周期状态：init 顶层 sim_state 优先，其次 options.sim_state；缺省 = 未知（保持旧行为）
+      const _simState = (m.sim_state !== undefined) ? m.sim_state
+                      : (m.options && m.options.sim_state);
+      S.simState = normalizeSimState(_simState);
+      applySimStateUI();
+      updateSimChip();
       buildStatic();
       fitView();
     } else if (m.type === 'frame') {
@@ -523,6 +535,10 @@ function connect() {
       updatePauseLabel();
     } else if (m.type === 'status') {
       onSchemeStatus(m);
+    } else if (m.type === 'stopped') {
+      onSimStopped(m);
+    } else if (m.type === 'stop_failed') {
+      onSimStopFailed(m);
     } else if (m.type === 'pong') {
       S.latency = Math.round(performance.now() - m.t);
     }
@@ -974,6 +990,7 @@ function initSchemePanel() {
   }
   applyModePrefill();
   applyParamsToInputs(current.params);
+  refreshSchemeCurrent();
 }
 
 function applyModePrefill() {
@@ -1151,6 +1168,7 @@ function restartFromBanner() {
 function onSchemeStatus(m) {
   const v = m.value;
   if (v === 'restarting') {
+    setSimState('starting');   // restarting 视同 starting
     btnApplyScheme.disabled = true;
     schemeStatus.textContent = '正在重启仿真…';
     setMsg('正在重启仿真（切换方案）…');
@@ -1161,25 +1179,42 @@ function onSchemeStatus(m) {
     S.paused = false;
     updatePauseLabel();
     showSysBanner('restarting', '正在重启仿真…', false);
-  } else if (v === 'started') {
+  } else if (v === 'started' || v === 'restarted') {
     S.options.current = m.config || {};
     if (m.config && m.config.init_mode) {
       S.obstacleMode = (m.config.init_mode === 'random') ? 'occupancy' : 'dataset';
     }
+    setSimState('running');
+    refreshSchemeCurrent();
     btnApplyScheme.disabled = false;
     btnApplyScheme.textContent = '应用并重启仿真';
     hideSysBanner();
     schemeStatus.textContent = '已按新方案重启：' + describeScheme(m.config);
     setMsg('仿真已按新方案重启：' + describeScheme(m.config));
     setTimeout(() => { setMsg(''); }, 4500);
-  } else if (v === 'error') {
+  } else if (v === 'error' || v === 'restart_failed') {
     btnApplyScheme.disabled = false;
     schemeStatus.textContent = '重启失败：' + (m.message || '未知错误');
     setMsg('重启失败：' + (m.message || '未知错误'));
     showSysBanner('error', '重启失败：' + (m.message || '未知错误'), true);
   } else if (v === 'busy') {
     schemeStatus.textContent = '已有重启进行中，请稍候…';
+  } else if (v === 'starting') {
+    // 新协议：启动中（与 restarting 等效，但不清理跟随/尾迹——只是生命周期通知）
+    setSimState('starting');
+    if (btnApplyScheme) btnApplyScheme.disabled = true;
+  } else if (v === 'running') {
+    setSimState('running');
+    if (S.sysBannerKind === 'restarting') hideSysBanner();
+  } else if (v === 'finished') {
+    setSimState('finished');
+    schemeStatus.textContent = '本轮仿真已完成';
+    setMsg('本轮仿真已完成，可调整设置后再次开启');
+    setTimeout(() => { setMsg(''); }, 4500);
+  } else if (v === 'stopped') {
+    setSimState('stopped');
   } else if (v === 'idle') {
+    setSimState('idle');
     showSysBanner('idle', '底图已加载（仿真未启动）。点击「开启仿真」启动车辆仿真。', true);
     if (btnApplyScheme) btnApplyScheme.textContent = '开启仿真';
   } else if (v === 'map_switched') {
@@ -1194,6 +1229,119 @@ function onSchemeStatus(m) {
   } else if (v === 'resumed') {
     if (S.sysBannerKind === 'stalled') hideSysBanner();
   }
+}
+
+/* ---------- 仿真生命周期状态（sim_state）驱动控制坞与顶栏状态灯 ----------
+ * 状态来源：init 载荷的 sim_state（顶层或 options 内）+ 后续 status 广播 +
+ * {type:'stopped'} 回复。未收到 sim_state 时 S.simState 保持 null，
+ * applySimStateUI 走「未知」分支，维持接入前的旧按钮行为，不阻塞现有用户。 */
+function normalizeSimState(v) {
+  if (v === undefined || v === null) return null;
+  const s = String(v);
+  if (s === 'restarting') return 'starting';   // 旧值兼容：restarting 视同 starting
+  if (s === 'starting' || s === 'running' || s === 'finished'
+      || s === 'stopped' || s === 'idle') return s;
+  return null;
+}
+
+function setSimState(v) {
+  S.simState = normalizeSimState(v);
+  applySimStateUI();
+  updateSimChip();
+}
+
+/* 控制坞按钮可见性/禁用矩阵：
+ *   running               → 显 btnPause+btnStop，隐藏 btnStart
+ *   starting              → 三者皆显但全禁，btnStart 文案「启动中…」
+ *   finished/stopped/idle → 只显 btnStart（「开启仿真」）
+ *   未知                  → 隐藏 btnStart/btnStop，btnPause 维持旧逻辑（disabled=!control） */
+function applySimStateUI() {
+  if (!btnStart || !btnStop) return;
+  const st = S.simState;
+  const managed = !!(S.options && S.options.manage_sim);
+  if (!st) {
+    btnStart.classList.add('hidden');
+    btnStop.classList.add('hidden');
+    btnPause.classList.remove('hidden');
+    btnPause.disabled = !S.control;
+    return;
+  }
+  if (st === 'running') {
+    btnStart.classList.add('hidden');
+    btnPause.classList.remove('hidden');
+    btnStop.classList.remove('hidden');
+    btnStart.disabled = true;
+    btnPause.disabled = !S.control;
+    btnStop.disabled = !S.control;
+    btnStart.textContent = '开启仿真';
+  } else if (st === 'starting') {
+    btnStart.classList.remove('hidden');
+    btnPause.classList.remove('hidden');
+    btnStop.classList.remove('hidden');
+    btnStart.disabled = true;
+    btnPause.disabled = true;
+    btnStop.disabled = true;
+    btnStart.textContent = '启动中…';
+  } else { // finished / stopped / idle
+    btnStart.classList.remove('hidden');
+    btnPause.classList.add('hidden');
+    btnStop.classList.add('hidden');
+    btnStart.disabled = !(S.control && managed);
+    btnStart.textContent = '开启仿真';
+  }
+}
+
+/* 顶栏仿真状态灯：running=绿「仿真运行中 · N 车」/ starting=黄「启动中…」
+ * finished=蓝「本轮已完成」/ stopped=灰「已停止」/ idle=灰「未启动」/ 未知=隐藏 */
+function updateSimChip() {
+  if (!chipSim || !vSim) return;
+  const st = S.simState;
+  if (!st) { chipSim.classList.add('hidden'); return; }
+  chipSim.classList.remove('hidden');
+  chipSim.classList.remove('sim-running', 'sim-starting', 'sim-finished', 'sim-stopped');
+  const n = (S.frame && S.frame.vehicles) ? S.frame.vehicles.length : 0;
+  if (st === 'running') {
+    chipSim.classList.add('sim-running');
+    vSim.textContent = '仿真运行中 · ' + n + ' 车';
+  } else if (st === 'starting') {
+    chipSim.classList.add('sim-starting');
+    vSim.textContent = '启动中…';
+  } else if (st === 'finished') {
+    chipSim.classList.add('sim-finished');
+    vSim.textContent = '本轮已完成';
+  } else if (st === 'stopped') {
+    chipSim.classList.add('sim-stopped');
+    vSim.textContent = '已停止';
+  } else { // idle
+    chipSim.classList.add('sim-stopped');
+    vSim.textContent = '未启动';
+  }
+}
+
+/* 方案面板顶部「当前生效」摘要：init 与 started/restarted 后刷新 */
+function refreshSchemeCurrent() {
+  if (!schemeCurrent) return;
+  const cur = (S.options && S.options.current) || {};
+  schemeCurrent.textContent = '当前生效：' + describeScheme(cur);
+}
+
+/* {type:'stopped'}：服务端确认停止 → 置状态并提示 */
+function onSimStopped(m) {
+  setSimState('stopped');
+  S.paused = false;
+  updatePauseLabel();
+  const t = (m && m.message) || '仿真已停止（场内车辆已清空）';
+  schemeStatus.textContent = t;
+  setMsg(t);
+  setTimeout(() => { setMsg(''); }, 4500);
+}
+
+/* {type:'stop_failed', message}：停止失败 → 提示并恢复按钮可用（状态未变） */
+function onSimStopFailed(m) {
+  const t = '停止失败：' + ((m && m.message) || '未知错误');
+  schemeStatus.textContent = t;
+  setMsg(t);
+  applySimStateUI();
 }
 
 let hoverTipVid = 0;
@@ -1364,6 +1512,7 @@ function updateChips() {
   vLat.textContent = S.latency != null ? S.latency + ' ms' : '--';
   vConn.textContent = S.connected ? '已连接' : '断开';
   chipConn.classList.toggle('ok', S.connected);
+  updateSimChip();   // running 时「· N 车」随最新帧刷新
 }
 
 function draw() {
@@ -1674,8 +1823,19 @@ window.addEventListener('mouseup', (e) => {
 cv.addEventListener('mouseleave', () => { S.hover = 0; updateTooltip(); });
 
 btnPause.addEventListener('click', () => {
+  if (btnPause.classList.contains('hidden')) return;   // 状态驱动下隐藏时（含空格键）不触发
   if (!S.control || !S.ws || S.ws.readyState !== 1) return;
   S.ws.send(JSON.stringify({ type: 'pause', value: !S.paused }));
+});
+btnStart.addEventListener('click', () => {
+  // 与方案面板「开启仿真」同路径：按当前面板配置启动仿真（applyScheme 内含托管/连接守卫）
+  applyScheme();
+});
+btnStop.addEventListener('click', () => {
+  if (!S.control || !S.ws || S.ws.readyState !== 1) return;
+  if (!window.confirm('将清空场内车辆并结束本轮仿真，确定停止？')) return;
+  btnStop.disabled = true;   // 等待 {type:'stopped'} / {type:'stop_failed'} / status 广播刷新
+  S.ws.send(JSON.stringify({ type: 'stop' }));
 });
 btnReset.addEventListener('click', () => { S.follow = 0; sendFocus(0); updatePathHint(); fitView(); });
 btnTheme.addEventListener('click', cycleTheme);

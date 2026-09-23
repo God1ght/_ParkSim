@@ -19,7 +19,7 @@ import yaml
 from dlp.dataset import Dataset
 from dlp.visualizer import Visualizer as DlpVisualizer
 
-from std_msgs.msg import Int16MultiArray, Bool, Float32
+from std_msgs.msg import Int16MultiArray, Bool, Float32, String
 from parksim.msg import VehicleStateMsg
 from parksim.srv import OccupancySrv
 from parksim.base_node import MPClabNode, parksim_path
@@ -349,6 +349,11 @@ class SimulatorNode(MPClabNode):
         # 即将驶出车位（出库车已生成、车辆仍在位）：供可视化区分显示
         self.departing_pub = self.create_publisher(Int16MultiArray, '/departing_spots', 10)
 
+        # 发车队列剩余量（JSON）：供 webviz 判定本轮发车是否已全部完成。
+        # 1 Hz 定时发布 + 每次从任一队列 pop 后立即发布。
+        self.spawn_status_pub = self.create_publisher(String, '/webviz/spawn_status', 10)
+        self.spawn_status_timer = self.create_timer(1.0, self.publish_spawn_status)
+
         self.occupancy_srv = self.create_service(OccupancySrv, 'occupancy', self.occupancy_srv_callback)
 
         self.occupancy_cli = self.create_client(OccupancySrv, '/occupancy')
@@ -360,6 +365,19 @@ class SimulatorNode(MPClabNode):
         if self._pause_t0 is not None:
             paused += max(0.0, now - self._pause_t0)
         return now - self.start_time - paused
+
+    def publish_spawn_status(self):
+        """上报两个 spawn 队列各自剩余未 pop 的元素个数（JSON 字符串）。
+
+        无 spawn 队列的模式（custom / replay）下队列保持初始长度，
+        照常发布实际长度即可（通常为 0）。
+        """
+        msg = String()
+        msg.data = json.dumps({
+            'entering_remaining': len(self.spawn_entering_time),
+            'exiting_remaining': len(self.spawn_exiting_time),
+        })
+        self.spawn_status_pub.publish(msg)
 
     def sim_status_cb(self, msg: Bool):
         running = bool(msg.data)
@@ -877,6 +895,7 @@ class SimulatorNode(MPClabNode):
             self.entering_claimed.add(chosen_spot)
             self.enter_procs.append((proc, self.num_vehicles, int(chosen_spot)))
             self.spawn_entering_time.pop(0)
+            self.publish_spawn_status()
 
             self.last_enter_time = current_time
             self.last_enter_id = self.num_vehicles
@@ -910,6 +929,7 @@ class SimulatorNode(MPClabNode):
                     'No departable spot (occupied & unclaimed) for exiting vehicle '
                     '(tandem-locked: %d); entry skipped' % tandem_locked)
                 self.spawn_exiting_time.pop(0)
+                self.publish_spawn_status()
             else:
                 chosen_spot = int(self.allocator.choose('exiting', self.occupied, candidates))
                 _exit = self._choose_exit_portal(chosen_spot)
@@ -919,6 +939,7 @@ class SimulatorNode(MPClabNode):
                 # 释放保障：记录 (进程, 车辆号, 车位)；若车辆未发释放即退出，由看门狗代发
                 self.exit_procs.append((proc, self.num_vehicles, chosen_spot))
                 self.spawn_exiting_time.pop(0)
+                self.publish_spawn_status()
 
             self.last_exit_time = current_time
 
