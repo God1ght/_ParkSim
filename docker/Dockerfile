@@ -16,6 +16,10 @@
 #     （requirements-app.txt），不装 RL/训练侧依赖。
 #   * jth_b1 地图资产随源码 git archive 自带（8.4M）；7.5G DJI 数据集不带，
 #     只带 webviz 启动时 dlp.dataset.Dataset.load() 必读的 DJI_0012 最小文件子集。
+#   * ROS_LOCALHOST_ONLY=1 已在镜像内固化（见下方 ENV）：**默认 bridge 网络并不能
+#     隔离 DDS 发现**——实测容器内 DDS 与宿主及其它容器的 DDS 会双向互相发现，
+#     多个实例并存时会出现「发现到外来 vehicle 节点 → 容器启动即退出(1)」的竞态。
+#     置 1 让 DDS 只走容器自身的 lo，从根上消除跨实例串扰。要做多机联调时显式覆盖为 0。
 # =============================================================================
 FROM ubuntu:20.04
 
@@ -33,7 +37,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ROS_FOXY_ROOT=/media/step/data/Yccc7/ParkSim-JTH/deps/ros/foxy \
     DLP_DATASET_ROOT=/media/step/data/Yccc7/ParkSim-JTH/deps/dlp-dataset \
     PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    ROS_LOCALHOST_ONLY=1
 
 # -----------------------------------------------------------------------------
 # 1) 系统依赖（python3.8 + 编译链；ps/pkill 供 SimManager 清理仿真进程）
@@ -65,7 +70,7 @@ RUN python3 -m pip install --no-cache-dir "pip==24.2" "setuptools==75.1.0" "whee
 # -----------------------------------------------------------------------------
 # 3a) ROS 2 Foxy install-tree
 COPY payload/foxy/ /media/step/data/Yccc7/ParkSim-JTH/deps/ros/foxy/
-# 3b) ParkSim 源码（HEAD=0272503 的 git archive，含 jth_b1 地图资产）
+# 3b) ParkSim 源码（git archive HEAD=cc5c98f，含 jth_b1 地图资产与 4 个运行必需 pickle）
 COPY payload/parksim/ /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/
 # 3c) dlp 数据集 python 包（webviz 与 simulator 均 import；只带包，不带 277M pickle）
 COPY payload/dlp/ /media/step/data/Yccc7/ParkSim-JTH/deps/dlp-dataset/
@@ -100,16 +105,19 @@ RUN bash -c 'set -eo pipefail; \
 COPY payload/dji_subset/ /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/python/parksim/priorFiles/data/
 
 # -----------------------------------------------------------------------------
-# 6) 运行所需、但**被 .gitignore 排除**的 priorFiles 数据
-#    （根 .gitignore 第 27 行 `*.pickle` 会把它们静默排除，git archive 里没有）
+# 6) 运行必需资产的冗余兜底 COPY
+#    cc5c98f 起，parking_maneuvers.pickle / spots_data.pickle / waypoints_graph.pickle /
+#    agents_data_0012.pickle 这 4 个文件已正式入库（原先被根 .gitignore 的 `*.pickle`
+#    静默排除，是导致 vehicle_node 启动即 FileNotFoundError 的真凶），因此它们**已经**
+#    由第 3b 步的 `COPY payload/parksim/` 带进镜像。
+#    这里再 COPY 一次，是刻意的**兜底**：万一将来有人回退到未入库的提交、
+#    或在本机把这几个文件删掉导致 git archive 缺失，镜像仍能构建成功并跑通。
+#    内容与 archive 一致（同一来源的同一份文件）。
 #    vehicle_node.py:74  -> parking_maneuvers.pickle   ← 必需，OfflineManeuver
-#                            在 __init__ 里**无条件 open**，缺了 vehicle_node 直接
-#                            FileNotFoundError 退出（实测踩到）。
-#    simulator_node.py:83 -> waypoints_graph.pickle    ← graph_cost /
-#                            nearest_entrance 分配器用到
+#                            在 __init__ 里**无条件 open**，缺了 vehicle_node 直接退出。
+#    simulator_node.py:83 -> waypoints_graph.pickle    ← graph_cost / nearest_entrance 分配器
 #    simulator.yaml       -> spots_data.pickle         ← 默认车位表回退
 #    global_params.yaml   -> agents_data_0012.pickle   ← replay 默认 agents
-#    合计 232 KB；jth_b1 地图自身的资产在 git 里，已随 payload/parksim 带入。
 # -----------------------------------------------------------------------------
 COPY payload/priorfiles_root/ /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/python/parksim/priorFiles/
 

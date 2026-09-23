@@ -127,7 +127,10 @@ async def main():
                         max_vehicles = max(max_vehicles, n)
                         if n > 0:
                             frames_with_vehicles += 1
-                        if d.get("t") is not None:
+                        # 只统计 restart 生效之后的帧的 sim 时间：restarting 期间旧仿真
+                        # 仍在吐帧（t 是旧值，可能上百秒），若一并纳入会把 sim_t_first
+                        # 记成旧时间，导致 “sim_time progressed” 误判为 FAIL。
+                        if restart_started and d.get("t") is not None:
                             if sim_t_first is None:
                                 sim_t_first = d["t"]
                             sim_t_last = d["t"]
@@ -166,7 +169,7 @@ async def main():
     checks["status running"] = "running" in statuses
     checks["frame received (pre-stop)"] = frames > 0
     checks["vehicle appeared AFTER restart"] = first_after_start is not None
-    checks["sim_time progressed (pre-stop)"] = (sim_t_first is not None and sim_t_last is not None
+    checks["sim_time progressed (restart->pre-stop)"] = (sim_t_first is not None and sim_t_last is not None
                                                and sim_t_last > sim_t_first)
     checks["status stopped after stop"] = "stopped" in statuses
 

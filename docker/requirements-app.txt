@@ -24,6 +24,14 @@ PyYAML==6.0.2
 Pillow==10.4.0
 aiohttp==3.10.11
 
+# ---- 运维排查用（ros2cli 的依赖，应用本身不需要） ----
+# foxy 的 ros2cli/daemon 与 ros2cli/xmlrpc/local_server 都 `import netifaces`，
+# 缺它时 `ros2 node list` / `ros2 topic list` 会以
+# `Failed to load entry point 'list': No module named 'netifaces'` 直接报错。
+# 注意：构建机的 conda parksim 环境**同样缺** netifaces（已实测），
+# 因此这里补上属于“镜像比宿主更好排查”，不影响应用链路行为。
+netifaces==0.11.0
+
 # ---- 仅构建期（colcon + rosidl_parser） ----
 # rosidl_parser(foxy) 依赖 lark 与 catkin_pkg；rosidl_cmake 模板依赖 empy
 empy==3.3.4

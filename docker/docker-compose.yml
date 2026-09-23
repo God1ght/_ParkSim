@@ -6,6 +6,14 @@
 #
 # 前提：先 `docker load -i parksim-jth-v1.tar.gz` 把镜像载入本地（镜像不在任何 registry，
 #       compose **不会**自动拉取，必须先 load）。
+#
+# 自动发车（PARKSIM_AUTOSTART）：默认 "0" —— webviz 就绪后停在「已停止」态，由用户在
+#       网页点「开启仿真」发车；需要开机即跑时改成 "1"。
+#
+# DDS 隔离（重要）：镜像内已固化 ROS_LOCALHOST_ONLY=1（下方 environment 再显式给一份，
+#       双保险）。默认 bridge 网络**并不能**隔离 DDS 发现——实测容器 DDS 会与宿主/
+#       其它容器的 DDS 双向互相发现；多实例并存时会发现外来 vehicle 节点，导致本容器
+#       启动即退出(1)。仅在多机联调时才把它改成 "0"，并自行承担发现串扰。
 services:
   parksim-jth:
     image: parksim-jth:v1
@@ -19,11 +27,12 @@ services:
     environment:
       PORT: "8099"
       PARKSIM_MAP: "jth_b1"
-      # DDS 域：容器自带网络命名空间，与宿主 ROS 天然隔离；
-      # 若目标机上还要跑别的 ROS 容器并希望互不干扰，可各自指定不同 domain。
+      # 自动发车：默认 0（停在「已停止」态，由页面「开启仿真」触发）；要开机即跑改 "1"
+      PARKSIM_AUTOSTART: "0"
+      # DDS 只允许走容器自身 lo：彻底避免与宿主/其它容器的 DDS 发现串扰。
+      # 多机联调需要互相发现时才改为 "0"。
+      ROS_LOCALHOST_ONLY: "1"
       # ROS_DOMAIN_ID: "0"
-      # 仅允许容器内 DDS 走 lo（更稳、更省发现开销）
-      # ROS_LOCALHOST_ONLY: "1"
 
     # 若需要与宿主/同宿主其他 ROS 节点直接互相发现，改用 host 网络：
     #   network_mode: host

@@ -3,14 +3,27 @@
 # ParkSim-JTH 一体化镜像 —— 目标机一键安装 / 启动脚本
 #
 #   用法：
-#     ./install.sh                      # 载入镜像并后台启动（宿主端口 8098）
+#     ./install.sh                      # 载入镜像并后台启动（宿主端口 8098，默认停在「已停止」态）
 #     ./install.sh --port 9000          # 指定宿主端口
 #     ./install.sh --map jth_b1         # 指定地图
+#     ./install.sh --autostart          # 开机即自动发车（等价 -e PARKSIM_AUTOSTART=1）
 #     ./install.sh --stop               # 停止并删除容器
 #     ./install.sh --uninstall          # 停止容器并删除镜像
 #     ./install.sh --fg                 # 前台运行（Ctrl+C 退出，日志直出）
 #
 #   前置要求：目标机已安装 Docker（>=19.03），无需 ROS / conda / 源码。
+#
+#   自动发车（PARKSIM_AUTOSTART）：默认 0 —— webviz 就绪后停在「已停止」态，
+#   由用户在网页点「开启仿真」发车；需要开机即跑时传 --autostart 或
+#   环境变量 PARKSIM_AUTOSTART=1。
+#
+#   DDS 隔离（重要）：镜像内已固化 ROS_LOCALHOST_ONLY=1。默认 bridge 网络
+#   **并不能**隔离 DDS 发现——实测容器 DDS 会与宿主/其它容器的 DDS 双向互相
+#   发现，多实例并存时会发现外来 vehicle 节点，导致本容器启动即退出(1)。
+#   本脚本默认显式传 -e ROS_LOCALHOST_ONLY=1（与镜像默认一致，双保险）。
+#   仅在需要与外部 ROS 节点互相发现（多机联调）时，才用
+#     ROS_LOCALHOST_ONLY=0 ./install.sh ...
+#   覆盖，并自行承担发现串扰。
 # =============================================================================
 set -eo pipefail
 
@@ -22,18 +35,24 @@ CONTAINER_PORT="8099"
 PARK_MAP="jth_b1"
 FOREGROUND="no"
 
+# DDS 隔离：默认 1（可被外部环境变量覆盖，用于多机联调）
+ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}"
+# 自动发车：默认 0（就绪后停在「已停止」态，由页面「开启仿真」触发）
+PARK_AUTOSTART="${PARKSIM_AUTOSTART:-0}"
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --port)      HOST_PORT="$2"; shift 2 ;;
         --map)       PARK_MAP="$2"; shift 2 ;;
         --tar)       IMAGE_TAR="$2"; shift 2 ;;
+        --autostart) PARK_AUTOSTART="1"; shift ;;
         --stop)      docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
                      echo "[install] 容器 ${CONTAINER_NAME} 已停止并删除"; exit 0 ;;
         --uninstall) docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
                      docker rmi -f "${IMAGE_NAME}" >/dev/null 2>&1 || true
                      echo "[install] 已删除容器与镜像 ${IMAGE_NAME}"; exit 0 ;;
         --fg)        FOREGROUND="yes"; shift ;;
-        -h|--help)   sed -n '2,20p' "$0"; exit 0 ;;
+        -h|--help)   sed -n '2,28p' "$0"; exit 0 ;;
         *)           echo "[install] 未知参数：$1"; exit 2 ;;
     esac
 done
@@ -62,6 +81,8 @@ if [ "${FOREGROUND}" = "yes" ]; then
         -p "${HOST_PORT}:${CONTAINER_PORT}" \
         -e PORT="${CONTAINER_PORT}" \
         -e PARKSIM_MAP="${PARK_MAP}" \
+        -e PARKSIM_AUTOSTART="${PARK_AUTOSTART}" \
+        -e ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY}" \
         "${IMAGE_NAME}"
 fi
 
@@ -70,14 +91,18 @@ docker run -d --name "${CONTAINER_NAME}" \
     -p "${HOST_PORT}:${CONTAINER_PORT}" \
     -e PORT="${CONTAINER_PORT}" \
     -e PARKSIM_MAP="${PARK_MAP}" \
+    -e PARKSIM_AUTOSTART="${PARK_AUTOSTART}" \
+    -e ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY}" \
     "${IMAGE_NAME}" >/dev/null
 
 echo "[install] 容器已启动：${CONTAINER_NAME}"
 echo "[install]   页面     http://<目标机IP>:${HOST_PORT}/"
 echo "[install]   看日志   docker logs -f ${CONTAINER_NAME}"
 echo "[install]   停止     ./install.sh --stop"
-echo "[install]   提示：仿真由网页「开启/Restart」按钮或启动参数 --auto-start 触发；"
-echo "[install]         容器内已默认 --auto-start，启动即开跑 jth_b1。"
+echo "[install]   提示：默认停在「已停止」态，请在网页点「开启仿真」发车；"
+echo "[install]         若需开机即跑，用 ./install.sh --autostart（PARKSIM_AUTOSTART=1）。"
+echo "[install]   DDS      ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY}（1=只走容器 lo，避免跨实例串扰）"
+echo "[install]   AUTOSTART=${PARK_AUTOSTART}（0=就绪后不自动发车）"
 
 # ---- 3) 就绪探测（最多 60s，缺少 curl/wget 时跳过）-------------------------
 PROBE_CMD=""
