@@ -128,6 +128,9 @@ const S = {
   obstacleMode: 'dataset',
   sysBannerKind: null,
   simState: null,   // 仿真生命周期状态：null=未知（未收到 sim_state，保持旧行为）
+  degraded: false,      // 关键资产缺失（启动自检降级标记，来自 init.degraded）
+  assetsMissing: [],    // init.assets_missing：缺失资产绝对路径列表
+  activeAlerts: {},     // 仍生效的黄色告警：code -> message（被更严重横幅占用时保留）
 };
 
 const P = { rows: null, slots: null, obstacles: null, waypoints: null };
@@ -491,6 +494,10 @@ function connect() {
       S.obstacleMode = (m.options && m.options.obstacle_mode) || 'dataset';
       // 是否具备经验/占用数据集：DJI 系列=true（场景障碍=车辆障碍，仅经验模式读取）；JTH=false（固定障碍，始终读取）
       S.hasExperience = !(m.options && m.options.has_experience === false);
+      // 启动期关键资产自检结果（前向兼容：字段缺失视为未降级）
+      S.degraded = !!m.degraded;
+      S.assetsMissing = Array.isArray(m.assets_missing) ? m.assets_missing : [];
+      S.activeAlerts = {};   // 新 init 后由服务端回放的 active_alerts 重建
       S.occupancy = null;
       S.occPath = null;
       hideSysBanner();
@@ -509,6 +516,8 @@ function connect() {
       S.simState = normalizeSimState(_simState);
       applySimStateUI();
       updateSimChip();
+      // 启动期关键资产缺失 → 黄色横幅（仿真将无法正常发车；不阻断启动，仅告知原因）
+      if (S.degraded) showSysBanner('warn:degraded', degradedBannerText(), true);
       buildStatic();
       fitView();
     } else if (m.type === 'frame') {
@@ -535,6 +544,8 @@ function connect() {
       updatePauseLabel();
     } else if (m.type === 'status') {
       onSchemeStatus(m);
+    } else if (m.type === 'alert') {
+      onSimAlert(m);
     } else if (m.type === 'stopped') {
       onSimStopped(m);
     } else if (m.type === 'stop_failed') {
@@ -1135,11 +1146,15 @@ function applyScheme() {
   S.ws.send(JSON.stringify({ type: 'restart', config: collectSchemeConfig() }));
 }
 
-/* ---------- 系统状态横幅（崩溃 / 停滞 / 断连） ---------- */
+/* ---------- 系统状态横幅（崩溃 / 停滞 / 断连 / 降级 / 告警） ---------- */
 function showSysBanner(kind, text, restartEnabled) {
   S.sysBannerKind = kind;
   if (sysBannerText) sysBannerText.textContent = text || '';
-  if (sysBanner) sysBanner.classList.remove('hidden');
+  if (sysBanner) {
+    sysBanner.classList.remove('hidden');
+    // 'warn' 前缀 = 黄色告警/降级横幅（区别于红色致命横幅），按钮区隐藏
+    sysBanner.classList.toggle('warn', typeof kind === 'string' && kind.indexOf('warn') === 0);
+  }
   if (btnSysRestart) {
     const can = restartEnabled !== false && !!(S.options && S.options.manage_sim) && !!S.control;
     btnSysRestart.disabled = !can;
@@ -1150,7 +1165,59 @@ function showSysBanner(kind, text, restartEnabled) {
 
 function hideSysBanner() {
   S.sysBannerKind = null;
-  if (sysBanner) sysBanner.classList.add('hidden');
+  if (sysBanner) {
+    sysBanner.classList.add('hidden');
+    sysBanner.classList.remove('warn');
+  }
+}
+
+/* 关键资产缺失横幅文案：列出缺失路径（最多 3 条，其余折叠计数） */
+function degradedBannerText() {
+  const miss = (S.assetsMissing || []).filter(Boolean);
+  if (!miss.length) return '关键资产缺失（仿真将无法正常发车）';
+  const shown = miss.slice(0, 3).join('、');
+  const more = miss.length > 3 ? (' 等共 ' + miss.length + ' 项') : '';
+  return '关键资产缺失：' + shown + more + '（仿真将无法正常发车）';
+}
+
+/* 告警解除/被更严重横幅占用后，回落到「基础横幅」：
+ * 优先仍未解除的黄色告警 → 降级提示 → idle 提示 → 隐藏。 */
+function restoreBaseBanner() {
+  const codes = Object.keys(S.activeAlerts || {});
+  if (codes.length) {
+    const code = codes[codes.length - 1];
+    showSysBanner('warn:' + code, S.activeAlerts[code] || '仿真告警', false);
+    return;
+  }
+  if (S.degraded) {
+    showSysBanner('warn:degraded', degradedBannerText(), true);
+  } else if (S.simState === 'idle') {
+    showSysBanner('idle', '底图已加载（仿真未启动）。点击「开启仿真」启动车辆仿真。', true);
+  } else {
+    hideSysBanner();
+  }
+}
+
+/* 服务端告警（{type:'alert',code,active,message}）：
+ *   active=true  黄色横幅；不覆盖更严重的横幅（error/dead/disconnected/restarting/stalled）。
+ *   active=false 条件恢复 → 记录失效；若当前正是该告警则回落到基础横幅。 */
+function onSimAlert(m) {
+  const code = (m && m.code) ? String(m.code) : 'unknown';
+  const kind = 'warn:' + code;
+  if (!m || !m.active) {
+    delete S.activeAlerts[code];
+    if (S.sysBannerKind === kind) restoreBaseBanner();
+    return;
+  }
+  S.activeAlerts[code] = m.message || '仿真告警';
+  // 更严重者优先：这些横幅弹出时黄色告警不覆盖（不改横幅，但记录为生效中，
+  // 待其解除后经 restoreBaseBanner 重新浮现）
+  if (S.sysBannerKind === 'error' || S.sysBannerKind === 'dead'
+      || S.sysBannerKind === 'disconnected' || S.sysBannerKind === 'restarting'
+      || S.sysBannerKind === 'stalled') {
+    return;
+  }
+  showSysBanner(kind, S.activeAlerts[code], false);
 }
 
 function restartFromBanner() {
@@ -1188,7 +1255,11 @@ function onSchemeStatus(m) {
     refreshSchemeCurrent();
     btnApplyScheme.disabled = false;
     btnApplyScheme.textContent = '应用并重启仿真';
-    hideSysBanner();
+    if (S.degraded) {
+      showSysBanner('warn:degraded', degradedBannerText(), true);
+    } else {
+      hideSysBanner();
+    }
     schemeStatus.textContent = '已按新方案重启：' + describeScheme(m.config);
     setMsg('仿真已按新方案重启：' + describeScheme(m.config));
     setTimeout(() => { setMsg(''); }, 4500);
@@ -1205,7 +1276,13 @@ function onSchemeStatus(m) {
     if (btnApplyScheme) btnApplyScheme.disabled = true;
   } else if (v === 'running') {
     setSimState('running');
-    if (S.sysBannerKind === 'restarting') hideSysBanner();
+    if (S.sysBannerKind === 'restarting') {
+      if (S.degraded) {
+        showSysBanner('warn:degraded', degradedBannerText(), true);
+      } else {
+        hideSysBanner();
+      }
+    }
   } else if (v === 'finished') {
     setSimState('finished');
     schemeStatus.textContent = '本轮仿真已完成';
@@ -1215,7 +1292,12 @@ function onSchemeStatus(m) {
     setSimState('stopped');
   } else if (v === 'idle') {
     setSimState('idle');
-    showSysBanner('idle', '底图已加载（仿真未启动）。点击「开启仿真」启动车辆仿真。', true);
+    if (S.degraded) {
+      // 关键资产缺失优先于普通 idle 提示（横幅持续告知原因）
+      showSysBanner('warn:degraded', degradedBannerText(), true);
+    } else {
+      showSysBanner('idle', '底图已加载（仿真未启动）。点击「开启仿真」启动车辆仿真。', true);
+    }
     if (btnApplyScheme) btnApplyScheme.textContent = '开启仿真';
   } else if (v === 'map_switched') {
     if (btnLoadMap) { btnLoadMap.disabled = false; btnLoadMap.textContent = '加载底图'; }
@@ -1227,7 +1309,8 @@ function onSchemeStatus(m) {
   } else if (v === 'stalled') {
     showSysBanner('stalled', '仿真数据流停滞（约 ' + (m.seconds || '?') + ' 秒未推进）。点击「重启仿真」恢复。', true);
   } else if (v === 'resumed') {
-    if (S.sysBannerKind === 'stalled') hideSysBanner();
+    // 既有 stalled 解除 → 回落到基础横幅（可能仍有 降级/黄色告警/idle 需要显示）
+    if (S.sysBannerKind === 'stalled') restoreBaseBanner();
   }
 }
 

@@ -174,12 +174,10 @@ class SimulatorNode(MPClabNode):
         self.entering_spot_pool = set(int(i) for i in (rand.get('entering_spot_pool') or []))
         self.custom_schedule = []
 
-        # Check whether there are unterminated vehicle processes
-        all_nodes_names = [x[0] for x in self.get_node_names_and_namespaces()]
-        print(all_nodes_names)
-        if 'vehicle' in all_nodes_names:
-            self.get_logger().error("Some vehicle nodes are not shut down cleanly. Please kill those processes first.")
-            raise KeyboardInterrupt()
+        # 外来串扰节点检测 checkpoint #1（startup）：多轮复核（vehicle + simulator），防 DDS 延迟竞态误判。
+        # 注意：此处本 participant 刚创建约百毫秒，DDS 尚未收敛，可能看不到已在运行的外来节点
+        # （假阴性，实测约 62% 看不到）；故此处仅作「尽早拦截」，真正的收敛后确认见 checkpoint #2。
+        self._check_foreign_vehicles('startup')
 
         # Clean up the log folder if needed
         if self.write_log:
@@ -201,6 +199,14 @@ class SimulatorNode(MPClabNode):
         # yccc7: path changed
         ds.load(self.dlp_path)
         self.dlpvis = DlpVisualizer(ds)
+
+        # 外来串扰节点检测 checkpoint #2（post-dataset-load）：
+        # 此时本 participant 已存活约「数据集加载耗时」（十余秒），DDS 发现已完全收敛，
+        # 对已在运行的外部 vehicle 节点可见性 100%（摆脱了启动瞬间的未收敛窗口）。
+        # 位置确在「首批车 spawn 之前」——车辆仅在 timer_callback 中生成，__init__ 内不 spawn。
+        # 失败语义与 checkpoint #1 完全一致（error + 抛 KeyboardInterrupt → 非 0 退出），
+        # 只是失败时刻推迟到数据集加载之后（确实串扰/残留时就该拦下）。
+        self._check_foreign_vehicles('post-dataset-load')
 
         # Parking Spaces
         self.parking_spaces, self.occupied = self._gen_occupancy()
@@ -357,6 +363,127 @@ class SimulatorNode(MPClabNode):
         self.occupancy_srv = self.create_service(OccupancySrv, 'occupancy', self.occupancy_srv_callback)
 
         self.occupancy_cli = self.create_client(OccupancySrv, '/occupancy')
+
+    # ======== 外来串扰节点检测（vehicle + simulator；多轮复核；防 DDS 延迟误判 / 问题 N6） ========
+    # 背景：DDS 节点发现存在收敛延迟——新建 participant 在 0~百毫秒内尚看不到已运行的对端
+    # （实测「立即读」约 62% 看不到，「3s 后读」100% 看得到）。一次性检查因此成为竞态：
+    # 容器表现为有时 exit=0 有时 exit=1。改为两处 checkpoint 复用同一多轮复核方法：
+    #   #1 startup          ：participant 刚建，仅尽早拦截（可能假阴性，日志会标注）
+    #   #2 post-dataset-load：数据集加载后，participant 已收敛，可见性 100%，稳定可判
+    # 监听两类外来节点：外来 vehicle（他实例已 spawn 的车）+ 外来 simulator（他实例本身，
+    # 覆盖「两实例同时冷启动、双方都还没 spawn vehicle」的路径）；自身节点按同名计数排除。
+    # 两处均为「连续 _FOREIGN_CHECK_CONFIRM 轮命中才判失败；首轮干净立即放行（正常单实例零额外延迟）」。
+    # 另提供显式逃生开关 PARKSIM_ALLOW_FOREIGN_VEHICLES，便于多实例联调（两处均尊重，同时跳过两类）。
+    _FOREIGN_CHECK_INTERVAL = 1.0    # 轮询间隔（秒）
+    _FOREIGN_CHECK_MAX_WAIT = 10.0   # 最长观察窗口（秒）
+    _FOREIGN_CHECK_CONFIRM = 2       # 连续命中轮数达到该值才判定失败
+    _FOREIGN_ALLOW_TRUTHY = ('1', 'true', 'yes', 'on')   # PARKSIM_ALLOW_FOREIGN_VEHICLES 真值
+
+    def _foreign_vehicles_allowed(self) -> bool:
+        """逃生开关：环境变量 PARKSIM_ALLOW_FOREIGN_VEHICLES 为真时跳过外来节点检查。
+
+        大小写不敏感，接受 1/true/yes/on（含首尾空白）。
+        """
+        raw = os.environ.get('PARKSIM_ALLOW_FOREIGN_VEHICLES', '')
+        return str(raw).strip().lower() in self._FOREIGN_ALLOW_TRUTHY
+
+    def _scan_foreign_nodes(self):
+        """扫描当前 ROS 图，判定「外来」串扰节点，返回 (全部节点标识, 外来vehicle, 外来simulator)。
+
+        判定口径（均排除自身）：
+          - 外来 vehicle   ：name == 'vehicle'（命名空间 /vehicle_<id>），与改前口径一致。
+          - 外来 simulator ：name == 自身节点名（'simulator'）。自身与其它 simulator 的
+            (name, namespace) 完全相同（均为 ('simulator','/')），且 ROS2 图 API 不去重
+            （实测同名同命名空间会返回多条），故以「同名同命名空间出现次数 - 1（自身）」判定。
+          覆盖「两实例同时冷启动」路径：此刻双方都还没 spawn vehicle，但各自都有 simulator 节点。
+        无关节点（_ros2cli_daemon_*、webviz_bridge、visualizer 等）名字不匹配，天然排除。
+        """
+        pairs = [(str(n[0]), str(n[1])) for n in self.get_node_names_and_namespaces()]
+
+        def norm_ns(ns):
+            return '' if ns in ('', '/') else ns.rstrip('/')
+
+        def label(name, ns):
+            return ('/' + name) if norm_ns(ns) == '' else (norm_ns(ns) + '/' + name)
+
+        labels = [label(name, ns) for name, ns in pairs]
+        foreign_vehicle = [name for name, _ns in pairs if name == 'vehicle']
+
+        self_name = str(self.get_name())
+        self_ns = norm_ns(str(self.get_namespace()))
+        same_as_self = sum(1 for name, ns in pairs if name == self_name and norm_ns(ns) == self_ns)
+        foreign_simulator = [self_name] * max(0, same_as_self - 1)
+        return labels, foreign_vehicle, foreign_simulator
+
+    def _check_foreign_vehicles(self, checkpoint: str = 'startup') -> None:
+        """多轮复核是否存在未清理的外来串扰节点（外来 vehicle 或外来 simulator），必要时终止启动。
+
+        checkpoint 区分调用位置并写入日志：
+          - 'startup'           启动早期（participant 刚创建，DDS 可能未收敛，仅尽早拦截）
+          - 'post-dataset-load' 数据集加载后（DDS 已收敛，可见性 100%）；两处复用同一方法。
+
+        - 环境变量 PARKSIM_ALLOW_FOREIGN_VEHICLES（1/true/yes/on，大小写不敏感）为真时
+          完全跳过检查并打印 WARN（多实例联调）；两个 checkpoint 均尊重该开关。
+        - 否则轮询节点名列表：连续 _FOREIGN_CHECK_CONFIRM 轮都命中（外来 vehicle 或外来
+          simulator）才判定失败；失败时保留原有错误语义（抛 KeyboardInterrupt → 非 0 退出）。
+        - 首轮干净立即放行；最长观察 _FOREIGN_CHECK_MAX_WAIT 秒后仍未被连续确认则放行。
+        - 每轮打印 checkpoint / 轮次 / 看到的全部节点 / 连续命中计数 / 耗时与最终判定，便于复盘。
+        """
+        if self._foreign_vehicles_allowed():
+            self.get_logger().warn(
+                'PARKSIM_ALLOW_FOREIGN_VEHICLES=%r is set; skipping foreign node check (vehicle + simulator) '
+                '(checkpoint=%s). Multiple simulator instances may interfere with each other (allow-listed).'
+                % (os.environ.get('PARKSIM_ALLOW_FOREIGN_VEHICLES'), checkpoint))
+            return
+
+        interval = self._FOREIGN_CHECK_INTERVAL
+        max_wait = self._FOREIGN_CHECK_MAX_WAIT
+        confirm = self._FOREIGN_CHECK_CONFIRM
+        hits = 0
+        round_idx = 0
+        start = time.monotonic()
+        while True:
+            round_idx += 1
+            labels, foreign_vehicle, foreign_simulator = self._scan_foreign_nodes()
+            foreign = bool(foreign_vehicle or foreign_simulator)
+            if foreign:
+                hits += 1
+                self.get_logger().warn(
+                    'Foreign node check [%s] round %d: found%s%s (consecutive %d/%d, elapsed %.1fs); all nodes=%s'
+                    % (checkpoint, round_idx,
+                       (' foreign vehicle=%s' % foreign_vehicle) if foreign_vehicle else '',
+                       (' foreign simulator=%s' % foreign_simulator) if foreign_simulator else '',
+                       hits, confirm, time.monotonic() - start, labels))
+            else:
+                hits = 0
+                self.get_logger().info(
+                    'Foreign node check [%s] round %d: no foreign node; all nodes=%s'
+                    % (checkpoint, round_idx, labels))
+            # 连续确认：达到阈值 -> 判定失败，保留原有错误语义（并区分 vehicle / simulator）
+            if hits >= confirm:
+                if foreign_vehicle and foreign_simulator:
+                    what = 'Some vehicle nodes are not shut down cleanly, and another simulator is running'
+                elif foreign_vehicle:
+                    what = 'Some vehicle nodes are not shut down cleanly'
+                else:
+                    what = 'Another simulator is running (cross-talk)'
+                self.get_logger().error(
+                    '%s (checkpoint=%s, confirmed over %d consecutive rounds, elapsed %.1fs). '
+                    'Please kill those processes first.' % (what, checkpoint, hits, time.monotonic() - start))
+                raise KeyboardInterrupt()
+            # 本轮干净 -> 立即放行（不给正常单实例启动引入额外延迟）
+            if not foreign:
+                self.get_logger().info(
+                    'Foreign node check [%s] passed (clean on round %d, elapsed %.1fs).'
+                    % (checkpoint, round_idx, time.monotonic() - start))
+                return
+            # 命中但未被连续确认且已达观察上限 -> 放行，避免 DDS 抖动误杀
+            if time.monotonic() - start >= max_wait:
+                self.get_logger().warn(
+                    'Foreign node check [%s] reached max wait %.1fs with only %d consecutive hit(s); '
+                    'allowing startup without confirmation.' % (checkpoint, max_wait, hits))
+                return
+            time.sleep(interval)
 
     def sim_now(self):
         """仿真时钟（秒，0 起点）：暂停期间冻结，恢复后连续。"""

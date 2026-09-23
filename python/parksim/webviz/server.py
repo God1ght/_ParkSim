@@ -101,6 +101,101 @@ INFO_MSG = get_message('parksim/msg/VehicleInfoMsg')
 
 
 # --------------------------------------------------------------------------
+# 鲁棒性：告警阈值 / 文案 与 启动期关键资产自检
+# --------------------------------------------------------------------------
+# 发车异常：running 且 /webviz/spawn_status 的 entering/exiting 余量都 > 0，
+#           但当前帧车辆数连续 SPAWN_STUCK_ALERT_S 秒为 0
+#           → 判为「车辆节点未起来」（N7：关键资产缺失使 vehicle_node 启动即崩溃）。
+SPAWN_STUCK_ALERT_S = 60.0
+# 停滞兜底：running 且 spawn 两队列余量都为 0 且当前帧车辆数 > 0，
+#           但仿真时间连续 STALL_ALERT_S 秒无推进
+#           → 判为「仿真停滞」（某车节点死锁导致 never END、finished 无兜底）。
+#           状态**保持 running**，不伪造 finished。
+STALL_ALERT_S = 120.0
+
+SPAWN_STUCK_ALERT_MSG = '车辆节点未起来（疑似关键资产缺失或节点崩溃），请检查服务端日志'
+STALL_ALERT_MSG = '仿真停滞：车辆长时间无进展（可能某车节点死锁）'
+
+# 关键资产清单：相对「资产根」的路径。资产根默认 <repo>/python/parksim，
+# 可用环境变量 PARKSIM_ASSET_ROOT 覆盖（便于指向空目录做降级验证）。
+REQUIRED_ASSETS_MAP_FILES = (
+    'waypoints_graph.pickle',
+    'spots_data.pickle',
+    'parking_maneuvers_per_spot.pickle',
+    'layout_rotated.json',
+)
+REQUIRED_ASSETS_TOP_FILES = (
+    'parking_maneuvers.pickle',
+    'spots_data.pickle',
+    'waypoints_graph.pickle',
+)
+
+
+def resolve_asset_root(root):
+    """关键资产根目录。
+
+    优先环境变量 PARKSIM_ASSET_ROOT（便于指向空目录做降级验证），
+    否则取 <repo>/python/parksim。
+    """
+    env_root = os.environ.get('PARKSIM_ASSET_ROOT')
+    if env_root:
+        return os.path.abspath(os.path.expanduser(env_root))
+    return os.path.join(root, 'python', 'parksim')
+
+
+def check_required_assets(root, map_name, asset_root=None):
+    """启动期关键资产自检（只做存在性检查，缺失**不**阻断启动）。
+
+    参数
+    ----
+    root        : 仓库根（PARKSIM_ROOT）
+    map_name    : 当前地图名（地图包资产位于 priorFiles/maps/<map_name>/）
+    asset_root  : 资产根；缺省 resolve_asset_root(root)
+
+    返回
+    ----
+    (asset_root, missing)：missing 为缺失项的**绝对路径**列表，顺序与清单一致。
+    """
+    if asset_root is None:
+        asset_root = resolve_asset_root(root)
+    rels = [os.path.join('priorFiles', 'maps', map_name, n)
+            for n in REQUIRED_ASSETS_MAP_FILES]
+    rels += [os.path.join('priorFiles', n) for n in REQUIRED_ASSETS_TOP_FILES]
+    missing = []
+    for rel in rels:
+        full = os.path.join(asset_root, rel)
+        if not os.path.isfile(full):
+            missing.append(full)
+    return asset_root, missing
+
+
+def update_asset_status(shared, payload=None, log=False):
+    """重算关键资产自检并写入 shared['degraded'] / ['assets_missing'] / ['asset_root']。
+
+    如提供 payload（init 字典），同时把 degraded/assets_missing 字段注入其中。
+    返回缺失路径列表。启动时与本图切换后各调用一次，保证页面横幅与实际情况一致。
+    """
+    root = shared.get('root')
+    map_name = str((shared.get('opts') or {}).get('map') or '')
+    asset_root, missing = check_required_assets(root, map_name)
+    shared['asset_root'] = asset_root
+    shared['degraded'] = bool(missing)
+    shared['assets_missing'] = list(missing)
+    if payload is not None:
+        payload['degraded'] = bool(missing)
+        payload['assets_missing'] = list(missing)
+    if log:
+        if missing:
+            print('[webviz] ERROR 关键资产缺失（仿真将无法正常发车），共 %d 项：' % len(missing))
+            for _p in missing:
+                print('[webviz] ERROR   缺失: %s' % _p)
+            print('[webviz] ERROR 资产根=%s（可用 PARKSIM_ASSET_ROOT 覆盖）' % asset_root)
+        else:
+            print('[webviz] asset check: OK（map=%s，资产根=%s）' % (map_name, asset_root))
+    return missing
+
+
+# --------------------------------------------------------------------------
 # 运行状态机（stopped / starting / running / finished）——模块级单一事实来源
 # --------------------------------------------------------------------------
 
@@ -117,6 +212,15 @@ class SimStateTracker(object):
                    从未收到 /webviz/spawn_status 时退化为
                    「已进入过 running 且车辆数为 0 持续 30 秒」。
 
+    告警（只报一次；条件恢复时发一条 active=False 复位）：
+      spawn_stuck        —— running 且 spawn 两队列余量都 > 0，但车辆数连续
+                            SPAWN_STUCK_ALERT_S 秒为 0（车辆节点未起来，N7）。
+      stalled_no_progress—— running 且 spawn 两队列余量都为 0、车辆数 > 0，
+                            但 sim_time 连续 STALL_ALERT_S 秒无推进（车节点死锁，
+                            finished 无兜底的缓解）。状态保持 running，不伪造 finished。
+                            若既有 stalled（数据流停滞，见 note_dataflow_stall）已生效，
+                            本条被抑制，避免重复上报。
+
     线程安全：ROS spin 线程（帧/spawn 回调）、aiohttp 事件循环（watchdog）、
     WS 处理线程（stop/restart）都会访问，内部用一把锁保护。
     note_frame() 返回**待广播事件列表**，由调用方（事件循环内）负责广播。
@@ -131,8 +235,38 @@ class SimStateTracker(object):
         self._last_t = None          # starting 期间已见帧的 sim_time（用于判定“前进”）
         self._ever_running = False   # 本轮是否进入过 running（finished 退化判定用）
         self._zero_since = None      # 进入「零车 + 队列空」条件的起始墙钟时刻
+        # 告警（只报一次；条件恢复时发 active=False 复位）
+        self._spawn_stuck_since = None     # 「spawn 余量 > 0 但零车」起始墙钟时刻
+        self._spawn_stuck_alerted = False
+        self._stall_since = None           # 「余量空 + 有车 但 sim_time 不推进」起始时刻
+        self._stall_alerted = False
+        # 既有「数据流停滞」(sim_watchdog 的红色 stalled) 是否生效；生效期间抑制
+        # stalled_no_progress，避免与既有告警重复上报（既有 stalled 更严重、优先）。
+        self._dataflow_stalled = False
 
     # ---------- 外部事件 ----------
+    def _reset_alerts_locked(self):
+        """清空两条告警的全部内部状态（新一轮仿真 / 停止时调用）。"""
+        self._spawn_stuck_since = None
+        self._spawn_stuck_alerted = False
+        self._stall_since = None
+        self._stall_alerted = False
+        self._dataflow_stalled = False
+
+    def note_dataflow_stall(self, active):
+        """由 sim_watchdog 告知「既有 stalled（数据流停滞）是否生效」。
+
+        生效期间抑制 stalled_no_progress —— 保留既有 stalled（红色、带重启按钮，
+        更严重），避免两者对同一「sim_time 不推进」现象重复上报。
+        """
+        with self._lock:
+            changed = (bool(active) != self._dataflow_stalled)
+            self._dataflow_stalled = bool(active)
+            if changed:
+                print('[webviz] stalled_no_progress %s（既有 stalled %s）' % (
+                    '已抑制' if self._dataflow_stalled else '恢复评估',
+                    '生效' if self._dataflow_stalled else '解除'))
+
     def set_starting(self):
         """启动/restart 已触发（广播 'restarting' 由现有路径负责）。"""
         with self._lock:
@@ -141,6 +275,7 @@ class SimStateTracker(object):
             self._last_t = None
             self._ever_running = False
             self._zero_since = None
+            self._reset_alerts_locked()
 
     def set_stopped(self):
         """stop 完成 / restart 失败 / 仿真意外退出。"""
@@ -150,6 +285,7 @@ class SimStateTracker(object):
             self._last_t = None
             self._ever_running = False
             self._zero_since = None
+            self._reset_alerts_locked()
 
     def note_spawn(self, entering_remaining, exiting_remaining):
         """缓存最新 /webviz/spawn_status（随 init 下发为 spawn 字段）。"""
@@ -166,6 +302,18 @@ class SimStateTracker(object):
         with self._lock:
             return self.state, (dict(self.spawn) if self.spawn is not None else None)
 
+    def active_alerts(self):
+        """当前仍生效的告警事件列表（供新 WS 连接回放，保证横幅跨重连保持）。"""
+        out = []
+        with self._lock:
+            if self._spawn_stuck_alerted:
+                out.append({'type': 'alert', 'code': 'spawn_stuck', 'active': True,
+                            'level': 'warn', 'message': SPAWN_STUCK_ALERT_MSG})
+            if self._stall_alerted:
+                out.append({'type': 'alert', 'code': 'stalled_no_progress', 'active': True,
+                            'level': 'warn', 'message': STALL_ALERT_MSG})
+        return out
+
     # ---------- 帧驱动的状态迁移 ----------
     def _queues_empty_locked(self):
         """spawn 余量均为 0；从未收到 spawn_status 时退化为「视为空」。"""
@@ -173,6 +321,66 @@ class SimStateTracker(object):
             return True
         return (self.spawn.get('entering_remaining') == 0
                 and self.spawn.get('exiting_remaining') == 0)
+
+    def _eval_alerts_locked(self, sim_t, prev_t, n_vehicles, now, events):
+        """评估两条告警（在 running/finished 分支内调用，调用方已持锁）。
+
+        两条告警都「只报一次」，条件恢复时追加一条 ``active=False`` 复位事件：
+          ① spawn_stuck         —— running 且 spawn 两余量都 > 0，但车辆数恒为 0；
+          ② stalled_no_progress —— running 且 spawn 两余量都为 0、车辆数 > 0，
+                                   但 sim_time 不推进（某车节点死锁）。
+        余量为 0 的 stall 判定要求**真实收到过** spawn_status（spawn 非 None），
+        避免与 finished 的退化语义混淆、也不误报。
+        """
+        run = (self.state == 'running')
+        spawn = self.spawn
+        ent = spawn.get('entering_remaining') if spawn else None
+        ext = spawn.get('exiting_remaining') if spawn else None
+
+        # ---------- ① 发车异常：余量 > 0 却零车 ----------
+        stuck = bool(run and ent is not None and ext is not None
+                     and ent > 0 and ext > 0 and n_vehicles == 0)
+        if stuck:
+            if self._spawn_stuck_since is None:
+                self._spawn_stuck_since = now
+            elif (not self._spawn_stuck_alerted
+                  and (now - self._spawn_stuck_since) >= SPAWN_STUCK_ALERT_S):
+                self._spawn_stuck_alerted = True
+                events.append({'type': 'alert', 'code': 'spawn_stuck',
+                               'active': True, 'level': 'warn',
+                               'message': SPAWN_STUCK_ALERT_MSG})
+        else:
+            self._spawn_stuck_since = None
+            if self._spawn_stuck_alerted:
+                self._spawn_stuck_alerted = False
+                events.append({'type': 'alert', 'code': 'spawn_stuck',
+                               'active': False})
+
+        # ---------- ② 停滞兜底：余量空 + 有车，但 sim_time 不推进 ----------
+        # 若既有 stalled（数据流停滞）已生效 → 抑制本条，避免重复上报（既有更严重）。
+        stall_base = bool(run and ent == 0 and ext == 0 and n_vehicles > 0)
+        if stall_base and not self._dataflow_stalled:
+            if prev_t is None or sim_t != prev_t:
+                # sim_time 在推进 → 条件恢复（条件之一：仿真时间恢复推进）
+                self._stall_since = None
+                if self._stall_alerted:
+                    self._stall_alerted = False
+                    events.append({'type': 'alert', 'code': 'stalled_no_progress',
+                                   'active': False})
+            elif self._stall_since is None:
+                self._stall_since = now
+            elif (not self._stall_alerted
+                  and (now - self._stall_since) >= STALL_ALERT_S):
+                self._stall_alerted = True
+                events.append({'type': 'alert', 'code': 'stalled_no_progress',
+                               'active': True, 'level': 'warn',
+                               'message': STALL_ALERT_MSG})
+        else:
+            self._stall_since = None
+            if self._stall_alerted:
+                self._stall_alerted = False
+                events.append({'type': 'alert', 'code': 'stalled_no_progress',
+                               'active': False})
 
     def note_frame(self, sim_t, n_vehicles, now=None):
         """每收到一帧调用（watchdog 轮询）。返回待广播事件列表。"""
@@ -191,7 +399,10 @@ class SimStateTracker(object):
                     self._zero_since = None
                     events.append({'type': 'status', 'value': 'running'})
             elif self.state in ('running', 'finished'):
+                prev_t = self._last_t
                 self._last_t = sim_t
+                # 告警评估（只报一次 / 恢复复位），在 finished 迁移前完成
+                self._eval_alerts_locked(sim_t, prev_t, n_vehicles, now, events)
                 if n_vehicles > 0:
                     # 新车辆出现：finished 闩锁重置，回到 running
                     self._zero_since = None
@@ -1867,7 +2078,14 @@ def create_app(shared, node):
         init_payload = dict(init)
         init_payload['sim_state'] = _state
         init_payload['spawn'] = _spawn
+        # 启动期关键资产自检结果（degraded 标记 + 缺失清单）随 init 下发（前向兼容：
+        # 字段缺失时前端不报错）
+        init_payload['degraded'] = bool(shared.get('degraded'))
+        init_payload['assets_missing'] = list(shared.get('assets_missing') or [])
         await ws.send_str(json.dumps(init_payload, separators=(',', ':')))
+        # 回放当前仍生效的告警（跨重连保持横幅；无告警时不发任何消息）
+        for _alert in sim_state_tracker.active_alerts():
+            await ws.send_str(json.dumps(_alert, separators=(',', ':')))
         # 连接时同步当前仿真状态（未启动→idle；已退出→sim_dead）
         sm = shared.get('sim_manager')
         if sm is not None:
@@ -1912,6 +2130,8 @@ def create_app(shared, node):
                 print('[webviz] sync scene map to sim config failed: %s' % _exc)
             payload = build_static_payload(shared['ds'], shared['dlpvis'],
                                            shared['opts'], root=shared.get('root'))
+            # 切换底图后重算关键资产自检，degraded 字段随新 init 载荷广播
+            update_asset_status(shared, payload=payload, log=True)
             shared['init'] = payload
             asyncio.run_coroutine_threadsafe(broadcast(payload), loop)
             print('[webviz] scene reloaded in %.1fs' % (time.time() - t0))
@@ -2120,6 +2340,7 @@ def create_app(shared, node):
                     last_t = None
                     last_t_change = time.time()
                     proc_start = time.time()
+                    sim_state_tracker.note_dataflow_stall(False)
                 if proc is not None:
                     code = proc.poll()
                     if code is not None:
@@ -2144,6 +2365,8 @@ def create_app(shared, node):
                         last_t_change = time.time()
                         if state == 'stalled':
                             state = ('alive',)
+                            # 既有 stalled 解除 → 允许 stalled_no_progress 重新评估
+                            sim_state_tracker.note_dataflow_stall(False)
                             await broadcast_all(shared, {'type': 'status', 'value': 'resumed'})
                         elif state is None:
                             state = ('alive',)
@@ -2151,6 +2374,8 @@ def create_app(shared, node):
                         stalled = int(time.time() - last_t_change)
                         if stalled > 20:
                             state = 'stalled'
+                            # 既有 stalled 生效 → 抑制 stalled_no_progress，避免重复上报
+                            sim_state_tracker.note_dataflow_stall(True)
                             await broadcast_all(shared, {
                                 'type': 'status', 'value': 'stalled', 'seconds': stalled,
                                 'message': '仿真数据流停滞约 %d 秒' % stalled})
@@ -2277,6 +2502,8 @@ def main(argv=None):
     }
     shared['init'] = build_static_payload(ds, dlpvis, opts, root=root)
     print('[webviz] init payload: %.1f KB' % (len(json.dumps(shared['init'])) / 1024.0))
+    # 启动期关键资产自检：缺失时逐条 ERROR 打印并置 degraded，随 init 下发（不阻断启动）
+    update_asset_status(shared, payload=shared['init'], log=True)
 
     recorder = None
     if args.record:
