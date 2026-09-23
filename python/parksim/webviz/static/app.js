@@ -134,6 +134,8 @@ const S = {
   // 控制指令（stop/pause）ack 超时管理：计时器句柄 + 是否已重发一次
   _ctlAck: { stop: null, pause: null },
   _ctlAckRetried: { stop: false, pause: false },
+  // ack 超时重发用的「已序列化载荷」：首次发送时冻结，重发逐字节复用（防 toggle 反转）
+  _ctlAckPayload: { stop: null, pause: null },
 };
 
 const P = { rows: null, slots: null, obstacles: null, waypoints: null };
@@ -1451,17 +1453,23 @@ const CONTROL_ACK_TIMEOUT_MS = 12000;
 
 function clearControlAck(kind) {
   if (S._ctlAck[kind]) { clearTimeout(S._ctlAck[kind]); S._ctlAck[kind] = null; }
+  S._ctlAckPayload[kind] = null;   // 停表的同时丢弃冻结载荷，避免陈旧载荷被后续复用
 }
 
 function sendControl(kind) {
   if (!S.ws || S.ws.readyState !== 1) return false;
-  if (kind === 'stop') { S.ws.send(JSON.stringify({ type: 'stop' })); }
-  else { S.ws.send(JSON.stringify({ type: 'pause', value: !S.paused })); }
+  // 首次发送即「冻结」已序列化的整条消息，供 ack 超时重发逐字节复用。
+  // 重发必须逐字节复用首次载荷，否则 toggle 类指令（如 pause）可能在重发时反转语义。
+  const payload = (kind === 'stop') ? '{"type":"stop"}'
+                                    : JSON.stringify({ type: 'pause', value: !S.paused });
+  S.ws.send(payload);
+  S._ctlAckPayload[kind] = payload;
   return true;
 }
 
 function armControlAck(kind) {
-  clearControlAck(kind);
+  // 仅重置计时器（不清载荷——载荷需保留，供超时逐字节重发）
+  if (S._ctlAck[kind]) { clearTimeout(S._ctlAck[kind]); S._ctlAck[kind] = null; }
   S._ctlAckRetried[kind] = false;
   S._ctlAck[kind] = setTimeout(() => onControlAckTimeout(kind), CONTROL_ACK_TIMEOUT_MS);
 }
@@ -1472,10 +1480,15 @@ function onControlAckTimeout(kind) {
     S._ctlAckRetried[kind] = true;
     console.warn('[webviz] 控制指令 ' + kind + ' ' + (CONTROL_ACK_TIMEOUT_MS / 1000) +
                  's 未收到 ack，重发一次');
-    if (sendControl(kind)) {
+    // 重发必须逐字节复用首次载荷，否则 toggle 类指令（如 pause）可能在重发时反转语义。
+    // 因此这里只用冻结的字符串调 ws.send(...)，绝不调用 sendControl、也不读取 S.paused。
+    const payload = S._ctlAckPayload[kind];
+    if (S.ws && S.ws.readyState === 1 && payload) {
+      S.ws.send(payload);
       S._ctlAck[kind] = setTimeout(() => onControlAckTimeout(kind), CONTROL_ACK_TIMEOUT_MS);
     } else {
-      console.warn('[webviz] 控制指令 ' + kind + ' 重发失败：连接不可用');
+      console.warn('[webviz] 控制指令 ' + kind + ' 重发失败：连接不可用或载荷缺失');
+      S._ctlAckPayload[kind] = null;
       if (kind === 'stop') btnStop.disabled = false; else btnPause.disabled = false;
       setMsg('与桥的连接不可用，请等待重连后重试');
     }
@@ -1483,6 +1496,7 @@ function onControlAckTimeout(kind) {
   }
   // 第二次仍超时：放弃等待，恢复按钮可用并给出可见反馈
   console.warn('[webviz] 控制指令 ' + kind + ' 重发后仍无 ack，放弃等待');
+  S._ctlAckPayload[kind] = null;   // 放弃等待：丢弃冻结载荷
   if (kind === 'stop') {
     btnStop.disabled = false;
     setMsg('桥未响应停止请求，请检查连接后重试');
