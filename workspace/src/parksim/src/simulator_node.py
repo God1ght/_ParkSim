@@ -182,6 +182,13 @@ class SimulatorNode(MPClabNode):
         # 超过该窗口，故不引入额外延迟。
         self._foreign_guard_t0 = None
 
+        # 晚期串扰「一次性可见化」状态（不杀进程；见 _maybe_report_late_cross_talk）：
+        # 两个启动检查点之后才被本域发现的外来节点，当前实现会完全静默（与 N7「静默降级」同类）——
+        # 仿真继续跑、操作者不知情。故在 1 Hz spawn_status 路径低频补扫一次做可见化。
+        # 观察窗起点复用 self._foreign_guard_t0（= 首个检查点/init 时刻）。
+        self._late_cross_talk_warned = False       # 一次性：命中后不再打印（防刷屏）
+        self._late_cross_talk_last_scan = None     # 单调时钟：上次扫描时刻（5 s 节流）
+
         # 外来串扰节点检测 checkpoint #1（startup）：多轮复核（vehicle + simulator），防 DDS 延迟竞态误判。
         # 注意：此处本 participant 刚创建约百毫秒，DDS 尚未收敛，可能看不到已在运行的外来节点
         # （假阴性，实测约 62% 看不到）；故此处仅作「尽早拦截」，真正的收敛后确认见 checkpoint #2。
@@ -393,6 +400,9 @@ class SimulatorNode(MPClabNode):
     _FOREIGN_CHECK_CONFIRM = 2       # 连续命中轮数达到该值才判定失败
     _FOREIGN_GUARD_MIN_WINDOW = 3.0  # 非首个检查点的最小观察窗（秒）；PARKSIM_FOREIGN_GUARD_WINDOW 覆盖，取 0 关闭
     _FOREIGN_ALLOW_TRUTHY = ('1', 'true', 'yes', 'on')   # PARKSIM_ALLOW_FOREIGN_VEHICLES 真值
+    # 晚期串扰「一次性可见化」（不杀进程；见 _maybe_report_late_cross_talk）：
+    _LATE_CROSS_TALK_INTERVAL = 5.0   # 晚期串扰扫描周期（秒）
+    _LATE_CROSS_TALK_WINDOW = 60.0    # 晚期串扰观察窗（自 _foreign_guard_t0 起；之后停止扫描，避免长期开销/噪声）
 
     def _foreign_vehicles_allowed(self) -> bool:
         """逃生开关：环境变量 PARKSIM_ALLOW_FOREIGN_VEHICLES 为真时跳过外来节点检查。
@@ -417,11 +427,15 @@ class SimulatorNode(MPClabNode):
             return default
         return value if value >= 0.0 else default
 
-    def _scan_foreign_nodes(self):
+    def _scan_foreign_nodes(self, exclude_own_vehicles: bool = False):
         """扫描当前 ROS 图，判定「外来」串扰节点，返回 (全部节点标识, 外来vehicle, 外来simulator)。
 
         判定口径（均排除自身）：
           - 外来 vehicle   ：name == 'vehicle'（命名空间 /vehicle_<id>），与改前口径一致。
+            注：exclude_own_vehicles=True 时额外排除**本实例自己已 spawn 的车**
+            （命名空间 /vehicle_<id>，id ∈ [1, self.num_vehicles]，id 单调递增）。
+            启动期（两个检查点）本实例尚未 spawn 任何车（num_vehicles=0），且默认 False，
+            故启动口径**逐字节不变**；运行期晚期扫描必须传 True，否则会把自己的车误报为外来。
           - 外来 simulator ：name == 自身节点名（'simulator'）。自身与其它 simulator 的
             (name, namespace) 完全相同（均为 ('simulator','/')），且 ROS2 图 API 不去重
             （实测同名同命名空间会返回多条），故以「同名同命名空间出现次数 - 1（自身）」判定。
@@ -437,7 +451,17 @@ class SimulatorNode(MPClabNode):
             return ('/' + name) if norm_ns(ns) == '' else (norm_ns(ns) + '/' + name)
 
         labels = [label(name, ns) for name, ns in pairs]
-        foreign_vehicle = [name for name, _ns in pairs if name == 'vehicle']
+
+        own_vehicle_ns = set()
+        if exclude_own_vehicles:
+            own_vehicle_ns = {'/vehicle_%d' % i for i in range(1, int(self.num_vehicles) + 1)}
+
+        def _is_foreign_vehicle(name, ns):
+            if name != 'vehicle':
+                return False
+            return not (exclude_own_vehicles and norm_ns(ns) in own_vehicle_ns)
+
+        foreign_vehicle = [name for name, ns in pairs if _is_foreign_vehicle(name, ns)]
 
         self_name = str(self.get_name())
         self_ns = norm_ns(str(self.get_namespace()))
@@ -535,6 +559,60 @@ class SimulatorNode(MPClabNode):
                 return
             time.sleep(interval)
 
+    def _maybe_report_late_cross_talk(self) -> None:
+        """晚期串扰「一次性可见化」：启动两检查点之后才被本域发现的外来节点不再静默。
+
+        为什么需要：startup / post-dataset-load 两个检查点只在**启动窗口内**做判断。若外来实例
+        晚于该窗口才被本域发现（或发现耗时 > 最小观察窗），现有实现会**完全静默** —— 仿真继续
+        运行、操作者不知情（与 N7「静默降级」同类问题，故仅做可见化，不硬杀）。
+
+        设计约束（保持最小、加法式、健康路径零额外开销）：
+        - 复用**既有** 1 Hz 派生状态定时器路径（publish_spawn_status），不新建线程、不新建 timer
+          对象，避免与已有执行器交互出事；用单调时钟累积达到 _LATE_CROSS_TALK_INTERVAL 才扫。
+        - 仅在 self.sim_is_running 为真时扫。
+        - 观察窗 _LATE_CROSS_TALK_WINDOW = 60 s，**起点复用 self._foreign_guard_t0**
+          （= 首个检查点/init 时刻，已在 __init__ 钉住）；超过窗口即停止扫描，避免长期开销与噪声。
+        - 命中外来 vehicle/simulator（复用 _scan_foreign_nodes()，判定口径不改）时**只打一条**
+          WARN（实例标志位 _late_cross_talk_warned 保证一次性、防刷屏）；**不 raise、不杀进程**。
+        - 逃生开关 PARKSIM_ALLOW_FOREIGN_VEHICLES 为真时**整路跳过**（与两个启动检查点一致），
+          且**不打印** skip WARN（避免与启动期那两条 skip WARN 重复刷屏）。
+        - 与 PARKSIM_FOREIGN_GUARD_WINDOW **相互独立**：后者只关「最小观察窗（启动期）」，
+          不关本路晚期扫描（两者语义不同：一个是启动期防漏检，一个是运行期可见化）。
+        """
+        if self._late_cross_talk_warned:
+            return
+        if self._foreign_vehicles_allowed():     # 逃生开关：整路跳过，且不打印 skip WARN
+            return
+        if not self.sim_is_running:
+            return
+        t0 = self._foreign_guard_t0
+        if t0 is None:                            # 无起点（异常/未设）则不做，避免误判
+            return
+        now = time.monotonic()
+        if now - t0 > self._LATE_CROSS_TALK_WINDOW:   # 超出观察窗：停止扫描
+            return
+        last = self._late_cross_talk_last_scan
+        if last is not None and (now - last) < self._LATE_CROSS_TALK_INTERVAL:
+            return                                # 5 s 节流：低频扫描
+        self._late_cross_talk_last_scan = now
+        # 运行期扫描必须排除本实例自己已 spawn 的车（/vehicle_<id>），否则会把自己刚发的车
+        # 误报为「外来 vehicle」（启动期两检查点无此问题，那时还没 spawn）。
+        _labels, foreign_vehicle, foreign_simulator = self._scan_foreign_nodes(
+            exclude_own_vehicles=True)
+        if not (foreign_vehicle or foreign_simulator):
+            return
+        self._late_cross_talk_warned = True       # 一次性：命中即置位，后续不再打印
+        detail = []
+        if foreign_vehicle:
+            detail.append('foreign vehicle=%s' % sorted(set(foreign_vehicle)))
+        if foreign_simulator:
+            detail.append('%d foreign simulator node(s)' % len(foreign_simulator))
+        self.get_logger().warn(
+            'Late cross-talk detected: foreign node(s) [%s] appeared after startup checkpoints; '
+            'this instance and another are sharing one DDS domain. '
+            'Isolate with ROS_LOCALHOST_ONLY=1 or set PARKSIM_ALLOW_FOREIGN_VEHICLES=1 to silence.'
+            % '; '.join(detail))
+
     def sim_now(self):
         """仿真时钟（秒，0 起点）：暂停期间冻结，恢复后连续。"""
         now = self.get_ros_time()
@@ -555,6 +633,9 @@ class SimulatorNode(MPClabNode):
             'exiting_remaining': len(self.spawn_exiting_time),
         })
         self.spawn_status_pub.publish(msg)
+        # 复用既有 1 Hz 派生状态路径做低频（5 s）外来节点扫描：晚期串扰一次性可见化，
+        # 不新建线程/timer、不杀进程（见 _maybe_report_late_cross_talk）。
+        self._maybe_report_late_cross_talk()
 
     def sim_status_cb(self, msg: Bool):
         running = bool(msg.data)
