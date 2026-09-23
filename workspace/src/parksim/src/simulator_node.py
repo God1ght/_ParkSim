@@ -174,9 +174,18 @@ class SimulatorNode(MPClabNode):
         self.entering_spot_pool = set(int(i) for i in (rand.get('entering_spot_pool') or []))
         self.custom_schedule = []
 
+        # 外来串扰节点检测「最小观察窗」的计时起点：钉在第一个检查点（startup）。
+        # 为什么需要：发布镜像把 frames.json / instances.json 换成 {}（1.54G→1.27G 瘦身）后，
+        # dlp.Dataset.load() 近乎瞬时完成，使 startup 与 post-dataset-load 两个检查点的真实时间
+        # 间隔从「宿主约 6 秒」塌缩到「容器约 0.25 秒」，DDS 发现来不及收敛 → 守卫漏检（QA 残留风险）。
+        # 故在非首个检查点强制一段最小观察窗（见 _check_foreign_vehicles）；宿主上数据集加载本就
+        # 超过该窗口，故不引入额外延迟。
+        self._foreign_guard_t0 = None
+
         # 外来串扰节点检测 checkpoint #1（startup）：多轮复核（vehicle + simulator），防 DDS 延迟竞态误判。
         # 注意：此处本 participant 刚创建约百毫秒，DDS 尚未收敛，可能看不到已在运行的外来节点
         # （假阴性，实测约 62% 看不到）；故此处仅作「尽早拦截」，真正的收敛后确认见 checkpoint #2。
+        # startup 是「首个检查点」：不施加最小观察窗，保持「首轮干净立即放行」（宿主启动零额外延迟）。
         self._check_foreign_vehicles('startup')
 
         # Clean up the log folder if needed
@@ -201,11 +210,13 @@ class SimulatorNode(MPClabNode):
         self.dlpvis = DlpVisualizer(ds)
 
         # 外来串扰节点检测 checkpoint #2（post-dataset-load）：
-        # 此时本 participant 已存活约「数据集加载耗时」（十余秒），DDS 发现已完全收敛，
-        # 对已在运行的外部 vehicle 节点可见性 100%（摆脱了启动瞬间的未收敛窗口）。
+        # 此时本 participant 已存活约「数据集加载耗时」，DDS 发现通常已收敛，对已在运行的外部
+        # vehicle/simulator 节点可见性高（摆脱启动瞬间的未收敛窗口）。
         # 位置确在「首批车 spawn 之前」——车辆仅在 timer_callback 中生成，__init__ 内不 spawn。
-        # 失败语义与 checkpoint #1 完全一致（error + 抛 KeyboardInterrupt → 非 0 退出），
-        # 只是失败时刻推迟到数据集加载之后（确实串扰/残留时就该拦下）。
+        # 失败语义与 checkpoint #1 完全一致（error + 抛 KeyboardInterrupt → 非 0 退出）。
+        # 作为「非首个检查点」，此处会强制一段最小观察窗（_FOREIGN_GUARD_MIN_WINDOW）：容器瘦身
+        # 后本检查点距 startup 仅 ~0.25s，需主动补足观察时间，否则守卫形同虚设；宿主上两检查点
+        # 间隔本就 > 该窗口，故增量延迟为 0。
         self._check_foreign_vehicles('post-dataset-load')
 
         # Parking Spaces
@@ -374,9 +385,13 @@ class SimulatorNode(MPClabNode):
     # 覆盖「两实例同时冷启动、双方都还没 spawn vehicle」的路径）；自身节点按同名计数排除。
     # 两处均为「连续 _FOREIGN_CHECK_CONFIRM 轮命中才判失败；首轮干净立即放行（正常单实例零额外延迟）」。
     # 另提供显式逃生开关 PARKSIM_ALLOW_FOREIGN_VEHICLES，便于多实例联调（两处均尊重，同时跳过两类）。
+    # 最小观察窗：发布镜像瘦身（frames/instances → {}）后 Dataset.load() 近瞬时完成，两检查点间隔
+    # 从宿主 ~6s 塌缩到容器 ~0.25s，DDS 来不及收敛 → 守卫漏检。故从「第二个检查点起」，在两个检查点
+    # 起点之间强制至少 _FOREIGN_GUARD_MIN_WINDOW 秒的观察时间（宿主本已满足，零额外延迟）。
     _FOREIGN_CHECK_INTERVAL = 1.0    # 轮询间隔（秒）
     _FOREIGN_CHECK_MAX_WAIT = 10.0   # 最长观察窗口（秒）
     _FOREIGN_CHECK_CONFIRM = 2       # 连续命中轮数达到该值才判定失败
+    _FOREIGN_GUARD_MIN_WINDOW = 3.0  # 非首个检查点的最小观察窗（秒）；PARKSIM_FOREIGN_GUARD_WINDOW 覆盖，取 0 关闭
     _FOREIGN_ALLOW_TRUTHY = ('1', 'true', 'yes', 'on')   # PARKSIM_ALLOW_FOREIGN_VEHICLES 真值
 
     def _foreign_vehicles_allowed(self) -> bool:
@@ -386,6 +401,21 @@ class SimulatorNode(MPClabNode):
         """
         raw = os.environ.get('PARKSIM_ALLOW_FOREIGN_VEHICLES', '')
         return str(raw).strip().lower() in self._FOREIGN_ALLOW_TRUTHY
+
+    def _foreign_guard_min_window(self) -> float:
+        """非首个检查点的最小观察窗秒数。
+
+        环境变量 PARKSIM_FOREIGN_GUARD_WINDOW 覆盖默认值；解析风格与
+        _foreign_vehicles_allowed 一致（去首尾空白；无法解析或为负数时回落默认值）。
+        取 0 表示关闭该机制（回到「首轮干净立即放行」的旧行为）。
+        """
+        default = self._FOREIGN_GUARD_MIN_WINDOW
+        raw = os.environ.get('PARKSIM_FOREIGN_GUARD_WINDOW', '')
+        try:
+            value = float(str(raw).strip())
+        except (TypeError, ValueError):
+            return default
+        return value if value >= 0.0 else default
 
     def _scan_foreign_nodes(self):
         """扫描当前 ROS 图，判定「外来」串扰节点，返回 (全部节点标识, 外来vehicle, 外来simulator)。
@@ -420,13 +450,19 @@ class SimulatorNode(MPClabNode):
 
         checkpoint 区分调用位置并写入日志：
           - 'startup'           启动早期（participant 刚创建，DDS 可能未收敛，仅尽早拦截）
-          - 'post-dataset-load' 数据集加载后（DDS 已收敛，可见性 100%）；两处复用同一方法。
+          - 'post-dataset-load' 数据集加载后；两处复用同一方法。
 
         - 环境变量 PARKSIM_ALLOW_FOREIGN_VEHICLES（1/true/yes/on，大小写不敏感）为真时
           完全跳过检查并打印 WARN（多实例联调）；两个 checkpoint 均尊重该开关。
         - 否则轮询节点名列表：连续 _FOREIGN_CHECK_CONFIRM 轮都命中（外来 vehicle 或外来
           simulator）才判定失败；失败时保留原有错误语义（抛 KeyboardInterrupt → 非 0 退出）。
-        - 首轮干净立即放行；最长观察 _FOREIGN_CHECK_MAX_WAIT 秒后仍未被连续确认则放行。
+        - 首个检查点（startup）：首轮干净立即放行（不给宿主启动引入额外延迟）。
+        - 非首个检查点（post-dataset-load）：首轮干净时，若距首个检查点起点不足
+          _FOREIGN_GUARD_MIN_WINDOW 秒则继续观察、补足窗口后才放行（循环以单调递增的
+          elapsed_total 判界，必然终止）。原因：发布镜像瘦身后 Dataset.load() 近瞬时完成，
+          两检查点间隔由宿主 ~6s 塌缩到容器 ~0.25s，DDS 发现来不及收敛 -> 守卫在
+          「显式关隔离 + 存在外来 simulator」时会漏检；宿主上间隔本就 > 窗口，故零额外延迟。
+        - 最长观察 _FOREIGN_CHECK_MAX_WAIT 秒上限、连续确认要求均保持不变。
         - 每轮打印 checkpoint / 轮次 / 看到的全部节点 / 连续命中计数 / 耗时与最终判定，便于复盘。
         """
         if self._foreign_vehicles_allowed():
@@ -435,6 +471,12 @@ class SimulatorNode(MPClabNode):
                 '(checkpoint=%s). Multiple simulator instances may interfere with each other (allow-listed).'
                 % (os.environ.get('PARKSIM_ALLOW_FOREIGN_VEHICLES'), checkpoint))
             return
+
+        # 最小观察窗：计时起点钉在「第一个检查点」；仅「非首个检查点」受窗口约束（startup 行为完全不变）。
+        is_first_checkpoint = self._foreign_guard_t0 is None
+        if is_first_checkpoint:
+            self._foreign_guard_t0 = time.monotonic()
+        min_window = self._foreign_guard_min_window()
 
         interval = self._FOREIGN_CHECK_INTERVAL
         max_wait = self._FOREIGN_CHECK_MAX_WAIT
@@ -471,11 +513,19 @@ class SimulatorNode(MPClabNode):
                     '%s (checkpoint=%s, confirmed over %d consecutive rounds, elapsed %.1fs). '
                     'Please kill those processes first.' % (what, checkpoint, hits, time.monotonic() - start))
                 raise KeyboardInterrupt()
-            # 本轮干净 -> 立即放行（不给正常单实例启动引入额外延迟）
+            # 本轮干净：非首个检查点须先满足最小观察窗，否则继续观察（不 return）
             if not foreign:
+                elapsed_total = time.monotonic() - self._foreign_guard_t0
+                if (not is_first_checkpoint) and elapsed_total < min_window:
+                    self.get_logger().info(
+                        'Foreign node check [%s] round %d: clean, but min observation window not met '
+                        '(elapsed_total=%.2fs < %.2fs, need %.2fs more); keep observing.'
+                        % (checkpoint, round_idx, elapsed_total, min_window, min_window - elapsed_total))
+                    time.sleep(interval)   # elapsed_total 单调递增 -> 循环必然终止
+                    continue
                 self.get_logger().info(
-                    'Foreign node check [%s] passed (clean on round %d, elapsed %.1fs).'
-                    % (checkpoint, round_idx, time.monotonic() - start))
+                    'Foreign node check [%s] passed (clean on round %d, elapsed %.1fs, window_total %.1fs).'
+                    % (checkpoint, round_idx, time.monotonic() - start, elapsed_total))
                 return
             # 命中但未被连续确认且已达观察上限 -> 放行，避免 DDS 抖动误杀
             if time.monotonic() - start >= max_wait:
