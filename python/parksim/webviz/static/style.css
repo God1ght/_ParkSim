@@ -88,6 +88,9 @@ html, body {
 .chip-sim.sim-starting .dot { background: var(--veh-parking); box-shadow: 0 0 8px var(--veh-parking); }
 .chip-sim.sim-finished .dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
 .chip-sim.sim-stopped .dot { background: var(--sub); }
+/* 暂停态：running 但 S.paused=true —— 灯与文字转警示黄，明确标注「已暂停」 */
+.chip-sim.sim-paused { color: var(--warn); }
+.chip-sim.sim-paused .dot { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
 
 /* ---------- 图例 ---------- */
 #legend {
@@ -304,3 +307,31 @@ body.presentation #hint { display: none !important; }
 .map-panel-hint {
   font-size: 11px; color: var(--sub); line-height: 1.5;
 }
+
+/* ---------- 页内非阻塞确认框（替代原生 confirm，避免阻塞事件循环） ---------- */
+#confirmModal {
+  position: fixed; inset: 0; z-index: 120;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 10, 15, 0.55);
+  backdrop-filter: blur(2px);
+}
+.confirm-box {
+  min-width: 300px; max-width: 82vw;
+  background: var(--panel-solid); color: var(--text);
+  border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow); padding: 18px 20px 14px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.confirm-text { font-size: 14px; line-height: 1.6; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.confirm-btn {
+  appearance: none; border: 1px solid var(--border); background: transparent; color: var(--text);
+  font-family: inherit; font-size: 13px; padding: 8px 18px; border-radius: 9px; cursor: pointer;
+  transition: background .15s ease, color .15s ease, filter .15s ease;
+}
+.confirm-btn:hover { background: rgba(120, 160, 200, 0.14); }
+.confirm-btn.confirm-primary {
+  background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 700;
+}
+.confirm-btn.confirm-primary:hover { filter: brightness(1.08); background: var(--bad); }
+body[data-theme="light"] .confirm-btn:hover { background: rgba(30, 60, 90, 0.08); }

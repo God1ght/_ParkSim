@@ -131,6 +131,9 @@ const S = {
   degraded: false,      // 关键资产缺失（启动自检降级标记，来自 init.degraded）
   assetsMissing: [],    // init.assets_missing：缺失资产绝对路径列表
   activeAlerts: {},     // 仍生效的黄色告警：code -> message（被更严重横幅占用时保留）
+  // 控制指令（stop/pause）ack 超时管理：计时器句柄 + 是否已重发一次
+  _ctlAck: { stop: null, pause: null },
+  _ctlAckRetried: { stop: false, pause: false },
 };
 
 const P = { rows: null, slots: null, obstacles: null, waypoints: null };
@@ -165,6 +168,10 @@ const schemeCurrent = document.getElementById('schemeCurrent');
 const sysBanner = document.getElementById('sysBanner');
 const sysBannerText = document.getElementById('sysBannerText');
 const btnSysRestart = document.getElementById('btnSysRestart');
+const confirmModal = document.getElementById('confirmModal');
+const confirmText = document.getElementById('confirmText');
+const btnConfirmOk = document.getElementById('btnConfirmOk');
+const btnConfirmCancel = document.getElementById('btnConfirmCancel');
 const levelIndicatorEl = document.getElementById('levelIndicator');
 const secRandom = document.getElementById('secRandom');
 const secReplay = document.getElementById('secReplay');
@@ -541,7 +548,9 @@ function connect() {
       S.occPath = buildOccPath();
     } else if (m.type === 'paused') {
       S.paused = !!m.value;
+      clearControlAck('pause');   // 收到暂停 ack → 清除超时计时器
       updatePauseLabel();
+      updateSimChip();
     } else if (m.type === 'status') {
       onSchemeStatus(m);
     } else if (m.type === 'alert') {
@@ -1289,6 +1298,7 @@ function onSchemeStatus(m) {
     setMsg('本轮仿真已完成，可调整设置后再次开启');
     setTimeout(() => { setMsg(''); }, 4500);
   } else if (v === 'stopped') {
+    clearControlAck('stop');   // status 广播的 stopped 亦视作停止 ack
     setSimState('stopped');
   } else if (v === 'idle') {
     setSimState('idle');
@@ -1381,9 +1391,14 @@ function updateSimChip() {
   const st = S.simState;
   if (!st) { chipSim.classList.add('hidden'); return; }
   chipSim.classList.remove('hidden');
-  chipSim.classList.remove('sim-running', 'sim-starting', 'sim-finished', 'sim-stopped');
+  chipSim.classList.remove('sim-running', 'sim-starting', 'sim-finished', 'sim-stopped', 'sim-paused');
   const n = (S.frame && S.frame.vehicles) ? S.frame.vehicles.length : 0;
-  if (st === 'running') {
+  if (st === 'running' && S.paused) {
+    // 暂停态：仿真时间/车辆数已冻结，状态灯转警示黄并显式标注「已暂停」
+    // （finished/stopped/idle/starting 不受 paused 影响，仍按各自分支渲染）
+    chipSim.classList.add('sim-paused');
+    vSim.textContent = '已暂停 · ' + n + ' 车';
+  } else if (st === 'running') {
     chipSim.classList.add('sim-running');
     vSim.textContent = '仿真运行中 · ' + n + ' 车';
   } else if (st === 'starting') {
@@ -1410,6 +1425,7 @@ function refreshSchemeCurrent() {
 
 /* {type:'stopped'}：服务端确认停止 → 置状态并提示 */
 function onSimStopped(m) {
+  clearControlAck('stop');   // 收到停止 ack → 清除超时计时器
   setSimState('stopped');
   S.paused = false;
   updatePauseLabel();
@@ -1421,10 +1437,80 @@ function onSimStopped(m) {
 
 /* {type:'stop_failed', message}：停止失败 → 提示并恢复按钮可用（状态未变） */
 function onSimStopFailed(m) {
+  clearControlAck('stop');   // 收到停止失败 ack → 清除超时计时器
   const t = '停止失败：' + ((m && m.message) || '未知错误');
   schemeStatus.textContent = t;
   setMsg(t);
   applySimStateUI();
+}
+
+/* ---------- 控制指令 ack 超时（stop/pause）：一次重发 + 可见反馈 ----------
+ * 发出控制指令后启动计时；收到对应 ack 立即清除。超时未 ack → 重发一次并重新计时；
+ * 第二次仍超时 → 恢复按钮可用 + setMsg 提示 + console.warn（不把按钮永久卡死）。 */
+const CONTROL_ACK_TIMEOUT_MS = 12000;
+
+function clearControlAck(kind) {
+  if (S._ctlAck[kind]) { clearTimeout(S._ctlAck[kind]); S._ctlAck[kind] = null; }
+}
+
+function sendControl(kind) {
+  if (!S.ws || S.ws.readyState !== 1) return false;
+  if (kind === 'stop') { S.ws.send(JSON.stringify({ type: 'stop' })); }
+  else { S.ws.send(JSON.stringify({ type: 'pause', value: !S.paused })); }
+  return true;
+}
+
+function armControlAck(kind) {
+  clearControlAck(kind);
+  S._ctlAckRetried[kind] = false;
+  S._ctlAck[kind] = setTimeout(() => onControlAckTimeout(kind), CONTROL_ACK_TIMEOUT_MS);
+}
+
+function onControlAckTimeout(kind) {
+  S._ctlAck[kind] = null;
+  if (!S._ctlAckRetried[kind]) {
+    S._ctlAckRetried[kind] = true;
+    console.warn('[webviz] 控制指令 ' + kind + ' ' + (CONTROL_ACK_TIMEOUT_MS / 1000) +
+                 's 未收到 ack，重发一次');
+    if (sendControl(kind)) {
+      S._ctlAck[kind] = setTimeout(() => onControlAckTimeout(kind), CONTROL_ACK_TIMEOUT_MS);
+    } else {
+      console.warn('[webviz] 控制指令 ' + kind + ' 重发失败：连接不可用');
+      if (kind === 'stop') btnStop.disabled = false; else btnPause.disabled = false;
+      setMsg('与桥的连接不可用，请等待重连后重试');
+    }
+    return;
+  }
+  // 第二次仍超时：放弃等待，恢复按钮可用并给出可见反馈
+  console.warn('[webviz] 控制指令 ' + kind + ' 重发后仍无 ack，放弃等待');
+  if (kind === 'stop') {
+    btnStop.disabled = false;
+    setMsg('桥未响应停止请求，请检查连接后重试');
+  } else {
+    btnPause.disabled = false;
+    setMsg('桥未响应暂停请求，请检查连接后重试');
+  }
+}
+
+/* ---------- 页内非阻塞确认框（替代原生阻塞式确认弹窗，避免阻塞事件循环） ----------
+ * askConfirm(text) 返回 Promise<boolean>：确定=true，取消=false。Enter=确定，Esc=取消。 */
+let _confirmResolve = null;
+
+function askConfirm(text) {
+  return new Promise((resolve) => {
+    if (!confirmModal) { resolve(false); return; }
+    _confirmResolve = resolve;
+    if (confirmText) confirmText.textContent = text || '';
+    confirmModal.classList.remove('hidden');
+    if (btnConfirmOk) { try { btnConfirmOk.focus(); } catch (e) {} }
+  });
+}
+
+function closeConfirm(result) {
+  if (confirmModal) confirmModal.classList.add('hidden');
+  const r = _confirmResolve;
+  _confirmResolve = null;
+  if (r) r(result);
 }
 
 let hoverTipVid = 0;
@@ -1908,17 +1994,22 @@ cv.addEventListener('mouseleave', () => { S.hover = 0; updateTooltip(); });
 btnPause.addEventListener('click', () => {
   if (btnPause.classList.contains('hidden')) return;   // 状态驱动下隐藏时（含空格键）不触发
   if (!S.control || !S.ws || S.ws.readyState !== 1) return;
-  S.ws.send(JSON.stringify({ type: 'pause', value: !S.paused }));
+  sendControl('pause');     // {type:'pause', value:!S.paused}
+  armControlAck('pause');   // 12s ack 超时 + 一次重发
+  updateSimChip();          // 暂停态即将切换：立即刷新状态灯
 });
 btnStart.addEventListener('click', () => {
   // 与方案面板「开启仿真」同路径：按当前面板配置启动仿真（applyScheme 内含托管/连接守卫）
   applyScheme();
 });
-btnStop.addEventListener('click', () => {
+btnStop.addEventListener('click', async () => {
   if (!S.control || !S.ws || S.ws.readyState !== 1) return;
-  if (!window.confirm('将清空场内车辆并结束本轮仿真，确定停止？')) return;
+  // 页内非阻塞确认（替代原生阻塞式确认弹窗，避免阻塞事件循环导致 stop 指令丢失）
+  if (!await askConfirm('将清空场内车辆并结束本轮仿真，确定停止？')) return;
+  if (!S.control || !S.ws || S.ws.readyState !== 1) return;   // 确认期间连接可能已断
   btnStop.disabled = true;   // 等待 {type:'stopped'} / {type:'stop_failed'} / status 广播刷新
-  S.ws.send(JSON.stringify({ type: 'stop' }));
+  sendControl('stop');
+  armControlAck('stop');     // 12s ack 超时 + 一次重发；第二次超时恢复按钮可用
 });
 btnReset.addEventListener('click', () => { S.follow = 0; sendFocus(0); updatePathHint(); fitView(); });
 btnTheme.addEventListener('click', cycleTheme);
@@ -1970,7 +2061,23 @@ document.addEventListener('click', (e) => {
   }
 });
 
+function confirmModalOpen() {
+  return !!(confirmModal && !confirmModal.classList.contains('hidden'));
+}
+if (btnConfirmOk) btnConfirmOk.addEventListener('click', () => closeConfirm(true));
+if (btnConfirmCancel) btnConfirmCancel.addEventListener('click', () => closeConfirm(false));
+if (confirmModal) {
+  // 点击遮罩空白处 = 取消
+  confirmModal.addEventListener('click', (e) => { if (e.target === confirmModal) closeConfirm(false); });
+}
+
 window.addEventListener('keydown', (e) => {
+  // 确认框打开时优先处理 Enter/Esc，并吞掉其它按键（避免空格误触暂停）
+  if (confirmModalOpen()) {
+    if (e.key === 'Enter') { e.preventDefault(); closeConfirm(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeConfirm(false); }
+    return;
+  }
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
   if (e.key === ' ') { e.preventDefault(); btnPause.click(); }
   else if (e.key === 'h' || e.key === 'H') {

@@ -34,6 +34,17 @@
   <button id="btnSysRestart">开启仿真</button>
 </div>
 
+<!-- 页内非阻塞确认框（替代原生阻塞式确认弹窗，避免阻塞事件循环） -->
+<div id="confirmModal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="confirmText">
+  <div class="confirm-box">
+    <div class="confirm-text" id="confirmText">--</div>
+    <div class="confirm-actions">
+      <button id="btnConfirmCancel" class="confirm-btn" type="button">取消</button>
+      <button id="btnConfirmOk" class="confirm-btn confirm-primary" type="button">确定</button>
+    </div>
+  </div>
+</div>
+
 <!-- 图例 -->
 <div id="legend">
   <div class="legend-item"><span class="sw" data-state="driving"></span>行驶</div>
