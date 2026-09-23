@@ -1,0 +1,6 @@
+# 运行必需的最小 pickle 资产（根 .gitignore 的 *.pickle 会静默排除它们，导致 git archive/镜像构建缺文件、vehicle_node 启动即死）
+# 只做定向例外，不要放开整个目录（同目录还有 7.5G 数据集）
+!parking_maneuvers.pickle
+!waypoints_graph.pickle
+!spots_data.pickle
+!agents_data_0012.pickle

@@ -1,0 +1,32 @@
+# =============================================================================
+# ParkSim-JTH 运行/构建最小依赖
+#
+# 提取口径：对「真正被拉起的三个入口」做静态传递 import 扫描
+#   - workspace/src/parksim/src/simulator_node.py
+#   - workspace/src/parksim/src/vehicle_node.py
+#   - python/parksim/webviz/server.py
+# 沿 `parksim.*` / `dlp.*` 包内引用递归（共 26 个模块），剔除 stdlib 与本仓库
+# 代码后得到下表；foxy 树自带的 rclpy/std_msgs/rosidl_runtime_py/launch 等
+# 不在此安装。
+#
+# 明确排除：torch / torchvision / pytorch_lightning / ray / dgl / einops /
+#   sklearn / mosek / casadi / dearpygui / cv2 / skimage / networkx 等
+#   —— 这些只出现在 intent_predict / trajectory_predict / offline_visualizer /
+#   hobca_planner 等**训练与离线**路径，运行链路不 import（见 README 验证）。
+# =============================================================================
+
+# ---- 运行时（webviz + simulator/vehicle 全链路） ----
+numpy==1.24.4
+scipy==1.10.1
+matplotlib==3.7.5
+pandas==2.0.3
+PyYAML==6.0.2
+Pillow==10.4.0
+aiohttp==3.10.11
+
+# ---- 仅构建期（colcon + rosidl_parser） ----
+# rosidl_parser(foxy) 依赖 lark 与 catkin_pkg；rosidl_cmake 模板依赖 empy
+empy==3.3.4
+lark-parser==0.12.0
+catkin-pkg==1.0.0
+colcon-common-extensions==0.3.0

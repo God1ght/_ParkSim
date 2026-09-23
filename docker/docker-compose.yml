@@ -1,0 +1,40 @@
+# ParkSim-JTH 一体化镜像 —— docker compose 部署（目标机使用）
+#
+#   docker compose up -d
+#   docker compose logs -f
+#   docker compose down
+#
+# 前提：先 `docker load -i parksim-jth-v1.tar.gz` 把镜像载入本地（镜像不在任何 registry，
+#       compose **不会**自动拉取，必须先 load）。
+services:
+  parksim-jth:
+    image: parksim-jth:v1
+    container_name: parksim-jth
+    restart: unless-stopped
+
+    # 宿主 8098 -> 容器 8099（避免与宿主已有 8099 实例冲突；如无冲突可改 8099:8099）
+    ports:
+      - "8098:8099"
+
+    environment:
+      PORT: "8099"
+      PARKSIM_MAP: "jth_b1"
+      # DDS 域：容器自带网络命名空间，与宿主 ROS 天然隔离；
+      # 若目标机上还要跑别的 ROS 容器并希望互不干扰，可各自指定不同 domain。
+      # ROS_DOMAIN_ID: "0"
+      # 仅允许容器内 DDS 走 lo（更稳、更省发现开销）
+      # ROS_LOCALHOST_ONLY: "1"
+
+    # 若需要与宿主/同宿主其他 ROS 节点直接互相发现，改用 host 网络：
+    #   network_mode: host
+    #   （此时容器内 8099 直接暴露在宿主，且需自行避免端口冲突）
+
+    # 仿真会把运行态文件写回容器内 /media/.../_ParkSim/workspace 与 config，
+    # 属于容器内可写层，重启容器即回到镜像基线；无需挂卷。
+    volumes: []
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
