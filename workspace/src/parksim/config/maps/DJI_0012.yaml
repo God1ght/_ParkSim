@@ -1,0 +1,18 @@
+# ============================================================================
+# 地图预设：停车场场景的数据来源与关联文件
+#
+# 新增地图：复制本文件为 <地图名>.yaml 并替换各路径；
+# 运行时用 map:=<地图名> 选择（launch / 网页「方案」面板「地图」下拉）。
+# ============================================================================
+
+name: DJI_0012
+dlp_path: "${PARKSIM_ROOT}/python/parksim/priorFiles/data/DJI_0012"
+spots_data_path: "${PARKSIM_ROOT}/python/parksim/priorFiles/spots_data.pickle"
+waypoints_graph_path: "${PARKSIM_ROOT}/python/parksim/priorFiles/waypoints_graph.pickle"
+parking_maneuvers_path: "${PARKSIM_ROOT}/python/parksim/priorFiles/parking_maneuvers.pickle"
+agents_data_path: "${PARKSIM_ROOT}/python/parksim/priorFiles/agents_data_0012.pickle"
+# base_map: ""    # 可选：底图图片路径（缺省用 dlp 包内置底图）
+# ---- 出入口（解耦为两个位置点，与 spot_y_offset 类似的配置参数）----
+# 缺省语义：exit 未定义时与 entrance 同点（兼容旧行为）
+entrance: [14.38, 70.9]
+exit: [14.38, 70.9]

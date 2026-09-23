@@ -1,0 +1,38 @@
+{
+ "level": "B1",
+ "ramps": [],
+ "entrance": [
+  81.752,
+  144.549
+ ],
+ "exit": [
+  72.108,
+  36.661
+ ],
+ "portals": [
+  {
+   "id": "P1",
+   "title": "西侧 · 地面与 B1",
+   "flow": "bidirectional",
+   "road_id": "R01"
+  },
+  {
+   "id": "P2",
+   "title": "西侧 · B1 下 B2",
+   "flow": "outbound",
+   "road_id": "R10"
+  },
+  {
+   "id": "P3",
+   "title": "东侧 · B1 上地面",
+   "flow": "outbound",
+   "road_id": "R30"
+  },
+  {
+   "id": "P4",
+   "title": "东侧 · B2 上 B1",
+   "flow": "inbound",
+   "road_id": "R28"
+  }
+ ]
+}

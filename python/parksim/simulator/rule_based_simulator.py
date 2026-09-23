@@ -28,8 +28,35 @@ spots_data_path = home_path + '/spots_data.pickle'
 offline_maneuver_path = home_path + '/parking_maneuvers.pickle'
 waypoints_graph_path = home_path + '/waypoints_graph.pickle'
 intent_model_path = home_path + '/model/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth'
-entrance_coords = [14.38, 76.21]
+entrance_coords = [14.38, 76.21]   # 门顶参考点（顶点254，门洞上端）
 block_spots = [43, 44, 45]
+
+
+def _right_normal(dx, dy):
+    """行驶方向 (dx, dy) 的右侧法向（以车行驶方向为前方，右手侧）。
+    坐标约定：x 轴向右、y 轴向上，方向 (0,-1) 表示向场内下行。"""
+    import numpy
+    return numpy.array([dy, -dx])
+
+
+def _gate_derived_enter_exit(gate_head, offset, in_dir=(0.0, -1.0)):
+    """由门顶锚点 + 行驶方向右侧偏移 offset 推导入场起点与离场 CRUISE 终点。
+
+    不做死写坐标：
+    - 入场方向 = in_dir（默认沿门顶向场内，即 (0,-1)）；入场点是锚点沿其
+      行驶方向右侧偏移 offset（门顶右侧）。
+    - 离场方向 = -in_dir（朝门外）；离场终点取同一锚点在离场行驶方向
+      右侧偏移 offset（与入场点近似对称的另一侧）。
+    返回 (enter_pt, exit_pt)，均为 [x, y] 精度 float。
+    """
+    import numpy as _np
+    g = _np.asarray(gate_head, float)
+    din = _np.asarray(in_dir, float)
+    din = din / _np.linalg.norm(din)
+    enter_pt = (g + offset * _right_normal(*din)).tolist()
+    dout = -din
+    exit_pt = (g + offset * _right_normal(*dout)).tolist()
+    return enter_pt, exit_pt
 
 overshoot_ranges = {'pointed_right': [(42, 48), (67, 69), (92, 94), (113, 115), (134, 136), (159, 161), (184, 186), (205, 207), (226, 228), (251, 253), (276, 278), (297, 299), (318, 320), (343, 345)],
                     'pointed_left': [(64, 66), (89, 91), (156, 158), (181, 183), (248, 250), (273, 275), (340, 342)]}
@@ -131,6 +158,9 @@ class RuleBasedSimulator(object):
         # vehicle.load_intent_model(model_path=intent_model_path)
 
         task_profile = []
+        # 入场/离场终点：由门顶行驶方向右侧偏移推导，而非硬编码坐标
+        enter_pt, exit_pt = _gate_derived_enter_exit(
+            entrance_coords, vehicle_config.offset)
         if spot_index > 0:
             cruise_task = VehicleTask(
                 name="CRUISE", v_cruise=5, target_spot_index=spot_index)
@@ -138,8 +168,8 @@ class RuleBasedSimulator(object):
             task_profile = [cruise_task, park_task]
 
             state = VehicleState()
-            state.x.x = entrance_coords[0] - vehicle_config.offset
-            state.x.y = entrance_coords[1]
+            state.x.x = enter_pt[0]
+            state.x.y = enter_pt[1]
             state.e.psi = - np.pi/2
 
             vehicle.set_vehicle_state(state=state)
@@ -147,7 +177,7 @@ class RuleBasedSimulator(object):
         else:
             unpark_task = VehicleTask(name="UNPARK")
             cruise_task = VehicleTask(
-                name="CRUISE", v_cruise=5, target_coords=np.array(entrance_coords))
+                name="CRUISE", v_cruise=5, target_coords=np.array(exit_pt))
             task_profile = [unpark_task, cruise_task]
 
             vehicle.set_vehicle_state(spot_index=abs(spot_index))

@@ -1,10 +1,6 @@
-# Paths are resolved by launch through PARKSIM_ROOT.
-dlp_path: "${PARKSIM_ROOT}/python/parksim/priorFiles/data/DJI_0012"
-
+dlp_path: ${PARKSIM_ROOT}/python/parksim/priorFiles/data/DJI_0012
 random_seed: 0
-
 write_log: true
-log_path: "${PARKSIM_ROOT}/vehicle_log"
-
-use_existing_agents: true
-agents_data_path: "${PARKSIM_ROOT}/python/parksim/priorFiles/agents_data_0012.pickle"
+log_path: ${PARKSIM_ROOT}/vehicle_log
+use_existing_agents: false
+agents_data_path: ${PARKSIM_ROOT}/python/parksim/priorFiles/agents_data_0012.pickle

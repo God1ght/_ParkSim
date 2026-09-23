@@ -1,0 +1,39 @@
+# ============================================================================
+# 当前生效场景配置（simulator 读取）
+#
+# 优先级：simulator.yaml（基础配置） < 本文件（场景预设） < launch 参数
+#   launch 覆盖示例：ros2 launch parksim parksim.launch.py allocation_method:=graph_cost
+#   切换预设：      ros2 launch parksim parksim.launch.py scenario:=example_random
+#
+# 模式：
+#   random  - 随机生成（数量/间隔/占用随机化；泊位分配由 allocation_method 决定）
+#   replay  - 经验初始化：按所选场地数据（数据场景）真实占用 + 回放其智能体
+#   custom  - 按显式时间表生成（custom.file 指向预设文件，或直接在该文件内定义 vehicles）
+#
+# 本文件默认值与原行为一致（30/30、间隔 5s、seed 0），可作为场景预设的模板。
+# ============================================================================
+
+mode: random
+
+random:
+  seed: 0                    # 随机种子（与原 random_seed 默认一致）
+  entering: 30               # 入库车辆数
+  exiting: 30                # 出库车辆数
+  interval_mean: 5.0         # 到达间隔均值（指数分布，秒）
+  y_bound: 72                # 入口清空门控（y 低于该值后才允许下一辆入库）
+  occupancy_random:          # 随机生成：车位占用随机化（经验初始化不受影响）
+    enable: true             # true = 重掷占用；false = 使用数据集真实占用
+    count: 0                 # 占用数量；0 = 同数据集占用数量（此时 ratio 忽略）
+    ratio: 0.0               # 占用比例（0-1）；count<=0 且 ratio>0 时按比例
+  occupancy:
+    blocked: []              # 追加封锁的车位（在 simulator.yaml blocked_spots 之外）
+    occupied: []             # 预占用车位（虚拟已停车）
+  entering_spot_pool: []     # 空 = 不限；非空 = 入库车辆仅从该车位池选择
+
+replay:
+  agents_data_path: ""       # 空 = 使用 simulator.yaml / global_params 的 agents_data_path
+  time_scale: 1.0            # 时间轴缩放（>1 更快）
+  max_agents: 0              # 0 = 全部；N>0 = 按 init_time 取前 N 个
+
+custom:
+  file: "scenarios/example_custom.yaml"   # 自定义时间表文件（相对 config 目录；留空则为空场）

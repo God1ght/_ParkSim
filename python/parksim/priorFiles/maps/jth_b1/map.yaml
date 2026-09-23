@@ -1,0 +1,12 @@
+name: jth_b1
+title: 嘉亭荟 B1（底图交付 v1 · 逐边车道偏移）
+ready: true
+layout: layout_rotated.json
+spots_data_path: ${PARKSIM_PRIORFILES}/maps/jth_b1/spots_data.pickle
+waypoints_graph_path: ${PARKSIM_PRIORFILES}/maps/jth_b1/waypoints_graph.pickle
+base_map: base_map_clean.png
+lane_offset_mode: directed
+# 本地图车位总数为 269（索引 0..268）。
+# config/simulator.yaml 的 blocked_spots 是 DJI_0012（350+ 车位）语义的硬编码索引，
+# 最大到 345，在本地图会越界导致 simulator_node 崩溃。显式置空以覆盖之。
+blocked_spots: []

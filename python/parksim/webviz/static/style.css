@@ -1,0 +1,283 @@
+/* ParkSim webviz v3 — 双主题（dark: night demo / light: engineering paper） */
+
+/* ---------- 主题变量 ---------- */
+body[data-theme="dark"] {
+  --bg: #0d1219;
+  --panel: rgba(16, 22, 31, 0.86);
+  --panel-solid: #121924;
+  --border: rgba(125, 165, 205, 0.16);
+  --text: #d8e3ef;
+  --sub: #8296ab;
+  --accent: #4cc2ff;
+  --ok: #3ddbb4;
+  --bad: #e06060;
+  --shadow: 0 10px 34px rgba(0, 0, 0, 0.48);
+  --veh-driving: #38d6c0;
+  --veh-parking: #f5b04d;
+  --veh-braking: #e06060;
+  --veh-done: rgba(112, 126, 144, 0.78);
+  --ghost: rgba(165, 198, 232, 0.42);
+  --obstacle: rgba(96, 120, 150, 0.9);
+}
+body[data-theme="light"] {
+  --bg: #f6f3ed;
+  --panel: rgba(255, 255, 255, 0.90);
+  --panel-solid: #ffffff;
+  --border: rgba(35, 48, 62, 0.13);
+  --text: #23303d;
+  --sub: #6d7885;
+  --accent: #0a7f6b;
+  --ok: #1f9e6e;
+  --bad: #c94b4b;
+  --shadow: 0 10px 30px rgba(30, 40, 60, 0.16);
+  --veh-driving: #2f9e6e;
+  --veh-parking: #e08a2c;
+  --veh-braking: #cf4b4b;
+  --veh-done: rgba(138, 146, 158, 0.82);
+  --ghost: rgba(45, 70, 95, 0.30);
+  --obstacle: rgba(120, 140, 160, 0.92);
+}
+
+/* ---------- 基础 ---------- */
+html, body {
+  margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+               "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+  transition: background .25s ease;
+}
+* { box-sizing: border-box; }
+.hidden { display: none !important; }
+
+#cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+#cv.dragging { cursor: grabbing; }
+
+/* ---------- 顶栏 ---------- */
+#topbar {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; pointer-events: none;
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark {
+  width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  background: var(--panel); border: 1px solid var(--border); box-shadow: var(--shadow);
+  color: var(--accent); font-weight: 800; font-size: 17px;
+}
+.brand-name { font-size: 19px; font-weight: 700; letter-spacing: .4px; line-height: 1.15;
+  text-shadow: 0 1px 8px rgba(0,0,0,.18); }
+.brand-sub { font-size: 11px; color: var(--sub); letter-spacing: .3px; }
+.chips { display: flex; gap: 8px; pointer-events: auto; }
+.chip {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 6px 12px; box-shadow: var(--shadow); backdrop-filter: blur(8px);
+  min-width: 74px;
+}
+.chip-label { font-size: 10px; color: var(--sub); letter-spacing: .4px; }
+.chip-value { font-size: 14px; font-weight: 650; }
+.chip-conn { flex-direction: row; align-items: center; gap: 7px; min-width: auto; font-size: 12px; }
+.chip-conn .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+.chip-conn.ok .dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+
+/* ---------- 图例 ---------- */
+#legend {
+  position: absolute; right: 14px; bottom: 14px; z-index: 20;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 10px 12px; box-shadow: var(--shadow); backdrop-filter: blur(8px);
+  display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--sub);
+}
+.legend-item { display: flex; align-items: center; gap: 8px; }
+.sw { width: 14px; height: 8px; border-radius: 3px; display: inline-block; }
+.sw[data-state="driving"] { background: var(--veh-driving); }
+.sw[data-state="parking"] { background: var(--veh-parking); }
+.sw[data-state="braking"] { background: var(--veh-braking); }
+.sw[data-state="done"]    { background: var(--veh-done); }
+.sw[data-state="ghost"]   { background: var(--ghost); }
+.sw[data-state="obstacle"] { background: var(--obstacle); }
+
+/* ---------- 控制坞 ---------- */
+#dock {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 30;
+  display: flex; align-items: center; gap: 4px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 6px; box-shadow: var(--shadow); backdrop-filter: blur(10px);
+}
+.dock-btn {
+  appearance: none; border: 0; background: transparent; color: var(--text);
+  font-size: 13px; font-family: inherit; padding: 8px 14px; border-radius: 10px;
+  cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.dock-btn:hover { background: rgba(120, 160, 200, 0.14); }
+.dock-btn:disabled { opacity: .4; cursor: default; }
+.dock-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+body[data-theme="light"] .dock-btn:hover { background: rgba(30, 60, 90, 0.08); }
+
+/* ---------- 图层抽屉 ---------- */
+#layers {
+  position: absolute; left: 50%; bottom: 66px; transform: translateX(-50%); z-index: 29;
+  display: flex; flex-wrap: wrap; gap: 6px; max-width: 560px; justify-content: center;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 10px 12px; box-shadow: var(--shadow); backdrop-filter: blur(10px);
+}
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  font-size: 12px; color: var(--sub); padding: 5px 10px; border-radius: 999px;
+  border: 1px solid var(--border); background: transparent; transition: all .15s ease;
+}
+.pill:has(input:checked) { color: var(--text); border-color: var(--accent); }
+.pill input { accent-color: var(--accent); margin: 0; }
+.pill-hint { font-size: 11px; color: var(--sub); opacity: 0.75; }
+.pill.pill-off { opacity: 0.5; color: var(--sub); cursor: not-allowed; }
+.pill.pill-off input { pointer-events: none; opacity: 0.5; }
+.layers-reset-row { width: 100%; display: flex; justify-content: center; padding-top: 4px; }
+.layers-reset {
+  font-size: 12px; color: var(--text); padding: 5px 14px; border-radius: 999px;
+  border: 1px solid var(--border); background: transparent; cursor: pointer;
+  transition: all .15s ease;
+}
+.layers-reset:hover { border-color: var(--accent); color: var(--accent); }
+.layers-reset[disabled] { opacity: 0.4; cursor: default; }
+
+/* ---------- 提示 & 消息 ---------- */
+#tooltip {
+  position: absolute; z-index: 40; pointer-events: none;
+  background: var(--panel-solid); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: var(--shadow); padding: 8px 11px; font-size: 12px; line-height: 1.55;
+  max-width: 240px; color: var(--text);
+}
+#tooltip .tt-title { font-weight: 700; font-size: 13px; margin-bottom: 2px; }
+#tooltip .tt-sub { color: var(--sub); }
+#msg {
+  position: absolute; left: 16px; bottom: 16px; z-index: 20; font-size: 12px; color: var(--sub);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  padding: 5px 10px; box-shadow: var(--shadow); max-width: 46vw;
+  display: none;
+}
+#msg.show { display: block; }
+#hint {
+  position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%); z-index: 10;
+  font-size: 11px; color: var(--sub); opacity: .8; transition: opacity .4s ease;
+  pointer-events: none; white-space: nowrap;
+}
+#hint.fade { opacity: 0; }
+
+/* ---------- 方案面板 ---------- */
+#scheme {
+  position: absolute; left: 50%; bottom: 66px; transform: translateX(-50%); z-index: 29;
+  width: 340px; max-height: calc(100vh - 150px); overflow-y: auto;
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 14px; box-shadow: var(--shadow); backdrop-filter: blur(10px);
+}
+.scheme-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.scheme-row label { font-size: 12px; color: var(--sub); flex: 0 0 64px; }
+.scheme-row select, .scheme-row input {
+  flex: 1; min-width: 0; appearance: none; background: var(--panel-solid); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px;
+  font-size: 12px; font-family: inherit; outline: none;
+}
+.scheme-row select:focus, .scheme-row input:focus { border-color: var(--accent); }
+.scheme-sec { display: flex; flex-direction: column; gap: 8px; border-top: 1px dashed var(--border); padding-top: 9px; }
+.scheme-sec-title { font-size: 11px; color: var(--sub); letter-spacing: .4px; }
+.scheme-apply {
+  appearance: none; border: 0; border-radius: 9px; padding: 9px 12px; margin-top: 2px;
+  background: var(--accent); color: #08131c; font-weight: 700; font-size: 13px;
+  font-family: inherit; cursor: pointer; transition: filter .15s ease;
+}
+.scheme-apply:hover { filter: brightness(1.08); }
+.scheme-apply:disabled { opacity: .45; cursor: default; }
+.scheme-status { font-size: 11px; color: var(--sub); min-height: 15px; }
+.scheme-hint { font-size: 11px; color: var(--sub); opacity: .75; }
+body[data-theme="light"] .scheme-apply { color: #fff; }
+
+/* ---------- 演示模式 ---------- */
+body.presentation #topbar,
+body.presentation #legend,
+body.presentation #dock,
+body.presentation #layers,
+body.presentation #scheme,
+body.presentation #msg,
+body.presentation #hint { display: none !important; }
+
+/* ---------- 系统状态横幅（崩溃/停滞/断连时显示） ---------- */
+#sysBanner {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--panel-solid);
+  color: var(--bad);
+  border: 1px solid var(--bad);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  max-width: 80vw;
+}
+#sysBanner.hidden { display: none; }
+#sysBanner button {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--bad);
+  background: transparent;
+  color: var(--bad);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#sysBanner button:hover:not(:disabled) { background: var(--bad); color: #fff; }
+#sysBanner button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* 层级指示器（地面/B1/B2 层间关系） */
+#levelIndicator {
+  position: fixed;
+  right: 14px;
+  bottom: 78px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(13, 18, 25, 0.82);
+  border: 1px solid rgba(120, 155, 195, 0.25);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  user-select: none;
+}
+#levelIndicator .lv-item {
+  padding: 3px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: rgba(205, 222, 240, 0.75);
+}
+#levelIndicator .lv-item.active {
+  background: rgba(76, 194, 255, 0.22);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 0 0 1px rgba(76, 194, 255, 0.45);
+}
+#levelIndicator .lv-conn {
+  font-size: 11px;
+  line-height: 1;
+  color: rgba(140, 180, 220, 0.8);
+}
+
+/* ---------- 地图面板（场地数据独立，选择后自动加载底图） ---------- */
+#mapPanel {
+  position: absolute; left: 50%; bottom: 66px; transform: translateX(-50%); z-index: 29;
+  width: 320px;
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 14px; box-shadow: var(--shadow); backdrop-filter: blur(10px);
+}
+.map-panel-hint {
+  font-size: 11px; color: var(--sub); line-height: 1.5;
+}

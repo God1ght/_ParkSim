@@ -8,6 +8,8 @@ import re
 
 from pathlib import Path
 
+import numpy as np
+
 from dlp.dataset import Dataset
 
 import rclpy.logging
@@ -18,6 +20,12 @@ from parksim.vehicle_types import VehicleBody, VehicleInfo
 from parksim.base_node import MPClabNode
 
 from parksim.visualizer.realtime_visualizer import RealtimeVisualizer
+from parksim.base_node import parksim_path
+
+import json
+import os
+import pickle
+
 
 class VisualizerNodeParams(NodeParamTemplate):
     """
@@ -26,6 +34,12 @@ class VisualizerNodeParams(NodeParamTemplate):
     def __init__(self):
         self.dlp_path = None
         self.timer_period = 0.05
+
+        # 地图布局注入（新地图，如 jth_b1）：为空时画面全部来自 DLP 数据集（DJI legacy）
+        self.map = ''              # 地图名 → 自动找 priorFiles/maps/<map>/layout_rotated.json
+        self.map_layout_path = ''  # 直接给出布局 JSON 路径（优先级高于 map）
+        # 与 simulator 同款：launch 侧 JSON 覆盖（{"map": "jth_b1"} 等）
+        self.launch_overrides = ''
 
         self.use_existing_agents = False
         self.dlp_time_offset = -1
@@ -69,7 +83,15 @@ class VisualizerNode(MPClabNode):
         # Load Vehicle Body
         vehicle_body = VehicleBody()
 
-        self.vis = RealtimeVisualizer(ds, vehicle_body)
+        # 地图布局注入：新地图（jth_b1 等）自己带 layout_rotated.json，与仿真/车辆
+        # 同一套 rotated 米制坐标；没有就退回 DLP 数据集（DJI legacy 行为不变）。
+        map_size, parking_lines, waypoints, obstacle_polygons = self._load_map_layout()
+
+        self.vis = RealtimeVisualizer(ds, vehicle_body,
+                                      map_size=map_size,
+                                      parking_lines=parking_lines,
+                                      waypoints=waypoints,
+                                      obstacle_polygons=obstacle_polygons)
 
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
 
@@ -77,6 +99,189 @@ class VisualizerNode(MPClabNode):
 
         self.sim_time = 0.
         self.sim_time_sub = self.create_subscription(Float32, '/sim_time', self.sim_time_cb, 10)
+
+    def _load_graph_vertices(self, layout_path):
+        """从地图目录的 ``waypoints_graph.pickle`` 取**全部顶点坐标** (N,2)。
+
+        这是仿真车辆真正走的那张图（rotated 米制，与泊位 quad 同坐标系），
+        顶点稠密；布局 JSON 里的 ``graph.nodes`` 只有骨架（服务器版仅 24 个），
+        只作为兜底。任何异常都返回空数组，由调用方回退。
+        """
+        candidates = [os.path.join(os.path.dirname(layout_path),
+                                   'waypoints_graph.pickle')]
+        name = (self._effective_map_name() or '').strip()
+        if name:
+            candidates.append(os.path.join(
+                parksim_path('python', 'parksim', 'priorFiles', 'maps', name),
+                'waypoints_graph.pickle'))
+        for path in candidates:
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, 'rb') as fh:
+                    data = pickle.load(fh)
+                verts = None
+                if isinstance(data, dict):
+                    graph = data.get('graph')
+                    verts = getattr(graph, 'vertices', None)
+                    if verts is None:
+                        verts = data.get('vertices')
+                else:
+                    verts = getattr(data, 'vertices', None)
+                if verts is None:
+                    continue
+                if isinstance(verts, np.ndarray):
+                    xy = np.asarray(verts, dtype=float)
+                else:
+                    xy = np.asarray([np.asarray(v.coords, dtype=float)
+                                     for v in verts], dtype=float)
+                xy = xy.reshape(-1, 2)
+                if not len(xy):
+                    continue
+                self.get_logger().info('waypoints from %s：%d 顶点' % (path, len(xy)))
+                return xy
+            except Exception as exc:  # 绝不让可视化节点起不来
+                self.get_logger().warn(
+                    '读取 %s 失败（%r），尝试下一个候选/回退布局节点' % (path, exc))
+        return np.zeros((0, 2), dtype=float)
+
+    def _effective_map_name(self):
+        """当前生效的地图名（launch 覆盖 > map 参数）。"""
+        name = (self.map or '').strip()
+        raw_overrides = (self.launch_overrides or '').strip()
+        if raw_overrides:
+            try:
+                overrides = json.loads(raw_overrides)
+                if isinstance(overrides, dict) and overrides.get('map'):
+                    name = str(overrides['map']).strip()
+            except Exception:
+                pass
+        return name
+
+    def _resolve_map_layout_path(self):
+        """确定地图布局 JSON 路径；返回 '' 表示不注入（回退 DLP 数据集）。"""
+        # launch 侧 JSON 覆盖（与 simulator 的 launch_overrides 约定一致）
+        name = self._effective_map_name()
+        raw = (self.map_layout_path or '').strip()
+        if raw:
+            path = os.path.expandvars(raw)
+            if os.path.isfile(path):
+                return path
+            self.get_logger().warn(
+                'map_layout_path 不存在，回退 DLP 数据集：%s' % path)
+            return ''
+        if not name:
+            return ''
+        path = os.path.join(
+            parksim_path('python', 'parksim', 'priorFiles', 'maps', name),
+            'layout_rotated.json')
+        # DJI 系列没有布局文件 → 静默回退（保持 legacy 行为）
+        return path if os.path.isfile(path) else ''
+
+    def _load_obstacle_polygons(self, layout_path):
+        """从地图目录的 ``obstacles.json`` 取硬障碍物顶点环列表。
+
+        返回 ``[(N, 2) ndarray, ...]``，rotated 米制，与 ``spots[*].quad`` 同坐标系。
+        朝向编码在顶点里，绘制端必须按顶点原样画成多边形，不能退化成轴对齐矩形。
+
+        文件缺失（如 DJI 系列、或尚未部署 obstacles.json 的地图目录）或任何异常
+        都返回空列表 —— 只是不画障碍物，其余图层与 legacy 行为完全不变。
+        """
+        candidates = [os.path.join(os.path.dirname(layout_path), 'obstacles.json')]
+        name = (self._effective_map_name() or '').strip()
+        if name:
+            candidates.append(os.path.join(
+                parksim_path('python', 'parksim', 'priorFiles', 'maps', name),
+                'obstacles.json'))
+        for path in candidates:
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, 'r', encoding='utf-8') as fh:
+                    doc = json.load(fh)
+                if not isinstance(doc, dict):
+                    raise TypeError('obstacles.json 根对象不是 dict：%s'
+                                    % type(doc).__name__)
+                polys = []
+                for ob in (doc.get('obstacles') or []):
+                    poly = (ob or {}).get('polygon') or []
+                    if len(poly) >= 3:
+                        polys.append(np.asarray(poly, dtype=float).reshape(-1, 2))
+                self.get_logger().info(
+                    'obstacles from %s：%d 个多边形' % (path, len(polys)))
+                return polys
+            except Exception as exc:  # 障碍物缺失/损坏不得影响其它图层
+                self.get_logger().warn('读取障碍物失败（%s）：%r' % (path, exc))
+        return []
+
+    def _load_map_layout(self):
+        """读 layout_rotated.json，返回 (map_size, parking_lines, waypoints, obstacle_polygons)。
+
+        坐标来源（全部 rotated 米制，与车辆/仿真同一套）：
+          - parking_lines     : 布局里的 spots[*].quad
+          - waypoints         : 优先同目录 ``waypoints_graph.pickle`` 的**全部顶点**
+                                （仿真真实路网，上千个点）；失败则回退
+                                ``graph.nodes`` 骨架；再失败则 None（不画路网点）。
+          - obstacle_polygons : 同目录 ``obstacles.json`` 的 obstacles[*].polygon；
+                                缺失则为空列表（不画障碍物）。
+          - map_size          : 泊位角点 ∪ 路网顶点 的包围盒右上角。
+                                （刻意不含障碍物：障碍含外围边界环，会把画布撑大
+                                且负坐标不可见，保持与既有行为一致。）
+
+        任一步失败都返回 (None, None, None, [])，让可视化器退回 DLP 数据集，
+        保证 DJI legacy 行为零变化。
+        """
+        path = self._resolve_map_layout_path()
+        if not path:
+            return None, None, None, []
+        try:
+            with open(path, 'r', encoding='utf-8') as fh:
+                lay = json.load(fh)
+            if not isinstance(lay, dict):
+                raise TypeError('布局根对象不是 dict：%s' % type(lay).__name__)
+
+            quads = []
+            for s in (lay.get('spots') or []):
+                if isinstance(s, dict) and s.get('quad'):
+                    quads.append(
+                        np.asarray(s['quad'], dtype=float).reshape(4, 2))
+
+            # 兜底骨架节点（服务器版布局只有 24 个，Mac 版 740 个）
+            skeleton = np.asarray(
+                (lay.get('graph') or {}).get('nodes') or [],
+                dtype=float).reshape(-1, 2)
+
+            # 真实路网：优先 waypoints_graph.pickle（与仿真同图）
+            verts = self._load_graph_vertices(path)
+            if not len(verts):
+                verts = skeleton
+                if len(verts):
+                    self.get_logger().warn(
+                        '未取到 waypoints_graph.pickle，回退布局骨架节点 %d 个' % len(verts))
+
+            xs, ys = [], []
+            for q in quads:
+                xs.extend(q[:, 0].tolist())
+                ys.extend(q[:, 1].tolist())
+            if len(verts):
+                xs.extend(verts[:, 0].tolist())
+                ys.extend(verts[:, 1].tolist())
+            if not xs:
+                self.get_logger().warn('布局 %s 无可用坐标，回退 DLP 数据集' % path)
+                return None, None, None, []
+
+            map_size = {'x': float(max(xs)), 'y': float(max(ys))}
+            waypoints = {'map': verts} if len(verts) else None
+            obstacle_polygons = self._load_obstacle_polygons(path)
+            self.get_logger().info(
+                'map layout: %s（%d spots / %d waypoints / %d obstacles / size x=%.2f y=%.2f）'
+                % (path, len(quads), len(verts), len(obstacle_polygons),
+                   map_size['x'], map_size['y']))
+            return map_size, quads, waypoints, obstacle_polygons
+        except Exception as exc:  # 任何异常都不许影响建图/legacy
+            self.get_logger().warn(
+                '读取地图布局失败（%s），回退 DLP 数据集：%r' % (path, exc))
+            return None, None, None, []
 
     def sim_time_cb(self, msg: Float32):
         self.sim_time = msg.data

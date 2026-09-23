@@ -1,0 +1,22 @@
+# ============================================================================
+# 场景预设示例：完全脚本化的自定义时间表（custom 模式）
+#
+# 用法：ros2 launch parksim parksim.launch.py scenario:=example_custom
+#
+# 说明：
+#   - vehicles 列表按 t（仿真时间，秒）生成车辆，误差 ≤ 一个定时器周期（50ms）；
+#   - kind: entering（入库，驶入指定车位）/ exiting（出库，从指定车位驶离）；
+#   - spot 为车位索引（不含符号；入库/出库自动处理）；
+#   - occupancy 在此处给出预占用/封锁（与 simulator.yaml blocked_spots 叠加）。
+# ============================================================================
+
+mode: custom
+
+occupancy:
+  blocked: [50, 51]          # 追加封锁
+  occupied: [10, 11, 12]     # 预占用（虚拟已停车）
+
+vehicles:
+  - {t: 2.0, kind: entering, spot: 122}
+  - {t: 5.0, kind: exiting,  spot: 38}
+  - {t: 9.0, kind: entering, spot: 285}

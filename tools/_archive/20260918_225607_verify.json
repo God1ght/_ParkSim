@@ -1,0 +1,120 @@
+{
+ "env": {
+  "python": "3.8.20",
+  "ROS_DOMAIN_ID": null,
+  "patchsim": null,
+  "per_spot_pickle": "/media/step/data/Yccc7/ParkSim-JTH/_ParkSim/python/parksim/priorFiles/maps/jth_b1/parking_maneuvers_per_spot.pickle"
+ },
+ "A_offline": {
+  "n_spots": 269,
+  "n_present": 269,
+  "n_pos_ok": 269,
+  "n_yaw_ok": 269,
+  "pos_err_max_m": 7.105427357601002e-15,
+  "yaw_err_max_deg": 1.0177774980683254e-13,
+  "k_max": 0.3107776411767703,
+  "curvature_max": 0.31077764117696777,
+  "PASS": true
+ },
+ "B_no_double_translation": {
+  "provider": "PerSpotManeuverProvider",
+  "provides_absolute": true,
+  "checks": [
+   {
+    "spot_index": 0,
+    "ok": true,
+    "table_start": [
+     49.547,
+     107.988
+    ],
+    "table_end": [
+     49.354,
+     101.949
+    ],
+    "spot_center": [
+     49.354,
+     101.949
+    ],
+    "end_to_center_m": 0.0
+   },
+   {
+    "spot_index": 42,
+    "ok": true,
+    "table_start": [
+     64.347,
+     36.388
+    ],
+    "table_end": [
+     64.256,
+     42.947
+    ],
+    "spot_center": [
+     64.256,
+     42.947
+    ],
+    "end_to_center_m": 0.0
+   },
+   {
+    "spot_index": 112,
+    "ok": true,
+    "table_start": [
+     13.947,
+     40.388
+    ],
+    "table_end": [
+     11.21,
+     39.199
+    ],
+    "spot_center": [
+     11.21,
+     39.199
+    ],
+    "end_to_center_m": 0.0
+   },
+   {
+    "spot_index": 268,
+    "ok": true,
+    "table_start": [
+     28.747,
+     123.988
+    ],
+    "table_end": [
+     22.712,
+     123.903
+    ],
+    "spot_center": [
+     22.712,
+     123.903
+    ],
+    "end_to_center_m": 0.0
+   }
+  ]
+ },
+ "C_regression": {
+  "offline": {
+   "n_selected": 60,
+   "n_evaluated": 60,
+   "n_completed": 60,
+   "completed_rate": 1.0,
+   "n_park_phase_collide": 6,
+   "park_collide_rate": 0.1,
+   "n_out_of_bounds": 0,
+   "end_to_center_median_m": 6.137830841586217,
+   "end_to_center_p90_m": 12.266582676258043,
+   "wall_time_s": 99.0
+  },
+  "per_spot": {
+   "n_selected": 60,
+   "n_evaluated": 60,
+   "n_completed": 60,
+   "completed_rate": 1.0,
+   "n_park_phase_collide": 0,
+   "park_collide_rate": 0.0,
+   "n_out_of_bounds": 0,
+   "end_to_center_median_m": 0.048077958681848644,
+   "end_to_center_p90_m": 0.08329472829470382,
+   "wall_time_s": 97.8
+  },
+  "PASS": true
+ }
+}

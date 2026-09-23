@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ParkSim · 停车场景仿真可视化</title>
+<link rel="stylesheet" href="/static/style.css?v=8"/>
+</head>
+<body data-theme="dark">
+<canvas id="cv"></canvas>
+
+<!-- 顶栏：品牌 + 状态 -->
+<header id="topbar">
+  <div class="brand">
+    <span class="brand-mark">P</span>
+    <div class="brand-text">
+      <div class="brand-name">ParkSim</div>
+      <div class="brand-sub">停车场景仿真 · 实时态势</div>
+    </div>
+  </div>
+  <div class="chips">
+    <div class="chip"><span class="chip-label">仿真时间</span><span class="chip-value" id="vTime">--</span></div>
+    <div class="chip"><span class="chip-label">车辆</span><span class="chip-value" id="vVeh">--</span></div>
+    <div class="chip"><span class="chip-label">FPS</span><span class="chip-value" id="vFps">--</span></div>
+    <div class="chip"><span class="chip-label">延迟</span><span class="chip-value" id="vLat">--</span></div>
+    <div class="chip chip-conn" id="chipConn"><span class="dot"></span><span id="vConn">连接中</span></div>
+  </div>
+</header>
+
+<!-- 系统状态横幅（崩溃/停滞/断连时显示，附重启按钮） -->
+<div id="sysBanner" class="hidden">
+  <span id="sysBannerText">--</span>
+  <button id="btnSysRestart">开启仿真</button>
+</div>
+
+<!-- 图例 -->
+<div id="legend">
+  <div class="legend-item"><span class="sw" data-state="driving"></span>行驶</div>
+  <div class="legend-item"><span class="sw" data-state="parking"></span>泊车机动</div>
+  <div class="legend-item"><span class="sw" data-state="braking"></span>制动等待</div>
+  <div class="legend-item"><span class="sw" data-state="done"></span>已完成</div>
+  <div class="legend-item"><span class="sw" data-state="obstacle"></span>静态停放（障碍）</div>
+  <div class="legend-item"><span class="sw" data-state="ghost"></span>数据智能体</div>
+</div>
+
+<!-- 控制坞 -->
+<div id="dock">
+  <button id="btnPause" class="dock-btn" disabled>暂停</button>
+  <span class="dock-sep"></span>
+  <button id="btnReset" class="dock-btn">重置视图</button>
+  <button id="btnTheme" class="dock-btn">主题</button>
+  <button id="btnLayers" class="dock-btn">图层</button>
+  <button id="btnMap" class="dock-btn">地图</button>
+  <button id="btnScheme" class="dock-btn">仿真方案</button>
+</div>
+
+<!-- 图层抽屉 -->
+<div id="layers" class="hidden">
+  <label class="pill"><input type="checkbox" data-layer="baseMap"/>底图</label>
+  <label class="pill" data-layernote="zoneOverview" title="分区概览图：图上编号与车位数据不完全一致，仅供参考"><input type="checkbox" data-layer="zoneOverview"/>分区概览图</label>
+  <label class="pill"><input type="checkbox" data-layer="grid"/>网格</label>
+  <label class="pill"><input type="checkbox" data-layer="spots"/>车位</label>
+  <label class="pill"><input type="checkbox" data-layer="waypoints"/>航点</label>
+  <label class="pill"><input type="checkbox" data-layer="obstacles"/>静态停放（障碍）</label>
+  <label class="pill" data-layernote="ghosts"><input type="checkbox" data-layer="ghosts"/>数据智能体<span class="pill-hint" id="ghostHint"></span></label>
+  <label class="pill" data-layernote="paths"><input type="checkbox" data-layer="paths"/>参考路径<span class="pill-hint" id="pathHint">点击车辆查看</span></label>
+  <label class="pill"><input type="checkbox" data-layer="trails"/>尾迹</label>
+  <label class="pill"><input type="checkbox" data-layer="labels"/>编号</label>
+  <label class="pill" data-layernote="ramps"><input type="checkbox" data-layer="ramps"/>坡道</label>
+  <label class="pill"><input type="checkbox" data-layer="entranceExit"/>入口/出口</label>
+  <div class="layers-reset-row"><button id="btnLayersReset" class="layers-reset">恢复默认图层</button></div>
+</div>
+
+<!-- 方案面板：换方案 / 调参数并重启仿真（需桥以 --manage-sim 启动） -->
+<div id="mapPanel" class="hidden">
+  <div class="map-panel-hint">选择场地后点击「加载底图」生效（仿真方案需单独开启）</div>
+  <div class="scheme-row"><label>场地数据</label><select id="scMap"></select></div>
+  <button id="btnLoadMap" class="scheme-apply">加载底图</button>
+</div>
+<div id="scheme" class="hidden">
+  <div class="scheme-row"><label>初始化</label><select id="scInitMode"></select></div>
+  <div class="scheme-row"><label>泊位分配</label><select id="scAlloc"></select></div>
+  <div class="scheme-row"><label>路由规划</label><select id="scRoute"></select></div>
+  <div class="scheme-row"><label>参考路径</label><select id="scRef"></select></div>
+  <div class="scheme-row"><label>机动方案</label><select id="scManeuver"></select></div>
+
+  <div class="scheme-sec" id="secRandom">
+    <div class="scheme-sec-title">随机生成参数</div>
+    <div class="scheme-row"><label>入库数</label><input id="scEntering" type="number" min="0" step="1"/></div>
+    <div class="scheme-row"><label>出库数</label><input id="scExiting" type="number" min="0" step="1"/></div>
+    <div class="scheme-row"><label>到达间隔</label><input id="scInterval" type="number" min="0.1" step="0.5" title="指数分布均值（秒）"/></div>
+    <div class="scheme-row"><label>随机种子</label><input id="scSeed" type="number" step="1"/></div>
+    <div class="scheme-row"><label>入口门控 y</label><input id="scYBound" type="number" step="1"/></div>
+    <div class="scheme-row"><label>封锁车位</label><input id="scBlocked" type="text" placeholder="逗号分隔，如 50,51"/></div>
+    <div class="scheme-row"><label>预占用位</label><input id="scOccupied" type="text" placeholder="逗号分隔，如 10,11,12"/></div>
+    <div class="scheme-row"><label>占用随机化</label><input id="scOccRandom" type="checkbox"/></div>
+    <div class="scheme-row"><label>占用数量</label><input id="scOccCount" type="number" min="0" step="1" placeholder="0=同数据集"/></div>
+  </div>
+
+  <div class="scheme-sec" id="secReplay">
+    <div class="scheme-sec-title">经验初始化 · 回放参数</div>
+    <div class="scheme-hint">初始化方案（DJI_0001–0030）与底图独立：底图固定共享 DJI 几何，方案决定泊位初始占用/智能体回放。</div>
+    <div class="scheme-row"><label>初始化方案</label><select id="scOccDataset"></select></div>
+    <div class="scheme-row"><label>时间倍率</label><input id="scTimeScale" type="number" min="0.1" step="0.5"/></div>
+    <div class="scheme-row"><label>最大智能体</label><input id="scMaxAgents" type="number" min="0" step="1"/></div>
+  </div>
+
+  <div class="scheme-sec hidden" id="secCustom">
+    <div class="scheme-sec-title">自定义时间表</div>
+    <div class="scheme-hint" id="scCustomFile">--</div>
+  </div>
+
+  <button id="btnApplyScheme" class="scheme-apply" disabled>开启仿真</button>
+  <div class="scheme-status" id="schemeStatus"></div>
+  <div class="scheme-hint">参数区随所选场景模式显示；经验初始化 = 按所选场地数据的真实占用/智能体回放，随机生成 = 占用与到发均随机；重启后约 10–20 秒车辆开始进场。</div>
+</div>
+
+<div id="levelIndicator" class="hidden"></div>
+<div id="tooltip" class="hidden"></div>
+<div id="msg"></div>
+<div id="hint">H 隐藏界面 · B 底图对比 · 单击车辆跟随 · 双击空白取消 · 滚轮缩放</div>
+
+<img id="bg" alt="" style="display:none"/>
+<script src="/static/app.js?v=27-zoneov"></script>
+</body>
+</html>

@@ -106,3 +106,123 @@ class AStarPlanner(object):
                     self.fringe.put((aStar_cost, next(self.counter), new_node))
 
         raise Exception('Path is not found')
+
+
+class DijkstraPlanner(object):
+    """
+    Dijkstra planner（无启发式基线）——与 AStarPlanner 同接口。
+
+    与 A* 同为最优路径，但无启发式引导，用于对照实验。
+    """
+    def __init__(self, v_start: 'Vertex', v_goal: 'Vertex'):
+        self.v_start = v_start
+        self.v_goal = v_goal
+
+        self.fringe = PriorityQueue()
+        self.counter = count()
+
+        # (Vertex, Path, Cost-along-path)
+        start = (self.v_start, [], 0)
+        self.fringe.put((0, next(self.counter), start))
+
+    def solve(self):
+        """
+        solve the path
+        """
+        closed = set()
+
+        while not self.fringe.empty():
+            _, _, (v, path, cost) = self.fringe.get()
+
+            if v == self.v_goal:
+                return AStarGraph(path)
+
+            if v not in closed:
+                closed.add(v)
+
+                for child, edge in zip(*v.get_children()):
+                    new_cost = cost + edge.c
+                    new_node = (child, path + [edge], new_cost)
+                    self.fringe.put((new_cost, next(self.counter), new_node))
+
+        raise Exception('Path is not found')
+
+
+# ============================ 可插拔路由规划器 ============================
+
+class AStarRoutePlanner(object):
+    """路由规划器插件：A*（默认）"""
+
+    name = 'astar'
+
+    def __init__(self, graph: 'WaypointsGraph' = None, via_coords=None):
+        self.graph = graph
+
+    def plan(self, v_start: 'Vertex', v_goal: 'Vertex') -> AStarGraph:
+        return AStarPlanner(v_start, v_goal).solve()
+
+
+class DijkstraRoutePlanner(AStarRoutePlanner):
+    """路由规划器插件：Dijkstra（无启发式基线）"""
+
+    name = 'dijkstra'
+
+    def plan(self, v_start: 'Vertex', v_goal: 'Vertex') -> AStarGraph:
+        return DijkstraPlanner(v_start, v_goal).solve()
+
+
+class ViaRoutePlanner(AStarRoutePlanner):
+    """
+    路由规划器插件：途经点串联。
+
+    外部（上层场景/决策模块）可通过 set_via_points(coords) 指定途经点，
+    规划结果 = start → via1 → via2 → … → goal 的逐段 A* 串联；
+    未设置途经点时退化为普通 A*。
+    """
+
+    name = 'via'
+
+    def __init__(self, graph: 'WaypointsGraph' = None, via_coords=None):
+        super(ViaRoutePlanner, self).__init__(graph)
+        self.via_coords = [np.asarray(c, dtype=float) for c in (via_coords or [])]
+
+    def set_via_points(self, coords):
+        """coords: [(x, y), ...] 途经点坐标序列（按行驶顺序）"""
+        self.via_coords = [np.asarray(c, dtype=float) for c in (coords or [])]
+
+    def plan(self, v_start: 'Vertex', v_goal: 'Vertex') -> AStarGraph:
+        if not self.via_coords or self.graph is None:
+            return AStarPlanner(v_start, v_goal).solve()
+
+        waypoint_vertices = [v_start]
+        for coords in self.via_coords:
+            waypoint_vertices.append(self.graph.vertices[self.graph.search(coords)])
+        waypoint_vertices.append(v_goal)
+
+        edges = []
+        for a, b in zip(waypoint_vertices[:-1], waypoint_vertices[1:]):
+            segment = AStarPlanner(a, b).solve()
+            edges.extend(segment.edges)
+
+        return AStarGraph(edges)
+
+
+_ROUTE_PLANNERS = {
+    AStarRoutePlanner.name: AStarRoutePlanner,
+    DijkstraRoutePlanner.name: DijkstraRoutePlanner,
+    ViaRoutePlanner.name: ViaRoutePlanner,
+}
+
+
+def available_route_planners():
+    """返回已注册的路由规划器名列表"""
+    return sorted(_ROUTE_PLANNERS.keys())
+
+
+def make_route_planner(name, graph=None, via_coords=None):
+    """工厂：按名称实例化路由规划器（大小写、连字符不敏感）"""
+    key = str(name or 'astar').strip().lower().replace('-', '_')
+    if key not in _ROUTE_PLANNERS:
+        raise ValueError("Unknown route planner '%s'. Available: %s" % (
+            name, ", ".join(available_route_planners())))
+    return _ROUTE_PLANNERS[key](graph, via_coords)

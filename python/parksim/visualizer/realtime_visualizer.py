@@ -10,24 +10,48 @@ from parksim.base_node import parksim_path
 from parksim.vehicle_types import VehicleBody
 from parksim.utils.get_corners import get_vehicle_corners
 
+# 注入地图（jth_b1 等）自带硬障碍物的配色：中性灰，与 DLP 数据集的蓝色障碍区分开
+INJECTED_OBSTACLE_FILL = (150, 160, 175, 255)
+INJECTED_OBSTACLE_COLOR = (90, 100, 115, 255)
+
+
 class RealtimeVisualizer(object):
     """
     Realtime visualizer based on dearpy GUI for fast plotting in ROS
     """
-    def __init__(self, dataset: Dataset, vehicle_body: VehicleBody, width=1900, height=1000):
+    def __init__(self, dataset: Dataset, vehicle_body: VehicleBody, width=1900, height=1000,
+                 map_size=None, parking_lines=None, waypoints=None, obstacle_polygons=None):
         """
         width, height: the width, height of the plotting window
-        """
 
+        map_size / parking_lines / waypoints / obstacle_polygons：**地图布局注入**（新地图，如 jth_b1）。
+        四者为 None 时行为与旧版完全一致（画面全部来自 DLP 数据集，DJI legacy）。
+          - map_size          : {'x': float, 'y': float}（米），覆盖 ``dlpvis.map_size``
+          - parking_lines     : iterable of (4, 2) float，每个元素是一个泊位四边形的 4 个角点
+          - waypoints         : dict[str, (N, 2) ndarray]，覆盖 ``dlpvis.waypoints``
+          - obstacle_polygons : iterable of (N, 2) float，地图自带硬障碍物的顶点环
+                                （rotated 米制，与 parking_lines 同坐标系）
+        """
         self.dlpvis = DlpVis(dataset)
 
         self.vehicle_body = vehicle_body
+        # 注入的硬障碍物多边形（None/空 = 不画；此时才回退 DLP 数据集的障碍物）
+        self.obstacle_polygons = list(obstacle_polygons) if obstacle_polygons else []
+
+        # 地图尺寸**统一到单一来源**（注入值优先，否则回退 DLP）。
+        # 后面 _xy2p / _draw_grids 都必须用 self.map_size，若继续读
+        # dlpvis.map_size 会在注入地图时被 DLP 的尺寸带偏（y 翻转）。
+        self.map_size = map_size if map_size is not None else self.dlpvis.map_size
+        # 注入的泊位四边形（None = 用 DLP 的 parking_spaces 表）
+        self.parking_lines = parking_lines
+        if waypoints is not None:
+            self.dlpvis.waypoints = waypoints
 
         dpg.create_context()
         dpg.create_viewport(title='ParkSim Simulator', width=width, height=height)
 
-        self.map_width = self.dlpvis.map_size['x'] * 10
-        self.map_height = self.dlpvis.map_size['y'] * 10
+        self.map_width = int(self.map_size['x'] * 10)
+        self.map_height = int(self.map_size['y'] * 10)
 
         # self.canvas = dpg.add_window(width=self.map_width, height=self.map_height, label="Map")
         self.map_window = dpg.add_window(width=self.map_width+50, height=self.map_height+50, label="Map")
@@ -77,7 +101,7 @@ class RealtimeVisualizer(object):
         convert x, y to pixel coordinates
         """
         px = x * 10
-        py = (self.dlpvis.map_size['y'] - y) * 10
+        py = (self.map_size['y'] - y) * 10
         return px, py
 
     def _draw_waypoints(self):
@@ -93,11 +117,18 @@ class RealtimeVisualizer(object):
     def _draw_parking_lines(self):
         """
         draw parking lines
-        """
-        for _, p in self.dlpvis.parking_spaces.iterrows():
-            p_coords = p[2:10].to_numpy().reshape((4, 2))
 
-            px, py = self._xy2p(p_coords[:,0], p_coords[:, 1])
+        有注入的 parking_lines 时用它（每个元素已是 (4, 2) 角点数组）；
+        否则回退 DLP 的 parking_spaces 表（iloc 第 2~9 列是 4 个角点的 x,y）。
+        """
+        if self.parking_lines is not None:
+            quads = [np.asarray(q, dtype=float).reshape((4, 2)) for q in self.parking_lines]
+        else:
+            quads = [p[2:10].to_numpy().reshape((4, 2))
+                     for _, p in self.dlpvis.parking_spaces.iterrows()]
+
+        for p_coords in quads:
+            px, py = self._xy2p(p_coords[:, 0], p_coords[:, 1])
 
             dpg.draw_quad(p1=[px[0], py[0]], p2=[px[1], py[1]], p3=[px[2], py[2]], p4=[px[3], py[3]], color=(0,0,0,255), parent=self.scene_canvas)
 
@@ -114,19 +145,38 @@ class RealtimeVisualizer(object):
 
             dpg.draw_quad(p1=[px[0], py[0]], p2=[px[1], py[1]], p3=[px[2], py[2]], p4=[px[3], py[3]], fill=(0,0,255,255), color=(0,0,0,0), parent=self.scene_canvas)
 
+    def _draw_injected_obstacles(self):
+        """plot the injected map's own hard obstacles (``obstacles.json`` polygons).
+
+        每个元素是一个 (N, 2) 顶点环（rotated 米制）。**朝向就编码在顶点里**，
+        必须按顶点原样绘制为多边形：一旦退化成轴对齐矩形（AABB），倾斜的墙体/
+        外围边界就会与倾斜的泊位、车道对不上，且 AABB 面积最大可膨胀 24 倍。
+        """
+        for poly in self.obstacle_polygons:
+            coords = np.asarray(poly, dtype=float).reshape(-1, 2)
+            if len(coords) < 3:
+                continue
+            px, py = self._xy2p(coords[:, 0], coords[:, 1])
+            dpg.draw_polygon([[float(a), float(b)] for a, b in zip(px, py)],
+                             fill=INJECTED_OBSTACLE_FILL,
+                             color=INJECTED_OBSTACLE_COLOR,
+                             thickness=1.0,
+                             parent=self.scene_canvas)
+
     def _draw_grids(self, interval:int =10):
-        xticks = range(0, self.dlpvis.map_size['x'], interval)
-        yticks = range(0, self.dlpvis.map_size['y'], interval)
+        # range() 只吃 int：注入的 map_size 是浮点（rotated 米制包围盒），必须取整
+        xticks = range(0, int(self.map_size['x']), interval)
+        yticks = range(0, int(self.map_size['y']), interval)
 
         for x in xticks:
             p1 = self._xy2p(x, 0)
-            p2 = self._xy2p(x, self.dlpvis.map_size['y'])
+            p2 = self._xy2p(x, self.map_size['y'])
             dpg.draw_line(p1=p1, p2=p2, color=(0,0,0, 40), parent=self.grid_canvas)
             dpg.draw_text([p1[0]+2, p1[1]+2], str(x), color=(0,0,0,255), size=15, parent=self.grid_canvas)
 
         for y in yticks:
             p1 = self._xy2p(0, y)
-            p2 = self._xy2p(self.dlpvis.map_size['x'], y)
+            p2 = self._xy2p(self.map_size['x'], y)
 
             dpg.draw_line(p1=p1, p2=p2, color=(0,0,0, 40), parent=self.grid_canvas)
             dpg.draw_text([2, p1[1]+2], str(y), color=(0,0,0,255), size=15, parent=self.grid_canvas)
@@ -185,7 +235,13 @@ class RealtimeVisualizer(object):
         self._draw_parking_lines()
 
         # Plot static obstacles
-        self._draw_obstacles(scene_token)
+        if self.obstacle_polygons:
+            # 注入布局时画地图自带的硬障碍物（rotated 米制多边形，自带朝向）
+            self._draw_injected_obstacles()
+        elif self.parking_lines is None:
+            # DLP 数据集里的障碍物属于**另一张地图**，
+            # 注入布局时必须跳过，否则会把 DJI 的障碍画到 jth 上
+            self._draw_obstacles(scene_token)
 
         self._draw_grids()
 

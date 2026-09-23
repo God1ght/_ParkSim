@@ -1,0 +1,9545 @@
+{
+ "meta": {
+  "name": "jth_b1",
+  "title": "嘉亭荟 2 号楼 B1（底图交付 v1 · 逐边车道偏移）",
+  "source": "outputs/jth_b1_basemap_delivery_v1",
+  "drawing_units": "mm (A0 sheet, 1:200)",
+  "unit_to_meter": 0.2,
+  "generated": "2026-09-16 15:47",
+  "status": "rebuilt-from-delivery-v1",
+  "spot_total": 269,
+  "network_nodes": 24,
+  "network_edges": 28,
+  "directed_arcs": 39,
+  "transform": {
+   "x_max_m": 199.7879333333333,
+   "y_min_m": 29.053366666666626
+  },
+  "notes": [
+   "由 jth_b1_basemap_delivery_v1 重建；坐标系直接用交付包的 rotated_m",
+   "底图用 source.png（3151x2401，与 image_transform 同源，无需偏移修正）",
+   "物理比例未经现场核验（physical_scale_verified=false）"
+  ]
+ },
+ "spots": [
+  {
+   "id": "K601",
+   "synth": false,
+   "cx": 49.354,
+   "cy": 101.949,
+   "north": true,
+   "quad": [
+    [
+     48.256,
+     104.098
+    ],
+    [
+     48.256,
+     99.801
+    ],
+    [
+     50.453,
+     99.801
+    ],
+    [
+     50.453,
+     104.098
+    ]
+   ],
+   "cx_old": 489.193,
+   "cy_old": 392.038,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K602",
+   "synth": false,
+   "cx": 51.653,
+   "cy": 101.651,
+   "north": true,
+   "quad": [
+    [
+     50.453,
+     104.301
+    ],
+    [
+     50.453,
+     99.001
+    ],
+    [
+     52.853,
+     99.001
+    ],
+    [
+     52.853,
+     104.301
+    ]
+   ],
+   "cx_old": 490.686,
+   "cy_old": 403.532,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K603",
+   "synth": false,
+   "cx": 54.053,
+   "cy": 101.651,
+   "north": true,
+   "quad": [
+    [
+     52.853,
+     104.301
+    ],
+    [
+     52.853,
+     99.001
+    ],
+    [
+     55.253,
+     99.001
+    ],
+    [
+     55.253,
+     104.301
+    ]
+   ],
+   "cx_old": 490.686,
+   "cy_old": 415.533,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K604",
+   "synth": false,
+   "cx": 56.454,
+   "cy": 101.651,
+   "north": true,
+   "quad": [
+    [
+     55.253,
+     104.301
+    ],
+    [
+     55.253,
+     99.001
+    ],
+    [
+     57.654,
+     99.001
+    ],
+    [
+     57.654,
+     104.301
+    ]
+   ],
+   "cx_old": 490.686,
+   "cy_old": 427.535,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K605",
+   "synth": false,
+   "cx": 58.754,
+   "cy": 101.949,
+   "north": true,
+   "quad": [
+    [
+     57.654,
+     104.098
+    ],
+    [
+     57.654,
+     99.801
+    ],
+    [
+     59.855,
+     99.801
+    ],
+    [
+     59.855,
+     104.098
+    ]
+   ],
+   "cx_old": 489.193,
+   "cy_old": 439.039,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K606",
+   "synth": false,
+   "cx": 61.055,
+   "cy": 101.651,
+   "north": true,
+   "quad": [
+    [
+     59.855,
+     104.301
+    ],
+    [
+     59.855,
+     99.001
+    ],
+    [
+     62.255,
+     99.001
+    ],
+    [
+     62.255,
+     104.301
+    ]
+   ],
+   "cx_old": 490.686,
+   "cy_old": 450.543,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K607",
+   "synth": false,
+   "cx": 63.456,
+   "cy": 101.651,
+   "north": true,
+   "quad": [
+    [
+     62.255,
+     104.301
+    ],
+    [
+     62.255,
+     99.001
+    ],
+    [
+     64.656,
+     99.001
+    ],
+    [
+     64.656,
+     104.301
+    ]
+   ],
+   "cx_old": 490.686,
+   "cy_old": 462.545,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K608",
+   "synth": false,
+   "cx": 65.854,
+   "cy": 101.651,
+   "north": true,
+   "quad": [
+    [
+     64.656,
+     104.301
+    ],
+    [
+     64.656,
+     99.001
+    ],
+    [
+     67.052,
+     99.001
+    ],
+    [
+     67.052,
+     104.301
+    ]
+   ],
+   "cx_old": 490.686,
+   "cy_old": 474.536,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K609",
+   "synth": false,
+   "cx": 92.022,
+   "cy": 101.001,
+   "north": false,
+   "quad": [
+    [
+     89.023,
+     99.801
+    ],
+    [
+     95.021,
+     99.801
+    ],
+    [
+     95.021,
+     102.201
+    ],
+    [
+     89.023,
+     102.201
+    ]
+   ],
+   "cx_old": 493.935,
+   "cy_old": 605.377,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K610",
+   "synth": false,
+   "cx": 91.828,
+   "cy": 95.545,
+   "north": false,
+   "quad": [
+    [
+     89.505,
+     93.793
+    ],
+    [
+     94.677,
+     94.954
+    ],
+    [
+     94.152,
+     97.296
+    ],
+    [
+     88.98,
+     96.135
+    ]
+   ],
+   "cx_old": 521.217,
+   "cy_old": 604.409,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K611",
+   "synth": false,
+   "cx": 92.353,
+   "cy": 93.203,
+   "north": false,
+   "quad": [
+    [
+     90.03,
+     91.453
+    ],
+    [
+     95.202,
+     92.612
+    ],
+    [
+     94.677,
+     94.953
+    ],
+    [
+     89.505,
+     93.794
+    ]
+   ],
+   "cx_old": 532.925,
+   "cy_old": 607.034,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K613",
+   "synth": false,
+   "cx": 93.404,
+   "cy": 88.521,
+   "north": false,
+   "quad": [
+    [
+     91.081,
+     86.77
+    ],
+    [
+     96.253,
+     87.93
+    ],
+    [
+     95.728,
+     90.271
+    ],
+    [
+     90.556,
+     89.111
+    ]
+   ],
+   "cx_old": 556.336,
+   "cy_old": 612.288,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K614",
+   "synth": false,
+   "cx": 74.653,
+   "cy": 95.747,
+   "north": true,
+   "quad": [
+    [
+     73.453,
+     98.395
+    ],
+    [
+     73.453,
+     93.099
+    ],
+    [
+     75.853,
+     93.099
+    ],
+    [
+     75.853,
+     98.395
+    ]
+   ],
+   "cx_old": 520.203,
+   "cy_old": 518.53,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K615",
+   "synth": false,
+   "cx": 72.252,
+   "cy": 95.747,
+   "north": true,
+   "quad": [
+    [
+     71.052,
+     98.395
+    ],
+    [
+     71.052,
+     93.099
+    ],
+    [
+     73.453,
+     93.099
+    ],
+    [
+     73.453,
+     98.395
+    ]
+   ],
+   "cx_old": 520.203,
+   "cy_old": 506.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K616",
+   "synth": false,
+   "cx": 69.852,
+   "cy": 95.747,
+   "north": true,
+   "quad": [
+    [
+     68.652,
+     98.395
+    ],
+    [
+     68.652,
+     93.099
+    ],
+    [
+     71.052,
+     93.099
+    ],
+    [
+     71.052,
+     98.395
+    ]
+   ],
+   "cx_old": 520.203,
+   "cy_old": 494.527,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K617",
+   "synth": false,
+   "cx": 65.653,
+   "cy": 95.747,
+   "north": true,
+   "quad": [
+    [
+     64.453,
+     98.395
+    ],
+    [
+     64.453,
+     93.099
+    ],
+    [
+     66.853,
+     93.099
+    ],
+    [
+     66.853,
+     98.395
+    ]
+   ],
+   "cx_old": 520.203,
+   "cy_old": 473.53,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K618",
+   "synth": false,
+   "cx": 63.252,
+   "cy": 95.745,
+   "north": true,
+   "quad": [
+    [
+     62.052,
+     98.395
+    ],
+    [
+     62.052,
+     93.095
+    ],
+    [
+     64.453,
+     93.095
+    ],
+    [
+     64.453,
+     98.395
+    ]
+   ],
+   "cx_old": 520.213,
+   "cy_old": 461.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K619",
+   "synth": false,
+   "cx": 60.852,
+   "cy": 95.747,
+   "north": true,
+   "quad": [
+    [
+     59.652,
+     98.395
+    ],
+    [
+     59.652,
+     93.099
+    ],
+    [
+     62.052,
+     93.099
+    ],
+    [
+     62.052,
+     98.395
+    ]
+   ],
+   "cx_old": 520.203,
+   "cy_old": 449.527,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K620",
+   "synth": false,
+   "cx": 56.653,
+   "cy": 95.747,
+   "north": true,
+   "quad": [
+    [
+     55.452,
+     98.395
+    ],
+    [
+     55.452,
+     93.099
+    ],
+    [
+     57.853,
+     93.099
+    ],
+    [
+     57.853,
+     98.395
+    ]
+   ],
+   "cx_old": 520.203,
+   "cy_old": 428.53,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K621",
+   "synth": false,
+   "cx": 54.252,
+   "cy": 95.747,
+   "north": true,
+   "quad": [
+    [
+     53.052,
+     98.395
+    ],
+    [
+     53.052,
+     93.099
+    ],
+    [
+     55.452,
+     93.099
+    ],
+    [
+     55.452,
+     98.395
+    ]
+   ],
+   "cx_old": 520.203,
+   "cy_old": 416.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K622",
+   "synth": false,
+   "cx": 51.852,
+   "cy": 95.747,
+   "north": true,
+   "quad": [
+    [
+     50.652,
+     98.395
+    ],
+    [
+     50.652,
+     93.099
+    ],
+    [
+     53.052,
+     93.099
+    ],
+    [
+     53.052,
+     98.395
+    ]
+   ],
+   "cx_old": 520.203,
+   "cy_old": 404.527,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K623",
+   "synth": false,
+   "cx": 51.653,
+   "cy": 84.049,
+   "north": true,
+   "quad": [
+    [
+     50.453,
+     86.699
+    ],
+    [
+     50.453,
+     81.399
+    ],
+    [
+     52.853,
+     81.399
+    ],
+    [
+     52.853,
+     86.699
+    ]
+   ],
+   "cx_old": 578.697,
+   "cy_old": 403.532,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K624",
+   "synth": false,
+   "cx": 54.053,
+   "cy": 84.049,
+   "north": true,
+   "quad": [
+    [
+     52.853,
+     86.699
+    ],
+    [
+     52.853,
+     81.399
+    ],
+    [
+     55.253,
+     81.399
+    ],
+    [
+     55.253,
+     86.699
+    ]
+   ],
+   "cx_old": 578.697,
+   "cy_old": 415.533,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K625",
+   "synth": false,
+   "cx": 56.454,
+   "cy": 84.049,
+   "north": true,
+   "quad": [
+    [
+     55.253,
+     86.699
+    ],
+    [
+     55.253,
+     81.399
+    ],
+    [
+     57.654,
+     81.399
+    ],
+    [
+     57.654,
+     86.699
+    ]
+   ],
+   "cx_old": 578.697,
+   "cy_old": 427.535,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K626",
+   "synth": false,
+   "cx": 60.454,
+   "cy": 84.049,
+   "north": true,
+   "quad": [
+    [
+     59.254,
+     86.699
+    ],
+    [
+     59.254,
+     81.399
+    ],
+    [
+     61.654,
+     81.399
+    ],
+    [
+     61.654,
+     86.699
+    ]
+   ],
+   "cx_old": 578.697,
+   "cy_old": 447.537,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K627",
+   "synth": false,
+   "cx": 62.854,
+   "cy": 84.049,
+   "north": true,
+   "quad": [
+    [
+     61.654,
+     86.699
+    ],
+    [
+     61.654,
+     81.399
+    ],
+    [
+     64.055,
+     81.399
+    ],
+    [
+     64.055,
+     86.699
+    ]
+   ],
+   "cx_old": 578.697,
+   "cy_old": 459.539,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K628",
+   "synth": false,
+   "cx": 65.255,
+   "cy": 84.049,
+   "north": true,
+   "quad": [
+    [
+     64.055,
+     86.699
+    ],
+    [
+     64.055,
+     81.399
+    ],
+    [
+     66.455,
+     81.399
+    ],
+    [
+     66.455,
+     86.699
+    ]
+   ],
+   "cx_old": 578.697,
+   "cy_old": 471.54,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K629",
+   "synth": false,
+   "cx": 99.832,
+   "cy": 76.333,
+   "north": false,
+   "quad": [
+    [
+     97.51,
+     74.583
+    ],
+    [
+     102.679,
+     75.742
+    ],
+    [
+     102.154,
+     78.083
+    ],
+    [
+     96.986,
+     76.925
+    ]
+   ],
+   "cx_old": 617.274,
+   "cy_old": 644.427,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K630",
+   "synth": false,
+   "cx": 100.357,
+   "cy": 73.992,
+   "north": false,
+   "quad": [
+    [
+     98.035,
+     72.242
+    ],
+    [
+     103.203,
+     73.4
+    ],
+    [
+     102.679,
+     75.742
+    ],
+    [
+     97.51,
+     74.583
+    ]
+   ],
+   "cx_old": 628.98,
+   "cy_old": 647.051,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K631",
+   "synth": false,
+   "cx": 100.882,
+   "cy": 71.65,
+   "north": false,
+   "quad": [
+    [
+     98.562,
+     69.897
+    ],
+    [
+     103.73,
+     71.06
+    ],
+    [
+     103.203,
+     73.402
+    ],
+    [
+     98.035,
+     72.24
+    ]
+   ],
+   "cx_old": 640.691,
+   "cy_old": 649.678,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K632",
+   "synth": false,
+   "cx": 83.706,
+   "cy": 74.898,
+   "north": false,
+   "quad": [
+    [
+     81.056,
+     73.698
+    ],
+    [
+     86.356,
+     73.698
+    ],
+    [
+     86.356,
+     76.098
+    ],
+    [
+     81.056,
+     76.098
+    ]
+   ],
+   "cx_old": 624.448,
+   "cy_old": 563.795,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K633",
+   "synth": false,
+   "cx": 83.706,
+   "cy": 72.498,
+   "north": false,
+   "quad": [
+    [
+     81.056,
+     71.298
+    ],
+    [
+     86.356,
+     71.298
+    ],
+    [
+     86.356,
+     73.698
+    ],
+    [
+     81.056,
+     73.698
+    ]
+   ],
+   "cx_old": 636.45,
+   "cy_old": 563.795,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K634",
+   "synth": false,
+   "cx": 83.706,
+   "cy": 70.098,
+   "north": false,
+   "quad": [
+    [
+     81.056,
+     68.897
+    ],
+    [
+     86.356,
+     68.897
+    ],
+    [
+     86.356,
+     71.298
+    ],
+    [
+     81.056,
+     71.298
+    ]
+   ],
+   "cx_old": 648.451,
+   "cy_old": 563.795,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K635",
+   "synth": false,
+   "cx": 83.706,
+   "cy": 65.706,
+   "north": false,
+   "quad": [
+    [
+     81.056,
+     64.508
+    ],
+    [
+     86.356,
+     64.508
+    ],
+    [
+     86.356,
+     66.904
+    ],
+    [
+     81.056,
+     66.904
+    ]
+   ],
+   "cx_old": 670.412,
+   "cy_old": 563.795,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K636",
+   "synth": false,
+   "cx": 83.706,
+   "cy": 63.307,
+   "north": false,
+   "quad": [
+    [
+     81.056,
+     62.107
+    ],
+    [
+     86.356,
+     62.107
+    ],
+    [
+     86.356,
+     64.508
+    ],
+    [
+     81.056,
+     64.508
+    ]
+   ],
+   "cx_old": 682.403,
+   "cy_old": 563.795,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K637",
+   "synth": false,
+   "cx": 83.706,
+   "cy": 60.907,
+   "north": false,
+   "quad": [
+    [
+     81.056,
+     59.707
+    ],
+    [
+     86.356,
+     59.707
+    ],
+    [
+     86.356,
+     62.107
+    ],
+    [
+     81.056,
+     62.107
+    ]
+   ],
+   "cx_old": 694.404,
+   "cy_old": 563.795,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K638",
+   "synth": false,
+   "cx": 83.706,
+   "cy": 56.705,
+   "north": false,
+   "quad": [
+    [
+     81.056,
+     55.507
+    ],
+    [
+     86.356,
+     55.507
+    ],
+    [
+     86.356,
+     57.904
+    ],
+    [
+     81.056,
+     57.904
+    ]
+   ],
+   "cx_old": 715.412,
+   "cy_old": 563.795,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K639",
+   "synth": false,
+   "cx": 83.706,
+   "cy": 54.307,
+   "north": false,
+   "quad": [
+    [
+     81.056,
+     53.107
+    ],
+    [
+     86.356,
+     53.107
+    ],
+    [
+     86.356,
+     55.507
+    ],
+    [
+     81.056,
+     55.507
+    ]
+   ],
+   "cx_old": 727.403,
+   "cy_old": 563.795,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K640",
+   "synth": false,
+   "cx": 83.706,
+   "cy": 51.907,
+   "north": false,
+   "quad": [
+    [
+     81.056,
+     50.707
+    ],
+    [
+     86.356,
+     50.707
+    ],
+    [
+     86.356,
+     53.107
+    ],
+    [
+     81.056,
+     53.107
+    ]
+   ],
+   "cx_old": 739.405,
+   "cy_old": 563.795,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K641",
+   "synth": false,
+   "cx": 78.852,
+   "cy": 51.85,
+   "north": true,
+   "quad": [
+    [
+     77.652,
+     54.5
+    ],
+    [
+     77.652,
+     49.2
+    ],
+    [
+     80.052,
+     49.2
+    ],
+    [
+     80.052,
+     54.5
+    ]
+   ],
+   "cx_old": 739.69,
+   "cy_old": 539.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K642",
+   "synth": false,
+   "cx": 74.953,
+   "cy": 51.249,
+   "north": true,
+   "quad": [
+    [
+     73.753,
+     53.899
+    ],
+    [
+     73.753,
+     48.599
+    ],
+    [
+     76.153,
+     48.599
+    ],
+    [
+     76.153,
+     53.899
+    ]
+   ],
+   "cx_old": 742.696,
+   "cy_old": 520.033,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K643",
+   "synth": false,
+   "cx": 72.652,
+   "cy": 50.899,
+   "north": true,
+   "quad": [
+    [
+     71.552,
+     53.048
+    ],
+    [
+     71.552,
+     48.751
+    ],
+    [
+     73.753,
+     48.751
+    ],
+    [
+     73.753,
+     53.048
+    ]
+   ],
+   "cx_old": 744.442,
+   "cy_old": 508.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K644",
+   "synth": false,
+   "cx": 64.256,
+   "cy": 42.947,
+   "north": true,
+   "quad": [
+    [
+     63.056,
+     45.597
+    ],
+    [
+     63.056,
+     40.297
+    ],
+    [
+     65.456,
+     40.297
+    ],
+    [
+     65.456,
+     45.597
+    ]
+   ],
+   "cx_old": 784.204,
+   "cy_old": 466.545,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K645",
+   "synth": false,
+   "cx": 61.855,
+   "cy": 42.947,
+   "north": true,
+   "quad": [
+    [
+     60.655,
+     45.597
+    ],
+    [
+     60.655,
+     40.297
+    ],
+    [
+     63.056,
+     40.297
+    ],
+    [
+     63.056,
+     45.597
+    ]
+   ],
+   "cx_old": 784.204,
+   "cy_old": 454.544,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K646",
+   "synth": false,
+   "cx": 38.705,
+   "cy": 35.99,
+   "north": false,
+   "quad": [
+    [
+     34.705,
+     33.989
+    ],
+    [
+     42.706,
+     33.989
+    ],
+    [
+     42.706,
+     37.99
+    ],
+    [
+     34.705,
+     37.99
+    ]
+   ],
+   "cx_old": 818.991,
+   "cy_old": 338.794,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K647",
+   "synth": false,
+   "cx": 61.754,
+   "cy": 28.749,
+   "north": true,
+   "quad": [
+    [
+     60.554,
+     31.399
+    ],
+    [
+     60.554,
+     26.099
+    ],
+    [
+     62.954,
+     26.099
+    ],
+    [
+     62.954,
+     31.399
+    ]
+   ],
+   "cx_old": 855.197,
+   "cy_old": 454.036,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K648",
+   "synth": false,
+   "cx": 65.604,
+   "cy": 29.699,
+   "north": false,
+   "quad": [
+    [
+     62.954,
+     28.499
+    ],
+    [
+     68.254,
+     28.499
+    ],
+    [
+     68.254,
+     30.899
+    ],
+    [
+     62.954,
+     30.899
+    ]
+   ],
+   "cx_old": 850.445,
+   "cy_old": 473.287,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K649",
+   "synth": false,
+   "cx": 65.604,
+   "cy": 27.294,
+   "north": false,
+   "quad": [
+    [
+     62.954,
+     26.09
+    ],
+    [
+     68.254,
+     26.09
+    ],
+    [
+     68.254,
+     28.499
+    ],
+    [
+     62.954,
+     28.499
+    ]
+   ],
+   "cx_old": 862.468,
+   "cy_old": 473.287,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K650",
+   "synth": false,
+   "cx": 65.604,
+   "cy": 24.898,
+   "north": false,
+   "quad": [
+    [
+     62.954,
+     23.698
+    ],
+    [
+     68.254,
+     23.698
+    ],
+    [
+     68.254,
+     26.098
+    ],
+    [
+     62.954,
+     26.098
+    ]
+   ],
+   "cx_old": 874.448,
+   "cy_old": 473.287,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K651",
+   "synth": false,
+   "cx": 67.054,
+   "cy": 18.229,
+   "north": true,
+   "quad": [
+    [
+     65.854,
+     21.23
+    ],
+    [
+     65.854,
+     15.227
+    ],
+    [
+     68.254,
+     15.227
+    ],
+    [
+     68.254,
+     21.23
+    ]
+   ],
+   "cx_old": 907.796,
+   "cy_old": 480.536,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K652",
+   "synth": false,
+   "cx": 69.852,
+   "cy": 3.45,
+   "north": true,
+   "quad": [
+    [
+     68.652,
+     6.1
+    ],
+    [
+     68.652,
+     0.8
+    ],
+    [
+     71.052,
+     0.8
+    ],
+    [
+     71.052,
+     6.1
+    ]
+   ],
+   "cx_old": 981.689,
+   "cy_old": 494.527,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K653",
+   "synth": false,
+   "cx": 72.252,
+   "cy": 3.45,
+   "north": true,
+   "quad": [
+    [
+     71.052,
+     6.1
+    ],
+    [
+     71.052,
+     0.8
+    ],
+    [
+     73.453,
+     0.8
+    ],
+    [
+     73.453,
+     6.1
+    ]
+   ],
+   "cx_old": 981.689,
+   "cy_old": 506.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K654",
+   "synth": false,
+   "cx": 74.653,
+   "cy": 3.45,
+   "north": true,
+   "quad": [
+    [
+     73.453,
+     6.1
+    ],
+    [
+     73.453,
+     0.8
+    ],
+    [
+     75.853,
+     0.8
+    ],
+    [
+     75.853,
+     6.1
+    ]
+   ],
+   "cx_old": 981.689,
+   "cy_old": 518.53,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K655",
+   "synth": false,
+   "cx": 78.852,
+   "cy": 3.45,
+   "north": true,
+   "quad": [
+    [
+     77.652,
+     6.1
+    ],
+    [
+     77.652,
+     0.8
+    ],
+    [
+     80.052,
+     0.8
+    ],
+    [
+     80.052,
+     6.1
+    ]
+   ],
+   "cx_old": 981.689,
+   "cy_old": 539.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K656",
+   "synth": false,
+   "cx": 81.252,
+   "cy": 3.45,
+   "north": true,
+   "quad": [
+    [
+     80.052,
+     6.1
+    ],
+    [
+     80.052,
+     0.8
+    ],
+    [
+     82.453,
+     0.8
+    ],
+    [
+     82.453,
+     6.1
+    ]
+   ],
+   "cx_old": 981.689,
+   "cy_old": 551.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K657",
+   "synth": false,
+   "cx": 83.653,
+   "cy": 3.45,
+   "north": true,
+   "quad": [
+    [
+     82.453,
+     6.1
+    ],
+    [
+     82.453,
+     0.8
+    ],
+    [
+     84.853,
+     0.8
+    ],
+    [
+     84.853,
+     6.1
+    ]
+   ],
+   "cx_old": 981.689,
+   "cy_old": 563.531,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K658",
+   "synth": false,
+   "cx": 87.454,
+   "cy": 2.65,
+   "north": true,
+   "quad": [
+    [
+     86.254,
+     5.3
+    ],
+    [
+     86.254,
+     0.0
+    ],
+    [
+     88.654,
+     0.0
+    ],
+    [
+     88.654,
+     5.3
+    ]
+   ],
+   "cx_old": 985.689,
+   "cy_old": 582.538,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K659",
+   "synth": false,
+   "cx": 89.855,
+   "cy": 2.65,
+   "north": true,
+   "quad": [
+    [
+     88.654,
+     5.3
+    ],
+    [
+     88.654,
+     0.0
+    ],
+    [
+     91.055,
+     0.0
+    ],
+    [
+     91.055,
+     5.3
+    ]
+   ],
+   "cx_old": 985.689,
+   "cy_old": 594.54,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K660",
+   "synth": false,
+   "cx": 92.255,
+   "cy": 2.65,
+   "north": true,
+   "quad": [
+    [
+     91.055,
+     5.3
+    ],
+    [
+     91.055,
+     0.0
+    ],
+    [
+     93.455,
+     0.0
+    ],
+    [
+     93.455,
+     5.3
+    ]
+   ],
+   "cx_old": 985.689,
+   "cy_old": 606.541,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K661",
+   "synth": false,
+   "cx": 96.255,
+   "cy": 2.65,
+   "north": true,
+   "quad": [
+    [
+     95.055,
+     5.3
+    ],
+    [
+     95.055,
+     0.0
+    ],
+    [
+     97.456,
+     0.0
+    ],
+    [
+     97.456,
+     5.3
+    ]
+   ],
+   "cx_old": 985.689,
+   "cy_old": 626.544,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K662",
+   "synth": false,
+   "cx": 98.656,
+   "cy": 2.65,
+   "north": true,
+   "quad": [
+    [
+     97.456,
+     5.3
+    ],
+    [
+     97.456,
+     0.0
+    ],
+    [
+     99.856,
+     0.0
+    ],
+    [
+     99.856,
+     5.3
+    ]
+   ],
+   "cx_old": 985.689,
+   "cy_old": 638.545,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K663",
+   "synth": false,
+   "cx": 101.054,
+   "cy": 2.65,
+   "north": true,
+   "quad": [
+    [
+     99.856,
+     5.3
+    ],
+    [
+     99.856,
+     0.0
+    ],
+    [
+     102.252,
+     0.0
+    ],
+    [
+     102.252,
+     5.3
+    ]
+   ],
+   "cx_old": 985.689,
+   "cy_old": 650.536,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K664",
+   "synth": false,
+   "cx": 92.555,
+   "cy": 15.951,
+   "north": true,
+   "quad": [
+    [
+     91.355,
+     18.601
+    ],
+    [
+     91.355,
+     13.301
+    ],
+    [
+     93.756,
+     13.301
+    ],
+    [
+     93.756,
+     18.601
+    ]
+   ],
+   "cx_old": 919.184,
+   "cy_old": 608.044,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K665",
+   "synth": false,
+   "cx": 90.155,
+   "cy": 15.951,
+   "north": true,
+   "quad": [
+    [
+     88.955,
+     18.601
+    ],
+    [
+     88.955,
+     13.301
+    ],
+    [
+     91.355,
+     13.301
+    ],
+    [
+     91.355,
+     18.601
+    ]
+   ],
+   "cx_old": 919.184,
+   "cy_old": 596.043,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K666",
+   "synth": false,
+   "cx": 87.755,
+   "cy": 15.951,
+   "north": true,
+   "quad": [
+    [
+     86.555,
+     18.601
+    ],
+    [
+     86.555,
+     13.301
+    ],
+    [
+     88.955,
+     13.301
+    ],
+    [
+     88.955,
+     18.601
+    ]
+   ],
+   "cx_old": 919.184,
+   "cy_old": 584.041,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K667",
+   "synth": false,
+   "cx": 83.653,
+   "cy": 15.951,
+   "north": true,
+   "quad": [
+    [
+     82.453,
+     18.601
+    ],
+    [
+     82.453,
+     13.301
+    ],
+    [
+     84.853,
+     13.301
+    ],
+    [
+     84.853,
+     18.601
+    ]
+   ],
+   "cx_old": 919.184,
+   "cy_old": 563.531,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K668",
+   "synth": false,
+   "cx": 78.804,
+   "cy": 15.898,
+   "north": false,
+   "quad": [
+    [
+     76.153,
+     14.698
+    ],
+    [
+     81.454,
+     14.698
+    ],
+    [
+     81.454,
+     17.098
+    ],
+    [
+     76.153,
+     17.098
+    ]
+   ],
+   "cx_old": 919.448,
+   "cy_old": 539.284,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K669",
+   "synth": false,
+   "cx": 78.804,
+   "cy": 18.299,
+   "north": false,
+   "quad": [
+    [
+     76.153,
+     17.098
+    ],
+    [
+     81.454,
+     17.098
+    ],
+    [
+     81.454,
+     19.499
+    ],
+    [
+     76.153,
+     19.499
+    ]
+   ],
+   "cx_old": 907.447,
+   "cy_old": 539.284,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K670",
+   "synth": false,
+   "cx": 78.804,
+   "cy": 20.699,
+   "north": false,
+   "quad": [
+    [
+     76.153,
+     19.499
+    ],
+    [
+     81.454,
+     19.499
+    ],
+    [
+     81.454,
+     21.899
+    ],
+    [
+     76.153,
+     21.899
+    ]
+   ],
+   "cx_old": 895.445,
+   "cy_old": 539.284,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K671",
+   "synth": false,
+   "cx": 78.804,
+   "cy": 24.898,
+   "north": false,
+   "quad": [
+    [
+     76.153,
+     23.698
+    ],
+    [
+     81.454,
+     23.698
+    ],
+    [
+     81.454,
+     26.098
+    ],
+    [
+     76.153,
+     26.098
+    ]
+   ],
+   "cx_old": 874.448,
+   "cy_old": 539.284,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K672",
+   "synth": false,
+   "cx": 78.803,
+   "cy": 27.299,
+   "north": false,
+   "quad": [
+    [
+     76.153,
+     26.098
+    ],
+    [
+     81.454,
+     26.098
+    ],
+    [
+     81.454,
+     28.499
+    ],
+    [
+     76.153,
+     28.499
+    ]
+   ],
+   "cx_old": 862.446,
+   "cy_old": 539.284,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "K673",
+   "synth": false,
+   "cx": 78.803,
+   "cy": 29.699,
+   "north": false,
+   "quad": [
+    [
+     76.153,
+     28.499
+    ],
+    [
+     81.454,
+     28.499
+    ],
+    [
+     81.454,
+     30.899
+    ],
+    [
+     76.153,
+     30.899
+    ]
+   ],
+   "cx_old": 850.445,
+   "cy_old": 539.284,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L701",
+   "synth": false,
+   "cx": 56.805,
+   "cy": 42.947,
+   "north": true,
+   "quad": [
+    [
+     55.605,
+     45.597
+    ],
+    [
+     55.605,
+     40.297
+    ],
+    [
+     58.005,
+     40.297
+    ],
+    [
+     58.005,
+     45.597
+    ]
+   ],
+   "cx_old": 784.204,
+   "cy_old": 429.292,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L702",
+   "synth": false,
+   "cx": 54.405,
+   "cy": 42.947,
+   "north": true,
+   "quad": [
+    [
+     53.205,
+     45.597
+    ],
+    [
+     53.205,
+     40.297
+    ],
+    [
+     55.605,
+     40.297
+    ],
+    [
+     55.605,
+     45.597
+    ]
+   ],
+   "cx_old": 784.204,
+   "cy_old": 417.29,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L703",
+   "synth": false,
+   "cx": 52.004,
+   "cy": 42.947,
+   "north": true,
+   "quad": [
+    [
+     50.804,
+     45.597
+    ],
+    [
+     50.804,
+     40.297
+    ],
+    [
+     53.205,
+     40.297
+    ],
+    [
+     53.205,
+     45.597
+    ]
+   ],
+   "cx_old": 784.204,
+   "cy_old": 405.289,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L704",
+   "synth": false,
+   "cx": 51.803,
+   "cy": 47.597,
+   "north": false,
+   "quad": [
+    [
+     49.153,
+     46.397
+    ],
+    [
+     54.453,
+     46.397
+    ],
+    [
+     54.453,
+     48.798
+    ],
+    [
+     49.153,
+     48.798
+    ]
+   ],
+   "cx_old": 760.952,
+   "cy_old": 404.283,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L705",
+   "synth": false,
+   "cx": 51.803,
+   "cy": 51.501,
+   "north": false,
+   "quad": [
+    [
+     49.153,
+     50.3
+    ],
+    [
+     54.453,
+     50.3
+    ],
+    [
+     54.453,
+     52.701
+    ],
+    [
+     49.153,
+     52.701
+    ]
+   ],
+   "cx_old": 741.437,
+   "cy_old": 404.283,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L706",
+   "synth": false,
+   "cx": 42.355,
+   "cy": 60.949,
+   "north": false,
+   "quad": [
+    [
+     39.704,
+     59.749
+    ],
+    [
+     45.005,
+     59.749
+    ],
+    [
+     45.005,
+     62.15
+    ],
+    [
+     39.704,
+     62.15
+    ]
+   ],
+   "cx_old": 694.193,
+   "cy_old": 357.039,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L707",
+   "synth": false,
+   "cx": 42.355,
+   "cy": 63.35,
+   "north": false,
+   "quad": [
+    [
+     39.704,
+     62.15
+    ],
+    [
+     45.005,
+     62.15
+    ],
+    [
+     45.005,
+     64.55
+    ],
+    [
+     39.704,
+     64.55
+    ]
+   ],
+   "cx_old": 682.191,
+   "cy_old": 357.039,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L708",
+   "synth": false,
+   "cx": 42.355,
+   "cy": 65.75,
+   "north": false,
+   "quad": [
+    [
+     39.704,
+     64.55
+    ],
+    [
+     45.005,
+     64.55
+    ],
+    [
+     45.005,
+     66.95
+    ],
+    [
+     39.704,
+     66.95
+    ]
+   ],
+   "cx_old": 670.19,
+   "cy_old": 357.039,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L709",
+   "synth": false,
+   "cx": 42.355,
+   "cy": 69.949,
+   "north": false,
+   "quad": [
+    [
+     39.704,
+     68.749
+    ],
+    [
+     45.005,
+     68.749
+    ],
+    [
+     45.005,
+     71.15
+    ],
+    [
+     39.704,
+     71.15
+    ]
+   ],
+   "cx_old": 649.192,
+   "cy_old": 357.039,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L710",
+   "synth": false,
+   "cx": 42.355,
+   "cy": 72.35,
+   "north": false,
+   "quad": [
+    [
+     39.704,
+     71.15
+    ],
+    [
+     45.005,
+     71.15
+    ],
+    [
+     45.005,
+     73.55
+    ],
+    [
+     39.704,
+     73.55
+    ]
+   ],
+   "cx_old": 637.191,
+   "cy_old": 357.039,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L711",
+   "synth": false,
+   "cx": 42.355,
+   "cy": 74.75,
+   "north": false,
+   "quad": [
+    [
+     39.704,
+     73.55
+    ],
+    [
+     45.005,
+     73.55
+    ],
+    [
+     45.005,
+     75.95
+    ],
+    [
+     39.704,
+     75.95
+    ]
+   ],
+   "cx_old": 625.189,
+   "cy_old": 357.039,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L712",
+   "synth": false,
+   "cx": 42.355,
+   "cy": 78.95,
+   "north": false,
+   "quad": [
+    [
+     39.704,
+     77.749
+    ],
+    [
+     45.005,
+     77.749
+    ],
+    [
+     45.005,
+     80.15
+    ],
+    [
+     39.704,
+     80.15
+    ]
+   ],
+   "cx_old": 604.192,
+   "cy_old": 357.039,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L713",
+   "synth": false,
+   "cx": 42.355,
+   "cy": 81.35,
+   "north": false,
+   "quad": [
+    [
+     39.704,
+     80.15
+    ],
+    [
+     45.005,
+     80.15
+    ],
+    [
+     45.005,
+     82.55
+    ],
+    [
+     39.704,
+     82.55
+    ]
+   ],
+   "cx_old": 592.19,
+   "cy_old": 357.039,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L714",
+   "synth": false,
+   "cx": 42.355,
+   "cy": 83.75,
+   "north": false,
+   "quad": [
+    [
+     39.704,
+     82.55
+    ],
+    [
+     45.005,
+     82.55
+    ],
+    [
+     45.005,
+     84.95
+    ],
+    [
+     39.704,
+     84.95
+    ]
+   ],
+   "cx_old": 580.189,
+   "cy_old": 357.039,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L715",
+   "synth": false,
+   "cx": 47.653,
+   "cy": 84.049,
+   "north": true,
+   "quad": [
+    [
+     46.452,
+     86.699
+    ],
+    [
+     46.452,
+     81.399
+    ],
+    [
+     48.853,
+     81.399
+    ],
+    [
+     48.853,
+     86.699
+    ]
+   ],
+   "cx_old": 578.697,
+   "cy_old": 383.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L716",
+   "synth": false,
+   "cx": 47.653,
+   "cy": 95.747,
+   "north": true,
+   "quad": [
+    [
+     46.452,
+     98.395
+    ],
+    [
+     46.452,
+     93.099
+    ],
+    [
+     48.853,
+     93.099
+    ],
+    [
+     48.853,
+     98.395
+    ]
+   ],
+   "cx_old": 520.203,
+   "cy_old": 383.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L717",
+   "synth": false,
+   "cx": 45.252,
+   "cy": 95.747,
+   "north": true,
+   "quad": [
+    [
+     44.052,
+     98.395
+    ],
+    [
+     44.052,
+     93.099
+    ],
+    [
+     46.452,
+     93.099
+    ],
+    [
+     46.452,
+     98.395
+    ]
+   ],
+   "cx_old": 520.203,
+   "cy_old": 371.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L718",
+   "synth": false,
+   "cx": 42.852,
+   "cy": 95.747,
+   "north": true,
+   "quad": [
+    [
+     41.652,
+     98.395
+    ],
+    [
+     41.652,
+     93.099
+    ],
+    [
+     44.052,
+     93.099
+    ],
+    [
+     44.052,
+     98.395
+    ]
+   ],
+   "cx_old": 520.203,
+   "cy_old": 359.526,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L719",
+   "synth": false,
+   "cx": 38.652,
+   "cy": 95.747,
+   "north": true,
+   "quad": [
+    [
+     37.452,
+     98.395
+    ],
+    [
+     37.452,
+     93.099
+    ],
+    [
+     39.853,
+     93.099
+    ],
+    [
+     39.853,
+     98.395
+    ]
+   ],
+   "cx_old": 520.203,
+   "cy_old": 338.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L720",
+   "synth": false,
+   "cx": 36.252,
+   "cy": 95.745,
+   "north": true,
+   "quad": [
+    [
+     35.052,
+     98.395
+    ],
+    [
+     35.052,
+     93.095
+    ],
+    [
+     37.452,
+     93.095
+    ],
+    [
+     37.452,
+     98.395
+    ]
+   ],
+   "cx_old": 520.213,
+   "cy_old": 326.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L721",
+   "synth": false,
+   "cx": 33.854,
+   "cy": 95.745,
+   "north": true,
+   "quad": [
+    [
+     32.656,
+     98.395
+    ],
+    [
+     32.656,
+     93.095
+    ],
+    [
+     35.052,
+     93.095
+    ],
+    [
+     35.052,
+     98.395
+    ]
+   ],
+   "cx_old": 520.213,
+   "cy_old": 314.537,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L722",
+   "synth": false,
+   "cx": 29.652,
+   "cy": 95.745,
+   "north": true,
+   "quad": [
+    [
+     28.452,
+     98.395
+    ],
+    [
+     28.452,
+     93.095
+    ],
+    [
+     30.853,
+     93.095
+    ],
+    [
+     30.853,
+     98.395
+    ]
+   ],
+   "cx_old": 520.213,
+   "cy_old": 293.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L723",
+   "synth": false,
+   "cx": 27.252,
+   "cy": 95.745,
+   "north": true,
+   "quad": [
+    [
+     26.052,
+     98.395
+    ],
+    [
+     26.052,
+     93.095
+    ],
+    [
+     28.452,
+     93.095
+    ],
+    [
+     28.452,
+     98.395
+    ]
+   ],
+   "cx_old": 520.213,
+   "cy_old": 281.527,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L724",
+   "synth": false,
+   "cx": 24.854,
+   "cy": 95.745,
+   "north": true,
+   "quad": [
+    [
+     23.656,
+     98.395
+    ],
+    [
+     23.656,
+     93.095
+    ],
+    [
+     26.052,
+     93.095
+    ],
+    [
+     26.052,
+     98.395
+    ]
+   ],
+   "cx_old": 520.213,
+   "cy_old": 269.536,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L725",
+   "synth": false,
+   "cx": 30.903,
+   "cy": 83.699,
+   "north": false,
+   "quad": [
+    [
+     28.253,
+     82.499
+    ],
+    [
+     33.553,
+     82.499
+    ],
+    [
+     33.553,
+     84.899
+    ],
+    [
+     28.253,
+     84.899
+    ]
+   ],
+   "cx_old": 580.443,
+   "cy_old": 299.783,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L726",
+   "synth": false,
+   "cx": 30.903,
+   "cy": 81.299,
+   "north": false,
+   "quad": [
+    [
+     28.253,
+     80.099
+    ],
+    [
+     33.553,
+     80.099
+    ],
+    [
+     33.553,
+     82.499
+    ],
+    [
+     28.253,
+     82.499
+    ]
+   ],
+   "cx_old": 592.444,
+   "cy_old": 299.783,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L727",
+   "synth": false,
+   "cx": 30.903,
+   "cy": 78.899,
+   "north": false,
+   "quad": [
+    [
+     28.253,
+     77.699
+    ],
+    [
+     33.553,
+     77.699
+    ],
+    [
+     33.553,
+     80.099
+    ],
+    [
+     28.253,
+     80.099
+    ]
+   ],
+   "cx_old": 604.446,
+   "cy_old": 299.783,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L728",
+   "synth": false,
+   "cx": 31.056,
+   "cy": 74.699,
+   "north": false,
+   "quad": [
+    [
+     28.406,
+     73.499
+    ],
+    [
+     33.706,
+     73.499
+    ],
+    [
+     33.706,
+     75.899
+    ],
+    [
+     28.406,
+     75.899
+    ]
+   ],
+   "cx_old": 625.443,
+   "cy_old": 300.545,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L729",
+   "synth": false,
+   "cx": 31.056,
+   "cy": 72.299,
+   "north": false,
+   "quad": [
+    [
+     28.406,
+     71.099
+    ],
+    [
+     33.706,
+     71.099
+    ],
+    [
+     33.706,
+     73.499
+    ],
+    [
+     28.406,
+     73.499
+    ]
+   ],
+   "cx_old": 637.445,
+   "cy_old": 300.545,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L729-1",
+   "synth": false,
+   "cx": 25.756,
+   "cy": 72.299,
+   "north": false,
+   "quad": [
+    [
+     23.106,
+     71.099
+    ],
+    [
+     28.406,
+     71.099
+    ],
+    [
+     28.406,
+     73.499
+    ],
+    [
+     23.106,
+     73.499
+    ]
+   ],
+   "cx_old": 637.445,
+   "cy_old": 274.045,
+   "access": {
+    "type": "tandem",
+    "through_spot_ids": [
+     "L729"
+    ],
+    "requires_clear_spot_ids": [
+     "L729"
+    ],
+    "independently_accessible": false
+   }
+  },
+  {
+   "id": "L730",
+   "synth": false,
+   "cx": 31.056,
+   "cy": 69.899,
+   "north": false,
+   "quad": [
+    [
+     28.406,
+     68.699
+    ],
+    [
+     33.706,
+     68.699
+    ],
+    [
+     33.706,
+     71.099
+    ],
+    [
+     28.406,
+     71.099
+    ]
+   ],
+   "cx_old": 649.446,
+   "cy_old": 300.545,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L730-1",
+   "synth": false,
+   "cx": 25.756,
+   "cy": 69.899,
+   "north": false,
+   "quad": [
+    [
+     23.106,
+     68.699
+    ],
+    [
+     28.406,
+     68.699
+    ],
+    [
+     28.406,
+     71.099
+    ],
+    [
+     23.106,
+     71.099
+    ]
+   ],
+   "cx_old": 649.446,
+   "cy_old": 274.045,
+   "access": {
+    "type": "tandem",
+    "through_spot_ids": [
+     "L730"
+    ],
+    "requires_clear_spot_ids": [
+     "L730"
+    ],
+    "independently_accessible": false
+   }
+  },
+  {
+   "id": "L731",
+   "synth": false,
+   "cx": 31.056,
+   "cy": 65.598,
+   "north": false,
+   "quad": [
+    [
+     28.406,
+     64.397
+    ],
+    [
+     33.706,
+     64.397
+    ],
+    [
+     33.706,
+     66.798
+    ],
+    [
+     28.406,
+     66.798
+    ]
+   ],
+   "cx_old": 670.952,
+   "cy_old": 300.545,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L732",
+   "synth": false,
+   "cx": 31.056,
+   "cy": 63.197,
+   "north": false,
+   "quad": [
+    [
+     28.406,
+     61.997
+    ],
+    [
+     33.706,
+     61.997
+    ],
+    [
+     33.706,
+     64.397
+    ],
+    [
+     28.406,
+     64.397
+    ]
+   ],
+   "cx_old": 682.953,
+   "cy_old": 300.545,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L733",
+   "synth": false,
+   "cx": 31.056,
+   "cy": 60.799,
+   "north": false,
+   "quad": [
+    [
+     28.406,
+     59.601
+    ],
+    [
+     33.706,
+     59.601
+    ],
+    [
+     33.706,
+     61.997
+    ],
+    [
+     28.406,
+     61.997
+    ]
+   ],
+   "cx_old": 694.944,
+   "cy_old": 300.546,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L734",
+   "synth": false,
+   "cx": 27.206,
+   "cy": 60.748,
+   "north": true,
+   "quad": [
+    [
+     26.005,
+     63.398
+    ],
+    [
+     26.005,
+     58.098
+    ],
+    [
+     28.406,
+     58.098
+    ],
+    [
+     28.406,
+     63.398
+    ]
+   ],
+   "cx_old": 695.198,
+   "cy_old": 281.294,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L734-1",
+   "synth": false,
+   "cx": 27.206,
+   "cy": 66.048,
+   "north": true,
+   "quad": [
+    [
+     26.005,
+     68.699
+    ],
+    [
+     26.005,
+     63.398
+    ],
+    [
+     28.406,
+     63.398
+    ],
+    [
+     28.406,
+     68.699
+    ]
+   ],
+   "cx_old": 668.697,
+   "cy_old": 281.294,
+   "access": {
+    "type": "tandem",
+    "through_spot_ids": [
+     "L734"
+    ],
+    "requires_clear_spot_ids": [
+     "L734"
+    ],
+    "independently_accessible": false
+   }
+  },
+  {
+   "id": "L735",
+   "synth": false,
+   "cx": 23.355,
+   "cy": 65.598,
+   "north": false,
+   "quad": [
+    [
+     20.705,
+     64.397
+    ],
+    [
+     26.005,
+     64.397
+    ],
+    [
+     26.005,
+     66.798
+    ],
+    [
+     20.705,
+     66.798
+    ]
+   ],
+   "cx_old": 670.952,
+   "cy_old": 262.043,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L736",
+   "synth": false,
+   "cx": 23.355,
+   "cy": 63.197,
+   "north": false,
+   "quad": [
+    [
+     20.705,
+     61.997
+    ],
+    [
+     26.005,
+     61.997
+    ],
+    [
+     26.005,
+     64.397
+    ],
+    [
+     20.705,
+     64.397
+    ]
+   ],
+   "cx_old": 682.953,
+   "cy_old": 262.043,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L737",
+   "synth": false,
+   "cx": 23.355,
+   "cy": 60.799,
+   "north": false,
+   "quad": [
+    [
+     20.705,
+     59.601
+    ],
+    [
+     26.005,
+     59.601
+    ],
+    [
+     26.005,
+     61.997
+    ],
+    [
+     20.705,
+     61.997
+    ]
+   ],
+   "cx_old": 694.944,
+   "cy_old": 262.043,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L738",
+   "synth": false,
+   "cx": 11.21,
+   "cy": 39.199,
+   "north": false,
+   "quad": [
+    [
+     9.068,
+     38.1
+    ],
+    [
+     13.352,
+     38.1
+    ],
+    [
+     13.352,
+     40.297
+    ],
+    [
+     9.068,
+     40.297
+    ]
+   ],
+   "cx_old": 802.947,
+   "cy_old": 201.316,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L739",
+   "synth": false,
+   "cx": 11.803,
+   "cy": 42.939,
+   "north": false,
+   "quad": [
+    [
+     9.289,
+     41.476
+    ],
+    [
+     14.559,
+     42.014
+    ],
+    [
+     14.316,
+     44.401
+    ],
+    [
+     9.046,
+     43.864
+    ]
+   ],
+   "cx_old": 784.246,
+   "cy_old": 204.28,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L740",
+   "synth": false,
+   "cx": 11.559,
+   "cy": 45.326,
+   "north": false,
+   "quad": [
+    [
+     9.046,
+     43.864
+    ],
+    [
+     14.316,
+     44.401
+    ],
+    [
+     14.072,
+     46.789
+    ],
+    [
+     8.802,
+     46.251
+    ]
+   ],
+   "cx_old": 772.309,
+   "cy_old": 203.062,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L741",
+   "synth": false,
+   "cx": 11.318,
+   "cy": 47.714,
+   "north": false,
+   "quad": [
+    [
+     8.801,
+     46.253
+    ],
+    [
+     14.076,
+     46.787
+    ],
+    [
+     13.834,
+     49.174
+    ],
+    [
+     8.56,
+     48.641
+    ]
+   ],
+   "cx_old": 760.37,
+   "cy_old": 201.855,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L742",
+   "synth": false,
+   "cx": 11.064,
+   "cy": 51.914,
+   "north": false,
+   "quad": [
+    [
+     8.548,
+     50.452
+    ],
+    [
+     13.822,
+     50.986
+    ],
+    [
+     13.58,
+     53.376
+    ],
+    [
+     8.306,
+     52.842
+    ]
+   ],
+   "cx_old": 739.368,
+   "cy_old": 200.587,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L743",
+   "synth": false,
+   "cx": 10.822,
+   "cy": 54.303,
+   "north": false,
+   "quad": [
+    [
+     8.306,
+     52.843
+    ],
+    [
+     13.58,
+     53.376
+    ],
+    [
+     13.339,
+     55.764
+    ],
+    [
+     8.064,
+     55.23
+    ]
+   ],
+   "cx_old": 727.424,
+   "cy_old": 199.378,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L744",
+   "synth": false,
+   "cx": 10.581,
+   "cy": 56.692,
+   "north": false,
+   "quad": [
+    [
+     8.064,
+     55.23
+    ],
+    [
+     13.339,
+     55.764
+    ],
+    [
+     13.097,
+     58.153
+    ],
+    [
+     7.822,
+     57.62
+    ]
+   ],
+   "cx_old": 715.481,
+   "cy_old": 198.17,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L745",
+   "synth": false,
+   "cx": 10.102,
+   "cy": 60.841,
+   "north": false,
+   "quad": [
+    [
+     7.586,
+     59.381
+    ],
+    [
+     12.859,
+     59.914
+    ],
+    [
+     12.617,
+     62.302
+    ],
+    [
+     7.345,
+     61.769
+    ]
+   ],
+   "cx_old": 694.732,
+   "cy_old": 195.776,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L746",
+   "synth": false,
+   "cx": 9.941,
+   "cy": 63.237,
+   "north": false,
+   "quad": [
+    [
+     7.425,
+     61.777
+    ],
+    [
+     12.698,
+     62.31
+    ],
+    [
+     12.457,
+     64.698
+    ],
+    [
+     7.184,
+     64.165
+    ]
+   ],
+   "cx_old": 682.753,
+   "cy_old": 194.972,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L747",
+   "synth": false,
+   "cx": 9.7,
+   "cy": 65.625,
+   "north": false,
+   "quad": [
+    [
+     7.184,
+     64.165
+    ],
+    [
+     12.457,
+     64.698
+    ],
+    [
+     12.215,
+     67.086
+    ],
+    [
+     6.942,
+     66.552
+    ]
+   ],
+   "cx_old": 670.814,
+   "cy_old": 193.764,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L748",
+   "synth": false,
+   "cx": 9.248,
+   "cy": 69.939,
+   "north": false,
+   "quad": [
+    [
+     6.731,
+     68.478
+    ],
+    [
+     12.006,
+     69.012
+    ],
+    [
+     11.764,
+     71.399
+    ],
+    [
+     6.49,
+     70.866
+    ]
+   ],
+   "cx_old": 649.245,
+   "cy_old": 191.505,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L749",
+   "synth": false,
+   "cx": 9.006,
+   "cy": 72.326,
+   "north": false,
+   "quad": [
+    [
+     6.49,
+     70.866
+    ],
+    [
+     11.764,
+     71.399
+    ],
+    [
+     11.523,
+     73.787
+    ],
+    [
+     6.248,
+     73.254
+    ]
+   ],
+   "cx_old": 637.307,
+   "cy_old": 190.298,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L750",
+   "synth": false,
+   "cx": 8.765,
+   "cy": 74.714,
+   "north": false,
+   "quad": [
+    [
+     6.248,
+     73.254
+    ],
+    [
+     11.523,
+     73.787
+    ],
+    [
+     11.281,
+     76.175
+    ],
+    [
+     6.007,
+     75.641
+    ]
+   ],
+   "cx_old": 625.369,
+   "cy_old": 189.09,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L751",
+   "synth": false,
+   "cx": 8.343,
+   "cy": 78.888,
+   "north": false,
+   "quad": [
+    [
+     5.826,
+     77.427
+    ],
+    [
+     11.101,
+     77.961
+    ],
+    [
+     10.859,
+     80.348
+    ],
+    [
+     5.584,
+     79.815
+    ]
+   ],
+   "cx_old": 604.501,
+   "cy_old": 186.98,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L752",
+   "synth": false,
+   "cx": 8.101,
+   "cy": 81.275,
+   "north": false,
+   "quad": [
+    [
+     5.584,
+     79.815
+    ],
+    [
+     10.859,
+     80.348
+    ],
+    [
+     10.618,
+     82.736
+    ],
+    [
+     5.343,
+     82.202
+    ]
+   ],
+   "cx_old": 592.563,
+   "cy_old": 185.772,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L753",
+   "synth": false,
+   "cx": 7.86,
+   "cy": 83.663,
+   "north": false,
+   "quad": [
+    [
+     5.343,
+     82.202
+    ],
+    [
+     10.618,
+     82.736
+    ],
+    [
+     10.376,
+     85.124
+    ],
+    [
+     5.102,
+     84.59
+    ]
+   ],
+   "cx_old": 580.624,
+   "cy_old": 184.566,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L754",
+   "synth": false,
+   "cx": 7.352,
+   "cy": 88.286,
+   "north": false,
+   "quad": [
+    [
+     4.861,
+     86.784
+    ],
+    [
+     10.125,
+     87.405
+    ],
+    [
+     9.844,
+     89.789
+    ],
+    [
+     4.579,
+     89.167
+    ]
+   ],
+   "cx_old": 557.509,
+   "cy_old": 182.028,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L755",
+   "synth": false,
+   "cx": 7.07,
+   "cy": 90.669,
+   "north": false,
+   "quad": [
+    [
+     4.579,
+     89.167
+    ],
+    [
+     9.843,
+     89.789
+    ],
+    [
+     9.562,
+     92.172
+    ],
+    [
+     4.297,
+     91.55
+    ]
+   ],
+   "cx_old": 545.592,
+   "cy_old": 180.619,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L756",
+   "synth": false,
+   "cx": 6.789,
+   "cy": 93.053,
+   "north": false,
+   "quad": [
+    [
+     4.297,
+     91.55
+    ],
+    [
+     9.562,
+     92.172
+    ],
+    [
+     9.28,
+     94.556
+    ],
+    [
+     4.016,
+     93.933
+    ]
+   ],
+   "cx_old": 533.676,
+   "cy_old": 179.21,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L757",
+   "synth": false,
+   "cx": 6.298,
+   "cy": 96.998,
+   "north": false,
+   "quad": [
+    [
+     3.825,
+     95.468
+    ],
+    [
+     9.08,
+     96.149
+    ],
+    [
+     8.772,
+     98.528
+    ],
+    [
+     3.516,
+     97.847
+    ]
+   ],
+   "cx_old": 513.948,
+   "cy_old": 176.758,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L758",
+   "synth": false,
+   "cx": 5.99,
+   "cy": 99.378,
+   "north": false,
+   "quad": [
+    [
+     3.516,
+     97.847
+    ],
+    [
+     8.772,
+     98.528
+    ],
+    [
+     8.463,
+     100.909
+    ],
+    [
+     3.208,
+     100.228
+    ]
+   ],
+   "cx_old": 502.048,
+   "cy_old": 175.215,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L759",
+   "synth": false,
+   "cx": 5.681,
+   "cy": 101.758,
+   "north": false,
+   "quad": [
+    [
+     3.208,
+     100.228
+    ],
+    [
+     8.463,
+     100.909
+    ],
+    [
+     8.155,
+     103.289
+    ],
+    [
+     2.899,
+     102.607
+    ]
+   ],
+   "cx_old": 490.147,
+   "cy_old": 173.672,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L760",
+   "synth": false,
+   "cx": 5.179,
+   "cy": 105.536,
+   "north": false,
+   "quad": [
+    [
+     2.722,
+     103.979
+    ],
+    [
+     7.971,
+     104.716
+    ],
+    [
+     7.637,
+     107.093
+    ],
+    [
+     2.388,
+     106.356
+    ]
+   ],
+   "cx_old": 471.26,
+   "cy_old": 171.164,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L761",
+   "synth": false,
+   "cx": 4.846,
+   "cy": 107.913,
+   "north": false,
+   "quad": [
+    [
+     2.387,
+     106.358
+    ],
+    [
+     7.637,
+     107.091
+    ],
+    [
+     7.305,
+     109.467
+    ],
+    [
+     2.056,
+     108.735
+    ]
+   ],
+   "cx_old": 459.375,
+   "cy_old": 169.499,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L762",
+   "synth": false,
+   "cx": 4.515,
+   "cy": 110.29,
+   "north": false,
+   "quad": [
+    [
+     2.056,
+     108.735
+    ],
+    [
+     7.305,
+     109.467
+    ],
+    [
+     6.974,
+     111.845
+    ],
+    [
+     1.724,
+     111.113
+    ]
+   ],
+   "cx_old": 447.49,
+   "cy_old": 167.841,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L763",
+   "synth": false,
+   "cx": 3.813,
+   "cy": 115.085,
+   "north": false,
+   "quad": [
+    [
+     1.373,
+     113.504
+    ],
+    [
+     6.612,
+     114.296
+    ],
+    [
+     6.253,
+     116.666
+    ],
+    [
+     1.014,
+     115.875
+    ]
+   ],
+   "cx_old": 423.513,
+   "cy_old": 164.332,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L764",
+   "synth": false,
+   "cx": 3.454,
+   "cy": 117.458,
+   "north": false,
+   "quad": [
+    [
+     1.014,
+     115.875
+    ],
+    [
+     6.253,
+     116.666
+    ],
+    [
+     5.894,
+     119.041
+    ],
+    [
+     0.655,
+     118.249
+    ]
+   ],
+   "cx_old": 411.65,
+   "cy_old": 162.539,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L765",
+   "synth": false,
+   "cx": 3.096,
+   "cy": 119.832,
+   "north": false,
+   "quad": [
+    [
+     0.655,
+     118.249
+    ],
+    [
+     5.894,
+     119.041
+    ],
+    [
+     5.536,
+     121.414
+    ],
+    [
+     0.297,
+     120.622
+    ]
+   ],
+   "cx_old": 399.781,
+   "cy_old": 160.745,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L766",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 123.899,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     122.699
+    ],
+    [
+     5.3,
+     122.699
+    ],
+    [
+     5.3,
+     125.099
+    ],
+    [
+     0.0,
+     125.099
+    ]
+   ],
+   "cx_old": 379.444,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L767",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 126.299,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     125.099
+    ],
+    [
+     5.3,
+     125.099
+    ],
+    [
+     5.3,
+     127.5
+    ],
+    [
+     0.0,
+     127.5
+    ]
+   ],
+   "cx_old": 367.443,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L768",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 128.7,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     127.5
+    ],
+    [
+     5.3,
+     127.5
+    ],
+    [
+     5.3,
+     129.9
+    ],
+    [
+     0.0,
+     129.9
+    ]
+   ],
+   "cx_old": 355.441,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L769",
+   "synth": false,
+   "cx": 17.505,
+   "cy": 108.198,
+   "north": false,
+   "quad": [
+    [
+     14.855,
+     106.997
+    ],
+    [
+     20.155,
+     106.997
+    ],
+    [
+     20.155,
+     109.398
+    ],
+    [
+     14.855,
+     109.398
+    ]
+   ],
+   "cx_old": 457.951,
+   "cy_old": 232.791,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L770",
+   "synth": false,
+   "cx": 17.505,
+   "cy": 105.797,
+   "north": false,
+   "quad": [
+    [
+     14.855,
+     104.597
+    ],
+    [
+     20.155,
+     104.597
+    ],
+    [
+     20.155,
+     106.997
+    ],
+    [
+     14.855,
+     106.997
+    ]
+   ],
+   "cx_old": 469.953,
+   "cy_old": 232.791,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L771",
+   "synth": false,
+   "cx": 22.805,
+   "cy": 110.598,
+   "north": false,
+   "quad": [
+    [
+     20.155,
+     109.398
+    ],
+    [
+     25.455,
+     109.398
+    ],
+    [
+     25.455,
+     111.798
+    ],
+    [
+     20.155,
+     111.798
+    ]
+   ],
+   "cx_old": 445.95,
+   "cy_old": 259.292,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L772",
+   "synth": false,
+   "cx": 22.805,
+   "cy": 108.198,
+   "north": false,
+   "quad": [
+    [
+     20.155,
+     106.997
+    ],
+    [
+     25.455,
+     106.998
+    ],
+    [
+     25.455,
+     109.398
+    ],
+    [
+     20.155,
+     109.398
+    ]
+   ],
+   "cx_old": 457.951,
+   "cy_old": 259.292,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L773",
+   "synth": false,
+   "cx": 22.805,
+   "cy": 105.797,
+   "north": false,
+   "quad": [
+    [
+     20.155,
+     104.597
+    ],
+    [
+     25.455,
+     104.597
+    ],
+    [
+     25.455,
+     106.998
+    ],
+    [
+     20.155,
+     106.997
+    ]
+   ],
+   "cx_old": 469.953,
+   "cy_old": 259.292,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L774",
+   "synth": false,
+   "cx": 27.252,
+   "cy": 101.651,
+   "north": true,
+   "quad": [
+    [
+     26.052,
+     104.301
+    ],
+    [
+     26.052,
+     99.001
+    ],
+    [
+     28.452,
+     99.001
+    ],
+    [
+     28.452,
+     104.301
+    ]
+   ],
+   "cx_old": 490.686,
+   "cy_old": 281.527,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L775",
+   "synth": false,
+   "cx": 29.652,
+   "cy": 101.651,
+   "north": true,
+   "quad": [
+    [
+     28.452,
+     104.301
+    ],
+    [
+     28.452,
+     99.001
+    ],
+    [
+     30.853,
+     99.001
+    ],
+    [
+     30.853,
+     104.301
+    ]
+   ],
+   "cx_old": 490.686,
+   "cy_old": 293.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L776",
+   "synth": false,
+   "cx": 32.053,
+   "cy": 101.651,
+   "north": true,
+   "quad": [
+    [
+     30.853,
+     104.301
+    ],
+    [
+     30.853,
+     99.001
+    ],
+    [
+     33.253,
+     99.001
+    ],
+    [
+     33.253,
+     104.301
+    ]
+   ],
+   "cx_old": 490.686,
+   "cy_old": 305.53,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L777",
+   "synth": false,
+   "cx": 37.302,
+   "cy": 101.651,
+   "north": true,
+   "quad": [
+    [
+     36.102,
+     104.301
+    ],
+    [
+     36.102,
+     99.001
+    ],
+    [
+     38.502,
+     99.001
+    ],
+    [
+     38.502,
+     104.301
+    ]
+   ],
+   "cx_old": 490.686,
+   "cy_old": 331.777,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L778",
+   "synth": false,
+   "cx": 39.702,
+   "cy": 101.651,
+   "north": true,
+   "quad": [
+    [
+     38.502,
+     104.301
+    ],
+    [
+     38.502,
+     99.001
+    ],
+    [
+     40.902,
+     99.001
+    ],
+    [
+     40.902,
+     104.301
+    ]
+   ],
+   "cx_old": 490.686,
+   "cy_old": 343.778,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L779",
+   "synth": false,
+   "cx": 42.103,
+   "cy": 101.651,
+   "north": true,
+   "quad": [
+    [
+     40.902,
+     104.301
+    ],
+    [
+     40.902,
+     99.001
+    ],
+    [
+     43.303,
+     99.001
+    ],
+    [
+     43.303,
+     104.301
+    ]
+   ],
+   "cx_old": 490.686,
+   "cy_old": 355.78,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L780",
+   "synth": false,
+   "cx": 44.503,
+   "cy": 101.651,
+   "north": true,
+   "quad": [
+    [
+     43.303,
+     104.301
+    ],
+    [
+     43.303,
+     99.001
+    ],
+    [
+     45.703,
+     99.001
+    ],
+    [
+     45.703,
+     104.301
+    ]
+   ],
+   "cx_old": 490.686,
+   "cy_old": 367.781,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "L781",
+   "synth": false,
+   "cx": 46.903,
+   "cy": 101.651,
+   "north": true,
+   "quad": [
+    [
+     45.703,
+     104.301
+    ],
+    [
+     45.703,
+     99.001
+    ],
+    [
+     48.103,
+     99.001
+    ],
+    [
+     48.103,
+     104.301
+    ]
+   ],
+   "cx_old": 490.686,
+   "cy_old": 379.783,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M801",
+   "synth": false,
+   "cx": 92.105,
+   "cy": 105.814,
+   "north": false,
+   "quad": [
+    [
+     89.455,
+     104.614
+    ],
+    [
+     94.755,
+     104.614
+    ],
+    [
+     94.755,
+     107.014
+    ],
+    [
+     89.455,
+     107.014
+    ]
+   ],
+   "cx_old": 469.868,
+   "cy_old": 605.79,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M802",
+   "synth": false,
+   "cx": 92.105,
+   "cy": 108.215,
+   "north": false,
+   "quad": [
+    [
+     89.455,
+     107.014
+    ],
+    [
+     94.755,
+     107.014
+    ],
+    [
+     94.755,
+     109.415
+    ],
+    [
+     89.455,
+     109.415
+    ]
+   ],
+   "cx_old": 457.867,
+   "cy_old": 605.79,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M803",
+   "synth": false,
+   "cx": 91.103,
+   "cy": 116.199,
+   "north": true,
+   "quad": [
+    [
+     89.903,
+     119.198
+    ],
+    [
+     89.903,
+     113.199
+    ],
+    [
+     92.304,
+     113.199
+    ],
+    [
+     92.304,
+     119.198
+    ]
+   ],
+   "cx_old": 417.946,
+   "cy_old": 600.784,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M804",
+   "synth": false,
+   "cx": 89.905,
+   "cy": 122.199,
+   "north": true,
+   "quad": [
+    [
+     88.705,
+     125.201
+    ],
+    [
+     88.705,
+     119.198
+    ],
+    [
+     91.106,
+     119.198
+    ],
+    [
+     91.106,
+     125.201
+    ]
+   ],
+   "cx_old": 387.943,
+   "cy_old": 594.794,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M805",
+   "synth": false,
+   "cx": 81.153,
+   "cy": 126.498,
+   "north": false,
+   "quad": [
+    [
+     78.503,
+     125.298
+    ],
+    [
+     83.803,
+     125.298
+    ],
+    [
+     83.803,
+     127.698
+    ],
+    [
+     78.503,
+     127.698
+    ]
+   ],
+   "cx_old": 366.448,
+   "cy_old": 551.032,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M806",
+   "synth": false,
+   "cx": 81.153,
+   "cy": 128.899,
+   "north": false,
+   "quad": [
+    [
+     78.503,
+     127.698
+    ],
+    [
+     83.803,
+     127.698
+    ],
+    [
+     83.803,
+     130.099
+    ],
+    [
+     78.503,
+     130.099
+    ]
+   ],
+   "cx_old": 354.446,
+   "cy_old": 551.032,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M807",
+   "synth": false,
+   "cx": 63.053,
+   "cy": 129.35,
+   "north": true,
+   "quad": [
+    [
+     61.853,
+     132.0
+    ],
+    [
+     61.853,
+     126.699
+    ],
+    [
+     64.254,
+     126.699
+    ],
+    [
+     64.254,
+     132.0
+    ]
+   ],
+   "cx_old": 352.192,
+   "cy_old": 460.534,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M808",
+   "synth": false,
+   "cx": 60.653,
+   "cy": 129.35,
+   "north": true,
+   "quad": [
+    [
+     59.453,
+     132.0
+    ],
+    [
+     59.453,
+     126.699
+    ],
+    [
+     61.853,
+     126.699
+    ],
+    [
+     61.853,
+     132.0
+    ]
+   ],
+   "cx_old": 352.192,
+   "cy_old": 448.532,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M809",
+   "synth": false,
+   "cx": 56.729,
+   "cy": 129.35,
+   "north": true,
+   "quad": [
+    [
+     55.529,
+     132.0
+    ],
+    [
+     55.529,
+     126.699
+    ],
+    [
+     57.929,
+     126.699
+    ],
+    [
+     57.929,
+     132.0
+    ]
+   ],
+   "cx_old": 352.192,
+   "cy_old": 428.911,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M811",
+   "synth": false,
+   "cx": 67.553,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     66.353,
+     143.95
+    ],
+    [
+     66.353,
+     138.65
+    ],
+    [
+     68.754,
+     138.65
+    ],
+    [
+     68.754,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 483.034,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M812",
+   "synth": false,
+   "cx": 65.153,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     63.953,
+     143.95
+    ],
+    [
+     63.953,
+     138.65
+    ],
+    [
+     66.353,
+     138.65
+    ],
+    [
+     66.353,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 471.032,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M813",
+   "synth": false,
+   "cx": 62.753,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     61.553,
+     143.95
+    ],
+    [
+     61.553,
+     138.65
+    ],
+    [
+     63.953,
+     138.65
+    ],
+    [
+     63.953,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 459.031,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M814",
+   "synth": false,
+   "cx": 60.353,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     59.152,
+     143.95
+    ],
+    [
+     59.152,
+     138.65
+    ],
+    [
+     61.553,
+     138.65
+    ],
+    [
+     61.553,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 447.029,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M815",
+   "synth": false,
+   "cx": 74.754,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     73.554,
+     143.95
+    ],
+    [
+     73.554,
+     138.65
+    ],
+    [
+     75.954,
+     138.65
+    ],
+    [
+     75.954,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 519.038,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M816",
+   "synth": false,
+   "cx": 72.354,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     71.154,
+     143.95
+    ],
+    [
+     71.154,
+     138.65
+    ],
+    [
+     73.554,
+     138.65
+    ],
+    [
+     73.554,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 507.037,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M817",
+   "synth": false,
+   "cx": 69.954,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     68.754,
+     143.95
+    ],
+    [
+     68.754,
+     138.65
+    ],
+    [
+     71.154,
+     138.65
+    ],
+    [
+     71.154,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 495.035,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M818",
+   "synth": false,
+   "cx": 49.454,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     48.256,
+     143.95
+    ],
+    [
+     48.256,
+     138.65
+    ],
+    [
+     50.652,
+     138.65
+    ],
+    [
+     50.652,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 392.536,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M819",
+   "synth": false,
+   "cx": 47.056,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     45.855,
+     143.95
+    ],
+    [
+     45.855,
+     138.65
+    ],
+    [
+     48.256,
+     138.65
+    ],
+    [
+     48.256,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 380.545,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M820",
+   "synth": false,
+   "cx": 44.655,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     43.455,
+     143.95
+    ],
+    [
+     43.455,
+     138.65
+    ],
+    [
+     45.855,
+     138.65
+    ],
+    [
+     45.855,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 368.543,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M821",
+   "synth": false,
+   "cx": 42.255,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     41.055,
+     143.95
+    ],
+    [
+     41.055,
+     138.65
+    ],
+    [
+     43.455,
+     138.65
+    ],
+    [
+     43.455,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 356.542,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M822",
+   "synth": false,
+   "cx": 39.855,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     38.655,
+     143.95
+    ],
+    [
+     38.655,
+     138.65
+    ],
+    [
+     41.055,
+     138.65
+    ],
+    [
+     41.055,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 344.54,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M823",
+   "synth": false,
+   "cx": 37.454,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     36.254,
+     143.95
+    ],
+    [
+     36.254,
+     138.65
+    ],
+    [
+     38.655,
+     138.65
+    ],
+    [
+     38.655,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 332.539,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M824",
+   "synth": false,
+   "cx": 31.604,
+   "cy": 141.899,
+   "north": true,
+   "quad": [
+    [
+     30.505,
+     143.95
+    ],
+    [
+     30.505,
+     139.848
+    ],
+    [
+     32.703,
+     139.848
+    ],
+    [
+     32.703,
+     143.95
+    ]
+   ],
+   "cx_old": 289.444,
+   "cy_old": 303.287,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M825",
+   "synth": false,
+   "cx": 29.305,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     28.105,
+     143.95
+    ],
+    [
+     28.105,
+     138.65
+    ],
+    [
+     30.505,
+     138.65
+    ],
+    [
+     30.505,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 291.793,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M826",
+   "synth": false,
+   "cx": 26.905,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     25.705,
+     143.95
+    ],
+    [
+     25.705,
+     138.65
+    ],
+    [
+     28.105,
+     138.65
+    ],
+    [
+     28.105,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 279.792,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M827",
+   "synth": false,
+   "cx": 24.505,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     23.305,
+     143.95
+    ],
+    [
+     23.305,
+     138.65
+    ],
+    [
+     25.705,
+     138.65
+    ],
+    [
+     25.705,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 267.79,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M828",
+   "synth": false,
+   "cx": 20.699,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     19.499,
+     143.95
+    ],
+    [
+     19.499,
+     138.65
+    ],
+    [
+     21.899,
+     138.65
+    ],
+    [
+     21.899,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 248.761,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M829",
+   "synth": false,
+   "cx": 18.299,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     17.098,
+     143.95
+    ],
+    [
+     17.098,
+     138.65
+    ],
+    [
+     19.499,
+     138.65
+    ],
+    [
+     19.499,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 236.76,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M830",
+   "synth": false,
+   "cx": 15.898,
+   "cy": 141.3,
+   "north": true,
+   "quad": [
+    [
+     14.698,
+     143.95
+    ],
+    [
+     14.698,
+     138.65
+    ],
+    [
+     17.098,
+     138.65
+    ],
+    [
+     17.098,
+     143.95
+    ]
+   ],
+   "cx_old": 292.439,
+   "cy_old": 224.758,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M831",
+   "synth": false,
+   "cx": 13.498,
+   "cy": 143.8,
+   "north": true,
+   "quad": [
+    [
+     12.298,
+     146.799
+    ],
+    [
+     12.298,
+     140.801
+    ],
+    [
+     14.698,
+     140.801
+    ],
+    [
+     14.698,
+     146.799
+    ]
+   ],
+   "cx_old": 279.94,
+   "cy_old": 212.757,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M832",
+   "synth": false,
+   "cx": 15.898,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     14.698,
+     149.25
+    ],
+    [
+     14.698,
+     143.95
+    ],
+    [
+     17.098,
+     143.95
+    ],
+    [
+     17.098,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 224.758,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M833",
+   "synth": false,
+   "cx": 18.299,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     17.098,
+     149.25
+    ],
+    [
+     17.098,
+     143.95
+    ],
+    [
+     19.499,
+     143.95
+    ],
+    [
+     19.499,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 236.76,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M834",
+   "synth": false,
+   "cx": 20.699,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     19.499,
+     149.25
+    ],
+    [
+     19.499,
+     143.95
+    ],
+    [
+     21.899,
+     143.95
+    ],
+    [
+     21.899,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 248.761,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M835",
+   "synth": false,
+   "cx": 24.653,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     23.453,
+     149.25
+    ],
+    [
+     23.453,
+     143.95
+    ],
+    [
+     25.853,
+     143.95
+    ],
+    [
+     25.853,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 268.531,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M836",
+   "synth": false,
+   "cx": 27.053,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     25.853,
+     149.25
+    ],
+    [
+     25.853,
+     143.95
+    ],
+    [
+     28.253,
+     143.95
+    ],
+    [
+     28.253,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 280.532,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M837",
+   "synth": false,
+   "cx": 29.453,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     28.253,
+     149.25
+    ],
+    [
+     28.253,
+     143.95
+    ],
+    [
+     30.654,
+     143.95
+    ],
+    [
+     30.654,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 292.534,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M838",
+   "synth": false,
+   "cx": 31.854,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     30.654,
+     149.25
+    ],
+    [
+     30.654,
+     143.95
+    ],
+    [
+     33.054,
+     143.95
+    ],
+    [
+     33.054,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 304.535,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M839",
+   "synth": false,
+   "cx": 36.252,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     35.052,
+     149.25
+    ],
+    [
+     35.052,
+     143.95
+    ],
+    [
+     37.452,
+     143.95
+    ],
+    [
+     37.452,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 326.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M840",
+   "synth": false,
+   "cx": 38.652,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     37.452,
+     149.25
+    ],
+    [
+     37.452,
+     143.95
+    ],
+    [
+     39.853,
+     143.95
+    ],
+    [
+     39.853,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 338.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M841",
+   "synth": false,
+   "cx": 42.852,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     41.652,
+     149.25
+    ],
+    [
+     41.652,
+     143.95
+    ],
+    [
+     44.052,
+     143.95
+    ],
+    [
+     44.052,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 359.526,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M842",
+   "synth": false,
+   "cx": 45.252,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     44.052,
+     149.25
+    ],
+    [
+     44.052,
+     143.95
+    ],
+    [
+     46.452,
+     143.95
+    ],
+    [
+     46.452,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 371.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M843",
+   "synth": false,
+   "cx": 47.653,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     46.452,
+     149.25
+    ],
+    [
+     46.452,
+     143.95
+    ],
+    [
+     48.853,
+     143.95
+    ],
+    [
+     48.853,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 383.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M844",
+   "synth": false,
+   "cx": 69.954,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     68.754,
+     149.25
+    ],
+    [
+     68.754,
+     143.95
+    ],
+    [
+     71.154,
+     143.95
+    ],
+    [
+     71.154,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 495.035,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M845",
+   "synth": false,
+   "cx": 72.354,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     71.154,
+     149.25
+    ],
+    [
+     71.154,
+     143.95
+    ],
+    [
+     73.554,
+     143.95
+    ],
+    [
+     73.554,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 507.037,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M846",
+   "synth": false,
+   "cx": 74.754,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     73.554,
+     149.25
+    ],
+    [
+     73.554,
+     143.95
+    ],
+    [
+     75.954,
+     143.95
+    ],
+    [
+     75.954,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 519.038,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M847",
+   "synth": false,
+   "cx": 60.852,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     59.652,
+     149.25
+    ],
+    [
+     59.652,
+     143.95
+    ],
+    [
+     62.052,
+     143.95
+    ],
+    [
+     62.052,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 449.527,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M848",
+   "synth": false,
+   "cx": 63.252,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     62.052,
+     149.25
+    ],
+    [
+     62.052,
+     143.95
+    ],
+    [
+     64.453,
+     143.95
+    ],
+    [
+     64.453,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 461.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M849",
+   "synth": false,
+   "cx": 65.653,
+   "cy": 146.6,
+   "north": true,
+   "quad": [
+    [
+     64.453,
+     149.25
+    ],
+    [
+     64.453,
+     143.95
+    ],
+    [
+     66.853,
+     143.95
+    ],
+    [
+     66.853,
+     149.25
+    ]
+   ],
+   "cx_old": 265.938,
+   "cy_old": 473.53,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M852",
+   "synth": false,
+   "cx": 71.656,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     70.455,
+     161.049
+    ],
+    [
+     70.455,
+     155.749
+    ],
+    [
+     72.856,
+     155.749
+    ],
+    [
+     72.856,
+     161.049
+    ]
+   ],
+   "cx_old": 206.946,
+   "cy_old": 503.544,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M853",
+   "synth": false,
+   "cx": 69.255,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     68.055,
+     161.049
+    ],
+    [
+     68.055,
+     155.749
+    ],
+    [
+     70.455,
+     155.749
+    ],
+    [
+     70.455,
+     161.049
+    ]
+   ],
+   "cx_old": 206.946,
+   "cy_old": 491.543,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M854",
+   "synth": false,
+   "cx": 65.653,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     64.453,
+     161.049
+    ],
+    [
+     64.453,
+     155.749
+    ],
+    [
+     66.853,
+     155.749
+    ],
+    [
+     66.853,
+     161.049
+    ]
+   ],
+   "cx_old": 206.946,
+   "cy_old": 473.53,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M855",
+   "synth": false,
+   "cx": 63.252,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     62.052,
+     161.049
+    ],
+    [
+     62.052,
+     155.749
+    ],
+    [
+     64.453,
+     155.749
+    ],
+    [
+     64.453,
+     161.049
+    ]
+   ],
+   "cx_old": 206.946,
+   "cy_old": 461.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M856",
+   "synth": false,
+   "cx": 60.852,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     59.652,
+     161.049
+    ],
+    [
+     59.652,
+     155.749
+    ],
+    [
+     62.052,
+     155.749
+    ],
+    [
+     62.052,
+     161.049
+    ]
+   ],
+   "cx_old": 206.946,
+   "cy_old": 449.527,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M857",
+   "synth": false,
+   "cx": 56.653,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     55.452,
+     161.049
+    ],
+    [
+     55.452,
+     155.749
+    ],
+    [
+     57.853,
+     155.749
+    ],
+    [
+     57.853,
+     161.049
+    ]
+   ],
+   "cx_old": 206.946,
+   "cy_old": 428.53,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M858",
+   "synth": false,
+   "cx": 54.252,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     53.052,
+     161.049
+    ],
+    [
+     53.052,
+     155.749
+    ],
+    [
+     55.452,
+     155.749
+    ],
+    [
+     55.452,
+     161.049
+    ]
+   ],
+   "cx_old": 206.946,
+   "cy_old": 416.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M859",
+   "synth": false,
+   "cx": 51.852,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     50.652,
+     161.049
+    ],
+    [
+     50.652,
+     155.749
+    ],
+    [
+     53.052,
+     155.749
+    ],
+    [
+     53.052,
+     161.049
+    ]
+   ],
+   "cx_old": 206.946,
+   "cy_old": 404.527,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M860",
+   "synth": false,
+   "cx": 47.653,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     46.452,
+     161.049
+    ],
+    [
+     46.452,
+     155.749
+    ],
+    [
+     48.853,
+     155.749
+    ],
+    [
+     48.853,
+     161.049
+    ]
+   ],
+   "cx_old": 206.946,
+   "cy_old": 383.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M861",
+   "synth": false,
+   "cx": 45.252,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     44.052,
+     161.049
+    ],
+    [
+     44.052,
+     155.749
+    ],
+    [
+     46.452,
+     155.749
+    ],
+    [
+     46.452,
+     161.049
+    ]
+   ],
+   "cx_old": 206.946,
+   "cy_old": 371.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M862",
+   "synth": false,
+   "cx": 42.852,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     41.652,
+     161.049
+    ],
+    [
+     41.652,
+     155.749
+    ],
+    [
+     44.052,
+     155.749
+    ],
+    [
+     44.052,
+     161.049
+    ]
+   ],
+   "cx_old": 206.946,
+   "cy_old": 359.526,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M863",
+   "synth": false,
+   "cx": 38.652,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     37.452,
+     161.049
+    ],
+    [
+     37.452,
+     155.749
+    ],
+    [
+     39.853,
+     155.749
+    ],
+    [
+     39.853,
+     161.049
+    ]
+   ],
+   "cx_old": 206.947,
+   "cy_old": 338.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M864",
+   "synth": false,
+   "cx": 36.252,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     35.052,
+     161.049
+    ],
+    [
+     35.052,
+     155.749
+    ],
+    [
+     37.452,
+     155.749
+    ],
+    [
+     37.452,
+     161.049
+    ]
+   ],
+   "cx_old": 206.947,
+   "cy_old": 326.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M865",
+   "synth": false,
+   "cx": 33.852,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     32.652,
+     161.049
+    ],
+    [
+     32.652,
+     155.749
+    ],
+    [
+     35.052,
+     155.749
+    ],
+    [
+     35.052,
+     161.049
+    ]
+   ],
+   "cx_old": 206.947,
+   "cy_old": 314.526,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M866",
+   "synth": false,
+   "cx": 29.652,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     28.452,
+     161.049
+    ],
+    [
+     28.452,
+     155.749
+    ],
+    [
+     30.853,
+     155.749
+    ],
+    [
+     30.853,
+     161.049
+    ]
+   ],
+   "cx_old": 206.947,
+   "cy_old": 293.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M867",
+   "synth": false,
+   "cx": 27.252,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     26.052,
+     161.049
+    ],
+    [
+     26.052,
+     155.749
+    ],
+    [
+     28.452,
+     155.749
+    ],
+    [
+     28.452,
+     161.049
+    ]
+   ],
+   "cx_old": 206.947,
+   "cy_old": 281.527,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M868",
+   "synth": false,
+   "cx": 24.852,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     23.652,
+     161.049
+    ],
+    [
+     23.652,
+     155.749
+    ],
+    [
+     26.052,
+     155.749
+    ],
+    [
+     26.052,
+     161.049
+    ]
+   ],
+   "cx_old": 206.947,
+   "cy_old": 269.526,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M869",
+   "synth": false,
+   "cx": 20.652,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     19.452,
+     161.049
+    ],
+    [
+     19.452,
+     155.749
+    ],
+    [
+     21.852,
+     155.749
+    ],
+    [
+     21.852,
+     161.049
+    ]
+   ],
+   "cx_old": 206.947,
+   "cy_old": 248.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M870",
+   "synth": false,
+   "cx": 18.252,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     17.052,
+     161.049
+    ],
+    [
+     17.052,
+     155.749
+    ],
+    [
+     19.452,
+     155.749
+    ],
+    [
+     19.452,
+     161.049
+    ]
+   ],
+   "cx_old": 206.947,
+   "cy_old": 236.527,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M871",
+   "synth": false,
+   "cx": 15.854,
+   "cy": 158.399,
+   "north": true,
+   "quad": [
+    [
+     14.656,
+     161.049
+    ],
+    [
+     14.656,
+     155.749
+    ],
+    [
+     17.052,
+     155.749
+    ],
+    [
+     17.052,
+     161.049
+    ]
+   ],
+   "cx_old": 206.947,
+   "cy_old": 224.536,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M872",
+   "synth": false,
+   "cx": 13.456,
+   "cy": 161.699,
+   "north": true,
+   "quad": [
+    [
+     12.256,
+     164.698
+    ],
+    [
+     12.256,
+     158.699
+    ],
+    [
+     14.656,
+     158.699
+    ],
+    [
+     14.656,
+     164.698
+    ]
+   ],
+   "cx_old": 190.447,
+   "cy_old": 212.545,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M873",
+   "synth": false,
+   "cx": 15.854,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     14.656,
+     167.166
+    ],
+    [
+     14.656,
+     161.866
+    ],
+    [
+     17.052,
+     161.866
+    ],
+    [
+     17.052,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 224.536,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M874",
+   "synth": false,
+   "cx": 18.252,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     17.052,
+     167.166
+    ],
+    [
+     17.052,
+     161.866
+    ],
+    [
+     19.452,
+     161.866
+    ],
+    [
+     19.452,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 236.527,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M875",
+   "synth": false,
+   "cx": 20.652,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     19.452,
+     167.166
+    ],
+    [
+     19.452,
+     161.866
+    ],
+    [
+     21.852,
+     161.866
+    ],
+    [
+     21.852,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 248.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M876",
+   "synth": false,
+   "cx": 24.852,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     23.652,
+     167.166
+    ],
+    [
+     23.652,
+     161.866
+    ],
+    [
+     26.052,
+     161.866
+    ],
+    [
+     26.052,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 269.526,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M877",
+   "synth": false,
+   "cx": 27.252,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     26.052,
+     167.166
+    ],
+    [
+     26.052,
+     161.866
+    ],
+    [
+     28.452,
+     161.866
+    ],
+    [
+     28.452,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 281.527,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M878",
+   "synth": false,
+   "cx": 29.652,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     28.452,
+     167.166
+    ],
+    [
+     28.452,
+     161.866
+    ],
+    [
+     30.853,
+     161.866
+    ],
+    [
+     30.853,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 293.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M879",
+   "synth": false,
+   "cx": 33.852,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     32.652,
+     167.166
+    ],
+    [
+     32.652,
+     161.866
+    ],
+    [
+     35.052,
+     161.866
+    ],
+    [
+     35.052,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 314.526,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M880",
+   "synth": false,
+   "cx": 36.252,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     35.052,
+     167.166
+    ],
+    [
+     35.052,
+     161.866
+    ],
+    [
+     37.452,
+     161.866
+    ],
+    [
+     37.452,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 326.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M881",
+   "synth": false,
+   "cx": 38.652,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     37.452,
+     167.166
+    ],
+    [
+     37.452,
+     161.866
+    ],
+    [
+     39.853,
+     161.866
+    ],
+    [
+     39.853,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 338.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M882",
+   "synth": false,
+   "cx": 42.852,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     41.652,
+     167.166
+    ],
+    [
+     41.652,
+     161.866
+    ],
+    [
+     44.052,
+     161.866
+    ],
+    [
+     44.052,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 359.526,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M883",
+   "synth": false,
+   "cx": 45.252,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     44.052,
+     167.166
+    ],
+    [
+     44.052,
+     161.866
+    ],
+    [
+     46.452,
+     161.866
+    ],
+    [
+     46.452,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 371.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M884",
+   "synth": false,
+   "cx": 47.653,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     46.452,
+     167.166
+    ],
+    [
+     46.452,
+     161.866
+    ],
+    [
+     48.853,
+     161.866
+    ],
+    [
+     48.853,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 383.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M885",
+   "synth": false,
+   "cx": 51.852,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     50.652,
+     167.166
+    ],
+    [
+     50.652,
+     161.866
+    ],
+    [
+     53.052,
+     161.866
+    ],
+    [
+     53.052,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 404.527,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M886",
+   "synth": false,
+   "cx": 54.252,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     53.052,
+     167.166
+    ],
+    [
+     53.052,
+     161.866
+    ],
+    [
+     55.452,
+     161.866
+    ],
+    [
+     55.452,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 416.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M887",
+   "synth": false,
+   "cx": 56.653,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     55.452,
+     167.166
+    ],
+    [
+     55.452,
+     161.866
+    ],
+    [
+     57.853,
+     161.866
+    ],
+    [
+     57.853,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 428.53,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M888",
+   "synth": false,
+   "cx": 60.852,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     59.652,
+     167.166
+    ],
+    [
+     59.652,
+     161.866
+    ],
+    [
+     62.052,
+     161.866
+    ],
+    [
+     62.052,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 449.527,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M889",
+   "synth": false,
+   "cx": 63.252,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     62.052,
+     167.166
+    ],
+    [
+     62.052,
+     161.866
+    ],
+    [
+     64.453,
+     161.866
+    ],
+    [
+     64.453,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 461.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M890",
+   "synth": false,
+   "cx": 65.653,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     64.453,
+     167.166
+    ],
+    [
+     64.453,
+     161.866
+    ],
+    [
+     66.853,
+     161.866
+    ],
+    [
+     66.853,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 473.53,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M891",
+   "synth": false,
+   "cx": 69.344,
+   "cy": 164.516,
+   "north": true,
+   "quad": [
+    [
+     68.136,
+     167.166
+    ],
+    [
+     68.136,
+     161.866
+    ],
+    [
+     70.553,
+     161.866
+    ],
+    [
+     70.553,
+     167.166
+    ]
+   ],
+   "cx_old": 176.361,
+   "cy_old": 491.987,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M892",
+   "synth": false,
+   "cx": 38.652,
+   "cy": 177.677,
+   "north": true,
+   "quad": [
+    [
+     37.452,
+     180.327
+    ],
+    [
+     37.452,
+     175.027
+    ],
+    [
+     39.853,
+     175.027
+    ],
+    [
+     39.853,
+     180.327
+    ]
+   ],
+   "cx_old": 110.554,
+   "cy_old": 338.529,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M893",
+   "synth": false,
+   "cx": 36.252,
+   "cy": 177.25,
+   "north": true,
+   "quad": [
+    [
+     35.052,
+     179.9
+    ],
+    [
+     35.052,
+     174.6
+    ],
+    [
+     37.452,
+     174.6
+    ],
+    [
+     37.452,
+     179.9
+    ]
+   ],
+   "cx_old": 112.691,
+   "cy_old": 326.528,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M894",
+   "synth": false,
+   "cx": 33.852,
+   "cy": 177.25,
+   "north": true,
+   "quad": [
+    [
+     32.652,
+     179.9
+    ],
+    [
+     32.652,
+     174.6
+    ],
+    [
+     35.052,
+     174.6
+    ],
+    [
+     35.052,
+     179.9
+    ]
+   ],
+   "cx_old": 112.691,
+   "cy_old": 314.526,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M895",
+   "synth": false,
+   "cx": 29.14,
+   "cy": 175.916,
+   "north": true,
+   "quad": [
+    [
+     27.94,
+     178.566
+    ],
+    [
+     27.94,
+     173.266
+    ],
+    [
+     30.34,
+     173.266
+    ],
+    [
+     30.34,
+     178.566
+    ]
+   ],
+   "cx_old": 119.359,
+   "cy_old": 290.968,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M896",
+   "synth": false,
+   "cx": 26.74,
+   "cy": 175.916,
+   "north": true,
+   "quad": [
+    [
+     25.54,
+     178.566
+    ],
+    [
+     25.54,
+     173.266
+    ],
+    [
+     27.94,
+     173.266
+    ],
+    [
+     27.94,
+     178.566
+    ]
+   ],
+   "cx_old": 119.359,
+   "cy_old": 278.966,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M897",
+   "synth": false,
+   "cx": 24.441,
+   "cy": 175.616,
+   "north": true,
+   "quad": [
+    [
+     23.343,
+     177.766
+    ],
+    [
+     23.343,
+     173.465
+    ],
+    [
+     25.54,
+     173.465
+    ],
+    [
+     25.54,
+     177.766
+    ]
+   ],
+   "cx_old": 120.862,
+   "cy_old": 267.473,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M898",
+   "synth": false,
+   "cx": 22.242,
+   "cy": 175.616,
+   "north": true,
+   "quad": [
+    [
+     21.141,
+     177.766
+    ],
+    [
+     21.141,
+     173.465
+    ],
+    [
+     23.343,
+     173.465
+    ],
+    [
+     23.343,
+     177.766
+    ]
+   ],
+   "cx_old": 120.862,
+   "cy_old": 256.476,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M899",
+   "synth": false,
+   "cx": 16.19,
+   "cy": 174.466,
+   "north": false,
+   "quad": [
+    [
+     13.191,
+     173.266
+    ],
+    [
+     19.19,
+     173.266
+    ],
+    [
+     19.19,
+     175.666
+    ],
+    [
+     13.191,
+     175.666
+    ]
+   ],
+   "cx_old": 126.608,
+   "cy_old": 226.219,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M900",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 170.699,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     169.498
+    ],
+    [
+     5.3,
+     169.498
+    ],
+    [
+     5.3,
+     171.899
+    ],
+    [
+     0.0,
+     171.899
+    ]
+   ],
+   "cx_old": 145.447,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M901",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 168.298,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     167.098
+    ],
+    [
+     5.3,
+     167.098
+    ],
+    [
+     5.3,
+     169.498
+    ],
+    [
+     0.0,
+     169.498
+    ]
+   ],
+   "cx_old": 157.448,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M902",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 165.301,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     164.101
+    ],
+    [
+     5.3,
+     164.101
+    ],
+    [
+     5.3,
+     166.501
+    ],
+    [
+     0.0,
+     166.501
+    ]
+   ],
+   "cx_old": 172.434,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M903",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 162.901,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     161.701
+    ],
+    [
+     5.3,
+     161.701
+    ],
+    [
+     5.3,
+     164.101
+    ],
+    [
+     0.0,
+     164.101
+    ]
+   ],
+   "cx_old": 184.436,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M904",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 160.5,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     159.3
+    ],
+    [
+     5.3,
+     159.3
+    ],
+    [
+     5.3,
+     161.701
+    ],
+    [
+     0.0,
+     161.701
+    ]
+   ],
+   "cx_old": 196.437,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M905",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 155.099,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     153.899
+    ],
+    [
+     5.3,
+     153.899
+    ],
+    [
+     5.3,
+     156.299
+    ],
+    [
+     0.0,
+     156.299
+    ]
+   ],
+   "cx_old": 223.446,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M906",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 152.698,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     151.498
+    ],
+    [
+     5.3,
+     151.498
+    ],
+    [
+     5.3,
+     153.899
+    ],
+    [
+     0.0,
+     153.899
+    ]
+   ],
+   "cx_old": 235.447,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M907",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 150.298,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     149.098
+    ],
+    [
+     5.3,
+     149.098
+    ],
+    [
+     5.3,
+     151.498
+    ],
+    [
+     0.0,
+     151.498
+    ]
+   ],
+   "cx_old": 247.449,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M908",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 146.7,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     145.5
+    ],
+    [
+     5.3,
+     145.5
+    ],
+    [
+     5.3,
+     147.9
+    ],
+    [
+     0.0,
+     147.9
+    ]
+   ],
+   "cx_old": 265.441,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M909",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 144.3,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     143.099
+    ],
+    [
+     5.3,
+     143.099
+    ],
+    [
+     5.3,
+     145.5
+    ],
+    [
+     0.0,
+     145.5
+    ]
+   ],
+   "cx_old": 277.442,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M910",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 141.899,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     140.699
+    ],
+    [
+     5.3,
+     140.699
+    ],
+    [
+     5.3,
+     143.099
+    ],
+    [
+     0.0,
+     143.099
+    ]
+   ],
+   "cx_old": 289.444,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M911",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 137.7,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     136.5
+    ],
+    [
+     5.3,
+     136.5
+    ],
+    [
+     5.3,
+     138.9
+    ],
+    [
+     0.0,
+     138.9
+    ]
+   ],
+   "cx_old": 310.441,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M912",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 135.299,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     134.099
+    ],
+    [
+     5.3,
+     134.099
+    ],
+    [
+     5.3,
+     136.5
+    ],
+    [
+     0.0,
+     136.5
+    ]
+   ],
+   "cx_old": 322.442,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M913",
+   "synth": false,
+   "cx": 2.65,
+   "cy": 132.899,
+   "north": false,
+   "quad": [
+    [
+     0.0,
+     131.699
+    ],
+    [
+     5.3,
+     131.699
+    ],
+    [
+     5.3,
+     134.099
+    ],
+    [
+     0.0,
+     134.099
+    ]
+   ],
+   "cx_old": 334.444,
+   "cy_old": 158.517,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M914",
+   "synth": false,
+   "cx": 22.712,
+   "cy": 128.704,
+   "north": false,
+   "quad": [
+    [
+     20.07,
+     127.504
+    ],
+    [
+     25.353,
+     127.504
+    ],
+    [
+     25.353,
+     129.904
+    ],
+    [
+     20.07,
+     129.904
+    ]
+   ],
+   "cx_old": 355.42,
+   "cy_old": 258.826,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M915",
+   "synth": false,
+   "cx": 22.712,
+   "cy": 126.304,
+   "north": false,
+   "quad": [
+    [
+     20.07,
+     125.103
+    ],
+    [
+     25.353,
+     125.103
+    ],
+    [
+     25.353,
+     127.504
+    ],
+    [
+     20.07,
+     127.504
+    ]
+   ],
+   "cx_old": 367.422,
+   "cy_old": 258.826,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  },
+  {
+   "id": "M916",
+   "synth": false,
+   "cx": 22.712,
+   "cy": 123.903,
+   "north": false,
+   "quad": [
+    [
+     20.07,
+     122.703
+    ],
+    [
+     25.353,
+     122.703
+    ],
+    [
+     25.353,
+     125.103
+    ],
+    [
+     20.07,
+     125.103
+    ]
+   ],
+   "cx_old": 379.423,
+   "cy_old": 258.826,
+   "access": {
+    "type": "direct",
+    "through_spot_ids": [],
+    "requires_clear_spot_ids": [],
+    "independently_accessible": true
+   }
+  }
+ ],
+ "graph": {
+  "nodes": [
+   [
+    81.752,
+    144.549
+   ],
+   [
+    71.901,
+    171.147
+   ],
+   [
+    85.054,
+    37.524
+   ],
+   [
+    99.123,
+    12.899
+   ],
+   [
+    65.691,
+    170.75
+   ],
+   [
+    9.145,
+    166.673
+   ],
+   [
+    74.071,
+    152.554
+   ],
+   [
+    54.367,
+    152.554
+   ],
+   [
+    9.145,
+    152.554
+   ],
+   [
+    86.15,
+    135.491
+   ],
+   [
+    81.752,
+    135.491
+   ],
+   [
+    54.367,
+    135.491
+   ],
+   [
+    29.151,
+    135.491
+   ],
+   [
+    9.069,
+    135.491
+   ],
+   [
+    86.15,
+    107.782
+   ],
+   [
+    35.493,
+    107.782
+   ],
+   [
+    10.806,
+    107.782
+   ],
+   [
+    86.15,
+    90.04
+   ],
+   [
+    36.625,
+    90.04
+   ],
+   [
+    12.844,
+    90.04
+   ],
+   [
+    72.108,
+    36.661
+   ],
+   [
+    39.267,
+    53.799
+   ],
+   [
+    16.77,
+    53.799
+   ],
+   [
+    17.902,
+    38.02
+   ]
+  ],
+  "edges": [
+   {
+    "a": 0,
+    "b": 10,
+    "pts": [
+     [
+      81.752,
+      144.549
+     ],
+     [
+      81.752,
+      135.491
+     ]
+    ]
+   },
+   {
+    "a": 9,
+    "b": 10,
+    "pts": [
+     [
+      86.15,
+      135.491
+     ],
+     [
+      81.752,
+      135.491
+     ]
+    ]
+   },
+   {
+    "a": 10,
+    "b": 11,
+    "pts": [
+     [
+      81.752,
+      135.491
+     ],
+     [
+      54.367,
+      135.491
+     ]
+    ]
+   },
+   {
+    "a": 11,
+    "b": 12,
+    "pts": [
+     [
+      54.367,
+      135.491
+     ],
+     [
+      29.151,
+      135.491
+     ]
+    ]
+   },
+   {
+    "a": 12,
+    "b": 13,
+    "pts": [
+     [
+      29.151,
+      135.491
+     ],
+     [
+      9.069,
+      135.491
+     ]
+    ]
+   },
+   {
+    "a": 11,
+    "b": 7,
+    "pts": [
+     [
+      54.367,
+      135.491
+     ],
+     [
+      54.367,
+      152.554
+     ]
+    ]
+   },
+   {
+    "a": 7,
+    "b": 6,
+    "pts": [
+     [
+      54.367,
+      152.554
+     ],
+     [
+      74.071,
+      152.554
+     ]
+    ]
+   },
+   {
+    "a": 7,
+    "b": 8,
+    "pts": [
+     [
+      54.367,
+      152.554
+     ],
+     [
+      9.145,
+      152.554
+     ]
+    ]
+   },
+   {
+    "a": 4,
+    "b": 1,
+    "pts": [
+     [
+      65.691,
+      170.75
+     ],
+     [
+      71.901,
+      171.147
+     ]
+    ]
+   },
+   {
+    "a": 4,
+    "b": 5,
+    "pts": [
+     [
+      65.691,
+      170.75
+     ],
+     [
+      13.826,
+      170.75
+     ],
+     [
+      11.485,
+      170.221
+     ],
+     [
+      9.975,
+      168.862
+     ],
+     [
+      9.145,
+      166.673
+     ]
+    ]
+   },
+   {
+    "a": 5,
+    "b": 8,
+    "pts": [
+     [
+      9.145,
+      166.673
+     ],
+     [
+      9.145,
+      152.554
+     ]
+    ]
+   },
+   {
+    "a": 8,
+    "b": 13,
+    "pts": [
+     [
+      9.145,
+      152.554
+     ],
+     [
+      9.069,
+      135.491
+     ]
+    ]
+   },
+   {
+    "a": 13,
+    "b": 16,
+    "pts": [
+     [
+      9.069,
+      135.491
+     ],
+     [
+      9.145,
+      122.882
+     ],
+     [
+      10.806,
+      107.782
+     ]
+    ]
+   },
+   {
+    "a": 16,
+    "b": 19,
+    "pts": [
+     [
+      10.806,
+      107.782
+     ],
+     [
+      12.844,
+      90.04
+     ]
+    ]
+   },
+   {
+    "a": 19,
+    "b": 22,
+    "pts": [
+     [
+      12.844,
+      90.04
+     ],
+     [
+      16.77,
+      53.799
+     ]
+    ]
+   },
+   {
+    "a": 22,
+    "b": 23,
+    "pts": [
+     [
+      16.77,
+      53.799
+     ],
+     [
+      17.902,
+      38.02
+     ]
+    ]
+   },
+   {
+    "a": 12,
+    "b": 15,
+    "pts": [
+     [
+      29.151,
+      135.491
+     ],
+     [
+      29.151,
+      115.71
+     ],
+     [
+      29.529,
+      112.463
+     ],
+     [
+      30.963,
+      110.047
+     ],
+     [
+      33.001,
+      108.537
+     ],
+     [
+      35.493,
+      107.782
+     ]
+    ]
+   },
+   {
+    "a": 15,
+    "b": 14,
+    "pts": [
+     [
+      35.493,
+      107.782
+     ],
+     [
+      86.15,
+      107.782
+     ]
+    ]
+   },
+   {
+    "a": 14,
+    "b": 9,
+    "pts": [
+     [
+      86.15,
+      107.782
+     ],
+     [
+      86.15,
+      135.491
+     ]
+    ]
+   },
+   {
+    "a": 14,
+    "b": 17,
+    "pts": [
+     [
+      86.15,
+      107.782
+     ],
+     [
+      86.15,
+      90.04
+     ]
+    ]
+   },
+   {
+    "a": 17,
+    "b": 18,
+    "pts": [
+     [
+      86.15,
+      90.04
+     ],
+     [
+      36.625,
+      90.04
+     ]
+    ]
+   },
+   {
+    "a": 18,
+    "b": 19,
+    "pts": [
+     [
+      36.625,
+      90.04
+     ],
+     [
+      12.844,
+      90.04
+     ]
+    ]
+   },
+   {
+    "a": 18,
+    "b": 21,
+    "pts": [
+     [
+      36.625,
+      90.04
+     ],
+     [
+      36.625,
+      58.858
+     ],
+     [
+      37.154,
+      56.291
+     ],
+     [
+      38.286,
+      54.63
+     ],
+     [
+      39.267,
+      53.799
+     ]
+    ]
+   },
+   {
+    "a": 22,
+    "b": 21,
+    "pts": [
+     [
+      16.77,
+      53.799
+     ],
+     [
+      39.267,
+      53.799
+     ]
+    ]
+   },
+   {
+    "a": 21,
+    "b": 20,
+    "pts": [
+     [
+      39.267,
+      53.799
+     ],
+     [
+      42.665,
+      53.799
+     ],
+     [
+      44.93,
+      52.667
+     ],
+     [
+      46.213,
+      50.628
+     ],
+     [
+      46.213,
+      40.587
+     ],
+     [
+      46.968,
+      38.322
+     ],
+     [
+      49.082,
+      36.963
+     ],
+     [
+      51.724,
+      36.661
+     ],
+     [
+      72.108,
+      36.661
+     ]
+    ]
+   },
+   {
+    "a": 3,
+    "b": 20,
+    "pts": [
+     [
+      99.123,
+      12.899
+     ],
+     [
+      99.123,
+      10.009
+     ],
+     [
+      77.091,
+      10.009
+     ],
+     [
+      74.071,
+      10.991
+     ],
+     [
+      72.108,
+      13.331
+     ],
+     [
+      72.108,
+      36.661
+     ]
+    ]
+   },
+   {
+    "a": 20,
+    "b": 17,
+    "pts": [
+     [
+      72.108,
+      36.661
+     ],
+     [
+      70.9,
+      42.097
+     ],
+     [
+      71.429,
+      44.211
+     ],
+     [
+      73.089,
+      45.721
+     ],
+     [
+      75.43,
+      46.098
+     ],
+     [
+      85.848,
+      46.098
+     ],
+     [
+      87.66,
+      46.853
+     ],
+     [
+      88.641,
+      48.59
+     ],
+     [
+      88.641,
+      75.317
+     ],
+     [
+      87.509,
+      85.132
+     ],
+     [
+      86.15,
+      90.04
+     ]
+    ]
+   },
+   {
+    "a": 20,
+    "b": 2,
+    "pts": [
+     [
+      72.108,
+      36.661
+     ],
+     [
+      74.75,
+      37.524
+     ],
+     [
+      85.054,
+      37.524
+     ]
+    ]
+   }
+  ]
+ },
+ "entrance": [
+  81.752,
+  144.549
+ ],
+ "exit": [
+  72.108,
+  36.661
+ ]
+}

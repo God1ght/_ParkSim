@@ -1,0 +1,17 @@
+# ============================================================================
+# 场景预设示例：高密度随机场景（更短到达间隔、更多车辆、图距离分配）
+#
+# 用法：ros2 launch parksim parksim.launch.py scenario:=example_random
+# ============================================================================
+
+mode: random
+
+# 场景预设可直接覆盖分配方法（launch 参数优先级更高）
+allocation_method: graph_cost
+
+random:
+  seed: 7
+  entering: 40
+  exiting: 40
+  interval_mean: 3.0
+  y_bound: 72

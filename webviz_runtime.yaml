@@ -1,0 +1,22 @@
+mode: random
+random:
+  seed: 0
+  entering: 30
+  exiting: 30
+  interval_mean: 5.0
+  y_bound: 72
+  occupancy_random:
+    enable: true
+    count: 0
+    ratio: 0.0
+  occupancy:
+    blocked: []
+    occupied: []
+  entering_spot_pool: []
+replay:
+  agents_data_path: ''
+  time_scale: 1.0
+  max_agents: 0
+custom:
+  file: scenarios/example_custom.yaml
+maneuver_provider: per_spot

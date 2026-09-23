@@ -1,0 +1,21 @@
+# Plan D (per-spot maneuver) deploy manifest
+# ts=20260918_225607  host=step-lab  user=step
+# stage=/tmp/deploy_pkg
+
+## PRE / BACKUP
+PRE c2ff8d59d587857250ca4fc03d9322ba python/parksim/path_planner/offline_maneuver.py
+BAK c2ff8d59d587857250ca4fc03d9322ba python/parksim/path_planner/offline_maneuver.py.bak_20260918_20260918_225607
+PRE a14ddd610593fc019c2187481219fa27 python/parksim/path_planner/maneuver_providers.py
+BAK a14ddd610593fc019c2187481219fa27 python/parksim/path_planner/maneuver_providers.py.bak_20260918_20260918_225607
+PRE 767c296eeb9d09d813e42117f2282b2e python/parksim/agents/rule_based_stanley_vehicle.py
+BAK 767c296eeb9d09d813e42117f2282b2e python/parksim/agents/rule_based_stanley_vehicle.py.bak_20260918_20260918_225607
+PRE e0078bc10976dcd2255e44f96fd8ab33 workspace/src/parksim/src/vehicle_node.py
+BAK e0078bc10976dcd2255e44f96fd8ab33 workspace/src/parksim/src/vehicle_node.py.bak_20260918_20260918_225607
+
+## POST (deployed)
+POST c2ff8d59d587857250ca4fc03d9322ba python/parksim/path_planner/offline_maneuver.py
+POST a14ddd610593fc019c2187481219fa27 python/parksim/path_planner/maneuver_providers.py
+POST 767c296eeb9d09d813e42117f2282b2e python/parksim/agents/rule_based_stanley_vehicle.py
+POST 4d5939b78cf8b1313ff7b405e82a676f workspace/src/parksim/src/vehicle_node.py
+NEW f6e4d88032e5a043803db4441ab312ae python/parksim/map/build_parking_maneuvers.py
+NEW d41d8cd98f00b204e9800998ecf8427e python/parksim/map/__init__.py

@@ -79,18 +79,19 @@ class StanleyController(object):
         fx = state.x.x + self.L * np.cos(state.e.psi)
         fy = state.x.y + self.L * np.sin(state.e.psi)
 
-        # Search nearest point index
-        # returns index of point that is closest to front axle
-        dx = [fx - icx for icx in self.x_ref]
-        dy = [fy - icy for icy in self.y_ref]
+        # Search nearest point index（numpy 向量化：路径可能上千点，
+        # will_crash_with 前瞻会高频调用，列表推导会成为瓶颈）
+        xs = np.asarray(self.x_ref, dtype=float)
+        ys = np.asarray(self.y_ref, dtype=float)
+        dx = fx - xs
+        dy = fy - ys
         d = np.hypot(dx, dy)
-        target_idx = np.argmin(d)
+        target_idx = int(np.argmin(d))
 
         # Project RMS error onto front axle vector
-        front_axle_vec = [-np.cos(state.e.psi + np.pi / 2),
-                        -np.sin(state.e.psi + np.pi / 2)] # this is equivalent to [sin(yaw), -cos(yaw)]
-        # this is cross-track error
-        error_front_axle = np.dot([dx[target_idx], dy[target_idx]], front_axle_vec)
+        # this is equivalent to [sin(yaw), -cos(yaw)]
+        error_front_axle = (dx[target_idx] * (-np.cos(state.e.psi + np.pi / 2))
+                            + dy[target_idx] * (-np.sin(state.e.psi + np.pi / 2)))
 
         return target_idx, error_front_axle
 
@@ -123,6 +124,16 @@ class StanleyController(object):
         if self.target_idx >= current_target_idx:
             current_target_idx = self.target_idx
 
+        # 防御：索引钳制（ref 路径与 target_idx 可能来自不同长度的数据源——
+        # 如其他车辆的前瞻模拟使用「展示拼接路径 + 对方 target_idx」），越界会崩溃。
+        _n = len(self.yaw_ref)
+        if _n == 0:
+            return 0.0, 0
+        if current_target_idx >= _n:
+            current_target_idx = _n - 1
+        elif current_target_idx < 0:
+            current_target_idx = 0
+
         # theta_e corrects the heading error
         theta_e = normalize_angle(self.yaw_ref[current_target_idx] - state.e.psi)
         # theta_d corrects based on the cross track error (k is a gain for this)
@@ -134,6 +145,9 @@ class StanleyController(object):
         return delta, current_target_idx
 
     def solve(self, state: VehicleState, braking=False):
+        # 空参考路径：强制刹车停车（此前会保持 v_ref 直行漂移出场地）
+        if len(getattr(self, 'yaw_ref', [])) == 0 or len(getattr(self, 'x_ref', [])) == 0:
+            return -3.0, 0.0, 0
         a = self.pid_control(self.v_ref, state.v.v, braking)
         d, current_target_idx = self.stanley_control(state)
 

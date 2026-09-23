@@ -12,3 +12,8 @@
     intent_model_path: "${PARKSIM_ROOT}/python/parksim/priorFiles/model/smallRegularizedCNN_L0.068_01-29-2022_19-50-35.pth"
 
     offline_maneuver_path: "${PARKSIM_ROOT}/python/parksim/priorFiles/parking_maneuvers.pickle"
+
+    # ======== 可插拔规划组件（默认 = 现状）
+    route_planner: "astar"          # astar | dijkstra | via
+    ref_path_generator: "spline"    # spline | linear
+    maneuver_provider: "per_spot"    # offline | online_rs

@@ -112,6 +112,9 @@ class VehicleConfig(PythonMsg):
     parking_radius: float = field(default=7) # how much room a vehicle should have to park
     parking_ahead_angle: float = field(default=np.pi/4)
     leading_trailing_thres: float = field(default=0.25) # Threshold of heading angle difference to check whether two vehicles are leading and trailing. 0.25 is about about 15 degrees
+    # item3/4: 未来参考轨迹走廊重叠判定参数
+    lookahead_distance: float = field(default=12.0) # 沿参考轨迹向前看多少米作为「未来轨迹」窗口
+    trajectory_corridor_margin: float = field(default=0.8) # 走廊宽度 = 两车半宽之和 + 该余量；小于该距离判定轨迹重叠（会冲突）
 
 @dataclass
 class VehicleInfo(PythonMsg):
