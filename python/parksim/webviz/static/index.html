@@ -4,7 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>ParkSim · 停车场景仿真可视化</title>
-<link rel="stylesheet" href="/static/style.css?v=9"/>
+<link rel="stylesheet" href="/static/style.css?v=10"/>
 </head>
 <body data-theme="dark">
 <canvas id="cv"></canvas>
@@ -45,6 +45,63 @@
   </div>
 </div>
 
+<!-- 左侧常驻面板：运行指标监视（数据来源：WS frame / occupancy / departing） -->
+<aside id="panelMetrics" class="side-panel side-left hidden">
+  <div class="sp-head">
+    <span class="sp-title">运行指标</span>
+    <button id="btnCloseMetrics" class="sp-close" type="button" aria-label="收起指标面板">×</button>
+  </div>
+  <div class="sp-body">
+    <div class="sp-sec">
+      <div class="sp-sec-title">仿真状态</div>
+      <div class="sp-row"><span>生命周期</span><b id="mState">--</b></div>
+      <div class="sp-row"><span>仿真时刻</span><b id="mT">--</b></div>
+    </div>
+    <div class="sp-sec">
+      <div class="sp-sec-title">车辆状态分布</div>
+      <div class="sp-row"><span class="sp-dot driving"></span><span>行驶中</span><b id="mDrive">--</b></div>
+      <div class="sp-row"><span class="sp-dot parking"></span><span>泊车机动</span><b id="mPark">--</b></div>
+      <div class="sp-row"><span class="sp-dot braking"></span><span>制动等待</span><b id="mBrake">--</b></div>
+      <div class="sp-row"><span class="sp-dot done"></span><span>已完成</span><b id="mDone">--</b></div>
+      <div class="sp-row"><span>在场合计</span><b id="mTotal">--</b></div>
+    </div>
+    <div class="sp-sec">
+      <div class="sp-sec-title">泊位占用</div>
+      <div class="sp-row"><span>已占用 / 总数</span><b id="mOcc">--</b></div>
+      <div class="sp-row"><span>占用率</span><b id="mOccRate">--</b></div>
+      <div class="sp-row"><span>入库呈现（去重）</span><b id="mGarage">--</b></div>
+      <div class="sp-row"><span>正在出库</span><b id="mDep">--</b></div>
+    </div>
+    <div class="sp-sec">
+      <div class="sp-sec-title">链路时效</div>
+      <div class="sp-row"><span>前端 FPS</span><b id="mFps">--</b></div>
+      <div class="sp-row"><span>WS 延迟</span><b id="mLat">--</b></div>
+    </div>
+  </div>
+</aside>
+
+<!-- 右侧常驻面板：当前冲突事件 + 监管建议 -->
+<aside id="panelEvents" class="side-panel side-right hidden">
+  <div class="sp-head">
+    <span class="sp-title">冲突事件 · 监管建议</span>
+    <button id="btnCloseEvents" class="sp-close" type="button" aria-label="收起事件面板">×</button>
+  </div>
+  <div class="sp-body">
+    <div class="sp-sec">
+      <div class="sp-sec-title">当前冲突</div>
+      <ul id="evList" class="sp-list"><li class="sp-empty">暂无数据</li></ul>
+    </div>
+    <div class="sp-sec">
+      <div class="sp-sec-title">生效告警</div>
+      <ul id="alList" class="sp-list"><li class="sp-empty">无告警</li></ul>
+    </div>
+    <div class="sp-sec">
+      <div class="sp-sec-title">下一步监管建议</div>
+      <ol id="advList" class="sp-list"><li class="sp-empty">暂无建议</li></ol>
+    </div>
+  </div>
+</aside>
+
 <!-- 图例 -->
 <div id="legend">
   <div class="legend-item"><span class="sw" data-state="driving"></span>行驶</div>
@@ -66,6 +123,9 @@
   <button id="btnLayers" class="dock-btn">图层</button>
   <button id="btnMap" class="dock-btn">地图</button>
   <button id="btnScheme" class="dock-btn">仿真设置</button>
+  <span class="dock-sep"></span>
+  <button id="btnMetrics" class="dock-btn" type="button">指标</button>
+  <button id="btnEvents" class="dock-btn" type="button">事件</button>
 </div>
 
 <!-- 图层抽屉 -->
@@ -136,6 +196,6 @@
 <div id="hint">H 隐藏界面 · B 底图对比 · 单击车辆跟随 · 双击空白取消 · 滚轮缩放</div>
 
 <img id="bg" alt="" style="display:none"/>
-<script src="/static/app.js?v=30-assetmsg"></script>
+<script src="/static/app.js?v=31-panels"></script>
 </body>
 </html>

@@ -525,6 +525,11 @@ class BridgeNode(Node):
                 'is_braking': bool(msg.is_braking),
                 'is_all_done': bool(msg.is_all_done),
                 'disp_text': str(msg.disp_text),
+                # 让行对象 id（VehicleInfoMsg.waiting_for；0 = 无）。
+                # 由 rule_based_stanley_vehicle.solve() 在 ref_traj_overlap_with()
+                # | will_crash_with() 命中后写入，是「A 正给 B 让行」这条冲突边的
+                # 唯一权威来源。此前该字段未被采集，冲突信息在桥侧丢失。
+                'waiting': int(msg.waiting_for),
             }
             # 参考路径降采样缓存（供网页“路径图层”使用，聚焦车辆时随帧下发）
             try:
@@ -860,6 +865,9 @@ class BridgeNode(Node):
                 'c': self._color_index(vid),
                 'label': info.get('disp_text', ''),
                 'spot': self.spots.get(vid),
+                # 让行对象 id（0=无）：随帧下发给前端「冲突事件」面板。
+                # 缺省 0，保证前端恒取到整数，不会拿到 undefined。
+                'wait': info.get('waiting', 0),
             })
         self._seq += 1
         fpath = None

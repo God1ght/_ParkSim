@@ -201,6 +201,30 @@ const vFps = document.getElementById('vFps');
 const vLat = document.getElementById('vLat');
 const vConn = document.getElementById('vConn');
 
+/* ---- 常驻侧栏 DOM（左：运行指标 / 右：冲突事件 + 监管建议） ---- */
+const panelMetrics = document.getElementById('panelMetrics');
+const panelEvents = document.getElementById('panelEvents');
+const btnMetrics = document.getElementById('btnMetrics');
+const btnEvents = document.getElementById('btnEvents');
+const btnCloseMetrics = document.getElementById('btnCloseMetrics');
+const btnCloseEvents = document.getElementById('btnCloseEvents');
+const evListEl = document.getElementById('evList');
+const alListEl = document.getElementById('alList');
+const advListEl = document.getElementById('advList');
+const mState = document.getElementById('mState');
+const mT = document.getElementById('mT');
+const mDrive = document.getElementById('mDrive');
+const mPark = document.getElementById('mPark');
+const mBrake = document.getElementById('mBrake');
+const mDone = document.getElementById('mDone');
+const mTotal = document.getElementById('mTotal');
+const mOcc = document.getElementById('mOcc');
+const mOccRate = document.getElementById('mOccRate');
+const mGarage = document.getElementById('mGarage');
+const mDep = document.getElementById('mDep');
+const mFps = document.getElementById('mFps');
+const mLat = document.getElementById('mLat');
+
 let W = 0, H = 0;
 
 /* ================= 主题 ================= */
@@ -328,7 +352,17 @@ function resize() {
   cv.width = Math.round(W * S.dpr);
   cv.height = Math.round(H * S.dpr);
 }
-window.addEventListener('resize', resize);
+/* 视口/元素尺寸变化 → 重算 canvas 位图。
+ * 原来是只监听 window resize：一旦将来把 canvas 放进 flex 布局（侧栏挤压式），
+ * 面板开合不会触发 window resize，W/H 会变旧（画面糊 + 命中测试偏移）。
+ * 这里改用 ResizeObserver 观察 #cv 本身，从「窗口变化」升级为「元素变化」，
+ * 兼容两种布局；老浏览器保留 window 监听兜底。
+ * 注意：resize() 只更新 W/H 与位图尺寸，不重置 S.view，不会打断用户当前的缩放/平移。 */
+if (typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(() => resize()).observe(cv);
+} else {
+  window.addEventListener('resize', resize);
+}
 
 function w2s(x, y) {
   const v = S.view;
@@ -1707,6 +1741,7 @@ function updateChips() {
   vConn.textContent = S.connected ? '已连接' : '断开';
   chipConn.classList.toggle('ok', S.connected);
   updateSimChip();   // running 时「· N 车」随最新帧刷新
+  updatePanels();    // 左右常驻侧栏（内部自带节流，不跟随 20 Hz 帧率刷 DOM）
 }
 
 function draw() {
@@ -2058,6 +2093,472 @@ btnScheme.addEventListener('click', (e) => {
   closeFloatingPanels();
   schemeEl.classList.toggle('hidden');
 });
+
+/* ==========================================================================
+ * 常驻侧栏：左「运行指标」/ 右「冲突事件 + 下一步监管建议」
+ *
+ * 设计约束（沿用既有范式，避免踩坑）：
+ *  · 显隐只用 .hidden（style.css:52）—— 与 #layers/#scheme/#mapPanel 完全一致；
+ *  · **不**进 closeFloatingPanels()（app.js:2041）—— 侧栏是常驻独立轴，
+ *    要与底部三个弹出面板并存，互斥反而会互相干扰；
+ *  · **不**进「点击外部关闭」（app.js:2077-2087）—— 否则点一下地图就被关掉；
+ *  · 渲染节流到 ~2.5 Hz，不跟随 20 Hz 的 frame 帧率刷 DOM；
+ *  · 「生效告警」只读 S.activeAlerts（app.js:133），遵守服务端「跨重连回放」语义：
+ *    init 时已由 app.js:509 清空，此处只做增量渲染，不从别处补数据。
+ * ========================================================================== */
+
+/* 面板判定阈值（纯前端口径，集中在这里便于调参） */
+const PANEL_THRESH = {
+  stillV: 0.05,        // m/s：低于此视为静止
+  stillSec: 10,        // s：行驶态异常静止持续多久告警
+  brakeMany: 3,        // 辆：同时制动等待的车数
+  brakeManySec: 5,     // s：多车让行持续多久提示疑似死锁
+  occWarnRate: 0.90,   // 占用率告警线
+  distWarn: 3.0,       // m：车-车中心距「过近」
+  distNote: 6.0,       // m：车-车中心距「关注」
+  obsNote: 3.0,        // m：车-静止障碍中心距「关注」
+  maxPairs: 120,       // 车辆数上限，超过不做 O(n²)
+};
+
+/* 面板侧累积状态（跨帧维持，用于算「持续多久」） */
+const PANEL = {
+  lastT: 0,
+  brakeSince: new Map(),   // vid -> wall ms：连续处于 c===2 的起始时刻
+  stillSince: new Map(),   // vid -> wall ms：连续「行驶态且几乎不动」的起始时刻
+  manySince: null,         // wall ms：制动等待车数达到阈值的起始时刻
+  minDist: null,           // {a,b,d}：最近车-车中心距
+  minObsDist: null,        // {v,o,d}：最近车-静止障碍中心距
+  waitSeen: false,         // 本轮是否至少见过一次 wait>0（判断服务端是否升级）
+  lastSimT: null,          // 上一帧仿真时刻，用于识别「时钟回退 = 仿真重启」
+  titled: false,
+};
+
+const PANEL_REFRESH_MS = 400;
+
+function escText(s) {
+  return String(s).replace(/[&<>"]/g, (c) => (
+    c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;'));
+}
+
+function setField(el, text, dim) {
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle('dim', !!dim);
+}
+
+function simStateText() {
+  switch (S.simState) {
+    case 'running': return S.paused ? '运行中（已暂停）' : '运行中';
+    case 'starting': return '启动中';
+    case 'finished': return '本轮已完成';
+    case 'stopped': return '已停止';
+    case 'idle': return '未启动';
+    default: return '未知';   // simState 为 null（如切图广播的那份 init 无此字段）
+  }
+}
+
+/* ---------- 占用口径 ----------
+ * S.occupancy 是服务端权威的逐泊位 0/1 数组（下标与 init.spots 一致）；
+ * S.staticGarage（= frame.static_obstacles）是其中「已真实入库、改用显式车身几何
+ * 呈现」的那部分 —— 二者是**包含关系**，不是并列关系，因此计数不存在重复。
+ * 这里仍把 garage 数量单独统计出来，是为了在界面上把「其中 N 个已转为静态障碍呈现」
+ * 讲清楚（并在 mGarage.title 里写明）。
+ * 注意与 buildOccPath（app.js:634-651）区分：那里用 garageSet 去重是**绘制**去重
+ * （同一车位不画两遍），计数不需要、也不应该照搬那种减法。 */
+function occupancyStats() {
+  const occ = S.occupancy;
+  const spots = (S.init && S.init.spots) || null;
+  const total = spots ? spots.length : (occ ? occ.length : 0);
+  if (!occ || !total) return { occupied: null, total: total || null, rate: null, garage: null };
+  const garageSet = new Set((S.staticGarage || []).map((ob) => String(ob && ob.spot)));
+  let occupied = 0, garage = 0;
+  const n = Math.min(occ.length, total);
+  for (let i = 0; i < n; i++) {
+    if (!occ[i]) continue;
+    occupied++;
+    if (garageSet.has(String(i))) garage++;
+  }
+  return { occupied: occupied, total: total, rate: occupied / total, garage: garage };
+}
+
+/* 最近车-车距离（**中心点**距离，非车身净距；车身约 4.6×1.85 m） */
+function nearestPair(vehicles) {
+  const n = vehicles.length;
+  if (n < 2 || n > PANEL_THRESH.maxPairs) return null;
+  let best = null;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const a = vehicles[i], b = vehicles[j];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (!best || d < best.d) best = { a: a.id, b: b.id, d: d };
+    }
+  }
+  return best;
+}
+
+/* 最近车-静止障碍距离（同样按中心点） */
+function nearestObstacle(vehicles) {
+  const obs = S.staticGarage || [];
+  if (!vehicles.length || !obs.length) return null;
+  if (vehicles.length * obs.length > 4000) return null;
+  let best = null;
+  for (const v of vehicles) {
+    for (const o of obs) {
+      const d = Math.hypot(v.x - o.x, v.y - o.y);
+      if (!best || d < best.d) best = { v: v.id, o: o.spot, d: d };
+    }
+  }
+  return best;
+}
+
+/* 每轮刷新前的累积状态更新（无论面板是否可见都跑，保证打开即满数据） */
+function trackPanelStats(now) {
+  const f = S.frame;
+  const vs = (f && f.vehicles) || [];
+
+  // 仿真重启（sim_time 回退）→ 清空跨帧累积状态，避免用旧车的时长误导判断
+  if (f && f.t != null && PANEL.lastSimT != null && (f.t + 1) < PANEL.lastSimT) {
+    PANEL.brakeSince.clear();
+    PANEL.stillSince.clear();
+    PANEL.manySince = null;
+    PANEL.waitSeen = false;
+  }
+  if (f && f.t != null) PANEL.lastSimT = f.t;
+
+  const braking = new Set();
+  for (const v of vs) if (v.c === 2) braking.add(v.id);
+  for (const id of Array.from(PANEL.brakeSince.keys())) {
+    if (!braking.has(id)) PANEL.brakeSince.delete(id);
+  }
+  for (const id of braking) if (!PANEL.brakeSince.has(id)) PANEL.brakeSince.set(id, now);
+
+  if (braking.size >= PANEL_THRESH.brakeMany) {
+    if (PANEL.manySince === null) PANEL.manySince = now;
+  } else {
+    PANEL.manySince = null;
+  }
+
+  // 行驶态（c===0）却几乎不动 —— 区别于合法的制动让行
+  const still = new Set();
+  for (const v of vs) {
+    const vv = (v.v != null && v.v >= 0) ? v.v : null;
+    if (v.c === 0 && vv !== null && vv < PANEL_THRESH.stillV) still.add(v.id);
+  }
+  for (const id of Array.from(PANEL.stillSince.keys())) {
+    if (!still.has(id)) PANEL.stillSince.delete(id);
+  }
+  for (const id of still) if (!PANEL.stillSince.has(id)) PANEL.stillSince.set(id, now);
+
+  PANEL.minDist = nearestPair(vs);
+  PANEL.minObsDist = nearestObstacle(vs);
+
+  for (const v of vs) {
+    if ((v.wait || 0) > 0) { PANEL.waitSeen = true; break; }
+  }
+}
+
+function renderList(el, items, emptyText) {
+  if (!el) return;
+  if (!items || !items.length) {
+    el.innerHTML = '<li class="sp-empty">' + escText(emptyText || '—') + '</li>';
+    return;
+  }
+  el.innerHTML = items.map((it) => (
+    '<li class="' + (it.sev ? ('sev-' + it.sev) : '') + '">' +
+    escText(it.text) +
+    (it.meta ? '<span class="sp-meta">' + escText(it.meta) + '</span>' : '') +
+    '</li>'
+  )).join('');
+}
+
+/* ---------- 左：运行指标 ---------- */
+function updateMetrics() {
+  if (!PANEL.titled) {
+    PANEL.titled = true;
+    if (mOcc) mOcc.title = '占用口径：S.occupancy（服务端权威的逐泊位 0/1 数组）中值为 1 的个数；分母 = init.spots.length。';
+    if (mGarage) mGarage.title = '其中已由 frame.static_obstacles 以真实车身几何呈现的泊位数 —— 它是 occupancy 的**子集**，不重复计数。';
+    if (mDep) mDep.title = 'frame 之外的 departing 消息给出的「已启动出库、车辆仍在位」的车位数。';
+  }
+
+  const f = S.frame;
+  const vs = (f && f.vehicles) || [];
+  const hasFrame = !!f;
+
+  const bucket = [0, 0, 0, 0];
+  for (const v of vs) {
+    const c = (typeof v.c === 'number' && v.c >= 0 && v.c <= 3) ? v.c : 0;
+    bucket[c]++;
+  }
+
+  setField(mState, simStateText(), S.simState == null);
+  setField(mT, hasFrame ? (f.t.toFixed(1) + ' s') : '--', !hasFrame);
+  setField(mDrive, hasFrame ? String(bucket[0]) : '--', !hasFrame);
+  setField(mPark, hasFrame ? String(bucket[1]) : '--', !hasFrame);
+  setField(mBrake, hasFrame ? String(bucket[2]) : '--', !hasFrame || bucket[2] === 0);
+  setField(mDone, hasFrame ? String(bucket[3]) : '--', !hasFrame);
+  setField(mTotal, hasFrame ? String(vs.length) : '--', !hasFrame);
+
+  const occ = occupancyStats();
+  const noOcc = (occ.occupied === null);
+  setField(mOcc, noOcc ? '--（无占用数据）' : (occ.occupied + ' / ' + occ.total), noOcc);
+  setField(mOccRate, (occ.rate === null) ? '--' : ((occ.rate * 100).toFixed(1) + ' %'), occ.rate === null);
+  setField(mGarage, (occ.garage === null) ? '--' : String(occ.garage), occ.garage === null);
+  setField(mDep, String((S.departing || []).length), !(S.departing || []).length);
+
+  setField(mFps, String(S.fps));
+  setField(mLat, S.latency != null ? (S.latency + ' ms') : '--', S.latency == null);
+}
+
+/* ---------- 右：冲突事件 + 生效告警 + 监管建议 ---------- */
+function updateEvents(now) {
+  const f = S.frame;
+  const vs = (f && f.vehicles) || [];
+  const byId = new Map();
+  for (const v of vs) byId.set(v.id, v);
+
+  /* ① 当前冲突：优先用服务端新下发的 wait（让行对象 id，0=无） */
+  const pairs = [];
+  const mutual = new Set();
+  for (const v of vs) {
+    const w = v.wait || 0;
+    if (w > 0 && byId.has(w)) pairs.push({ a: v.id, b: w });
+  }
+  for (const pr of pairs) {
+    const back = byId.get(pr.b);
+    if (back && (back.wait || 0) === pr.a) {
+      mutual.add([Math.min(pr.a, pr.b), Math.max(pr.a, pr.b)].join('-'));
+    }
+  }
+
+  const items = [];
+  const shown = new Set();
+  for (const pr of pairs) {
+    const key = [Math.min(pr.a, pr.b), Math.max(pr.a, pr.b)].join('-');
+    if (mutual.has(key)) {
+      if (shown.has(key)) continue;   // A→B 与 B→A 只展示一条
+      shown.add(key);
+      items.push({
+        sev: 'bad',
+        text: '互等环（死锁前兆）：#' + pr.a + ' ⇄ #' + pr.b,
+        meta: '双方互相让行 · 来源 frame.wait',
+      });
+    } else {
+      items.push({
+        sev: 'warn',
+        text: '#' + pr.a + ' → #' + pr.b + ' 让行',
+        meta: '来源 VehicleInfoMsg.waiting_for → frame.wait',
+      });
+    }
+  }
+
+  if (!pairs.length) {
+    const brakingIds = vs.filter((v) => v.c === 2).map((v) => v.id);
+    const arr2 = (a) => a.map((i) => ('#' + i)).join(', #');
+    if (!f) {
+      items.push({ sev: '', text: '等待仿真数据…', meta: '' });
+    } else if (PANEL.waitSeen) {
+      // wait 通道已验证：此时没有让行对，但可能有车在等「非车-车」的东西
+      items.push(brakingIds.length
+        ? { sev: 'warn', text: brakingIds.length + ' 辆车处于制动等待，但无明确让行对象',
+            meta: 'wait 通道已验证可用 → 这些车是在等静态障碍 / 泊位门控等非车-车冲突：' + arr2(brakingIds) }
+        : { sev: 'ok', text: '无车处于让行态', meta: 'wait 通道已验证可用' });
+    } else {
+      // 退化路径：服务端未升级 / wait 恒为 0 → 用状态色 c===2 近似
+      items.push(brakingIds.length
+        ? { sev: 'warn', text: brakingIds.length + ' 辆车处于制动等待（让行）',
+            meta: 'wait 字段不可用，已退化到 c===2 判定：' + arr2(brakingIds) }
+        : { sev: 'ok', text: '无冲突', meta: '退化判定（c===2）：当前无制动等待车辆' });
+    }
+  }
+
+  /* ② 最小间距（无论冲突与否都给出，作为近失代理指标） */
+  const md = PANEL.minDist;
+  if (md) {
+    items.push({
+      sev: md.d < PANEL_THRESH.distWarn ? 'bad' : (md.d < PANEL_THRESH.distNote ? 'warn' : ''),
+      text: '最小车距 #' + md.a + ' ↔ #' + md.b + '：' + md.d.toFixed(2) + ' m',
+      meta: '客户端按车辆**中心点**计算，非车身净距（车身≈4.6×1.85 m）',
+    });
+  }
+  const mo = PANEL.minObsDist;
+  if (mo && mo.d < PANEL_THRESH.obsNote) {
+    items.push({
+      sev: 'warn',
+      text: '车辆 #' + mo.v + ' 接近停放车（泊位 ' + mo.o + '）：' + mo.d.toFixed(2) + ' m',
+      meta: '按车辆与静态障碍中心点计算',
+    });
+  }
+  renderList(evListEl, items, '暂无数据');
+
+  /* ③ 生效告警：只读 S.activeAlerts（init 时由 app.js:509 清空，靠 alert 增量维护） */
+  const alItems = [];
+  const codes = Object.keys(S.activeAlerts || {});
+  for (const code of codes) {
+    alItems.push({ sev: 'warn', text: code, meta: S.activeAlerts[code] || '' });
+  }
+  // 比 alert 更严重的横幅态（服务端 status 广播驱动，见 app.js:1161-1238）
+  const kind = S.sysBannerKind;
+  if (kind === 'dead') alItems.push({ sev: 'bad', text: 'sim_dead', meta: '仿真进程已退出' });
+  else if (kind === 'stalled') alItems.push({ sev: 'bad', text: 'stalled', meta: '数据流停滞' });
+  else if (kind === 'error') alItems.push({ sev: 'bad', text: 'error', meta: '重启失败' });
+  else if (kind === 'disconnected') alItems.push({ sev: 'bad', text: 'disconnected', meta: '与桥连接断开（自动重连中）' });
+  if (S.degraded) {
+    alItems.push({
+      sev: 'warn', text: 'assets_missing' + ((S.assetsMissing || []).length ? '（' + S.assetsMissing.length + ' 项）' : ''),
+      meta: '桥侧关键资产自检未通过',
+    });
+  }
+  renderList(alListEl, alItems, '无告警');
+
+  /* ④ 下一步监管建议：纯前端规则引擎（服务端不产出「建议」类数据） */
+  renderList(advListEl, buildAdvice(now), '暂无建议');
+}
+
+function buildAdvice(now) {
+  const out = [];
+  const vs = (S.frame && S.frame.vehicles) || [];
+  const byId = new Map();
+  for (const v of vs) byId.set(v.id, v);
+  const brakingIds = vs.filter((v) => v.c === 2).map((v) => v.id);
+  const arr2 = (a) => a.map((i) => ('#' + i)).join(', #');
+
+  if (S.activeAlerts && S.activeAlerts['stalled_no_progress']) {
+    out.push({
+      sev: 'bad',
+      text: '仿真停滞（某车节点疑似死锁）→ ' + (brakingIds.length
+        ? '优先核查仍处于制动等待的车辆：' + arr2(brakingIds)
+        : '当前无车制动，请查服务端日志定位未 END 的车辆'),
+    });
+  }
+  if (S.activeAlerts && S.activeAlerts['spawn_stuck']) {
+    out.push({
+      sev: 'warn',
+      text: '发车异常（队列有余量但零车）→ 检查关键资产完整性与服务端日志（资产根可用 PARKSIM_ASSET_ROOT 覆盖）',
+    });
+  }
+  if (S.sysBannerKind === 'dead') {
+    out.push({ sev: 'bad', text: '仿真进程已退出 → 点击横幅上的「重启仿真」恢复' });
+  }
+
+  const rings = [];
+  for (const v of vs) {
+    const w = v.wait || 0;
+    const back = w > 0 ? byId.get(w) : null;
+    if (back && (back.wait || 0) === v.id && v.id < back.id) {
+      rings.push('#' + v.id + ' ⇄ #' + back.id);
+    }
+  }
+  if (rings.length) {
+    out.push({ sev: 'bad', text: '检出互等环 ' + rings.join('、') + ' → 死锁前兆，建议暂停并按 ETA/编号放行其中一方' });
+  }
+
+  if (brakingIds.length >= PANEL_THRESH.brakeMany && PANEL.manySince !== null) {
+    const sec = (now - PANEL.manySince) / 1000;
+    if (sec > PANEL_THRESH.brakeManySec) {
+      out.push({
+        sev: 'warn',
+        text: brakingIds.length + ' 辆车同时让行已持续 ' + Math.round(sec) + ' s → 疑似链式制动死锁，建议暂停核查：' + arr2(brakingIds),
+      });
+    }
+  }
+
+  const stuck = [];
+  PANEL.stillSince.forEach((since, id) => {
+    const sec = (now - since) / 1000;
+    if (sec > PANEL_THRESH.stillSec) stuck.push('#' + id + '（' + Math.round(sec) + ' s）');
+  });
+  if (stuck.length) {
+    out.push({ sev: 'warn', text: '行驶态异常静止：' + stuck.join('、') + ' → 检查其参考路径与前方阻塞车辆' });
+  }
+
+  const occ = occupancyStats();
+  if (occ.rate !== null && occ.rate > PANEL_THRESH.occWarnRate) {
+    out.push({
+      sev: 'warn',
+      text: '占用率 ' + (occ.rate * 100).toFixed(1) + '% > 90% → 泊位紧张，建议调整泊位分配策略或减少入库数',
+    });
+  }
+
+  if (S.degraded) {
+    const miss = (S.assetsMissing || []).filter(Boolean);
+    out.push({
+      sev: 'warn',
+      text: '关键资产缺失' + (miss.length ? '：' + miss.slice(0, 2).join('、') + (miss.length > 2 ? ' 等' : '') : '') +
+            ' → 检查资产根配置（PARKSIM_ASSET_ROOT / 默认 python/parksim）',
+    });
+  }
+
+  const md = PANEL.minDist;
+  if (md && md.d < PANEL_THRESH.distNote) {
+    const tooClose = md.d < PANEL_THRESH.distWarn;
+    out.push({
+      sev: tooClose ? 'bad' : 'warn',
+      text: '车辆 #' + md.a + ' 与 #' + md.b + ' 中心距仅 ' + md.d.toFixed(2) + ' m' +
+            (tooClose ? '（低于过近阈值 ' + PANEL_THRESH.distWarn + ' m）→ 立即关注'
+                      : ' → 建议关注'),
+    });
+  }
+
+  const claim = new Map();
+  for (const v of vs) {
+    const sp = v.spot;
+    if (sp > 0) {
+      const list = claim.get(sp) || [];
+      list.push(v.id);
+      claim.set(sp, list);
+    }
+  }
+  claim.forEach((ids, sp) => {
+    if (ids.length > 1) {
+      out.push({ sev: 'warn', text: '泊位 ' + sp + ' 被多车同时瞄准（' + arr2(ids) + '）→ 检查泊位分配与互斥锁' });
+    }
+  });
+
+  const RANK = { bad: 0, warn: 1, info: 2 };
+  out.sort((a, b) => (RANK[a.sev] - RANK[b.sev]));
+  return out;
+}
+
+/* 节流入口：由 updateChips()（app.js:1701）驱动，约每 400 ms 刷新一次 */
+function updatePanels(force) {
+  if (!panelMetrics && !panelEvents) return;
+  const now = performance.now();
+  if (!force && (now - PANEL.lastT) < PANEL_REFRESH_MS) return;
+  PANEL.lastT = now;
+  trackPanelStats(now);
+  if (panelMetrics && !panelMetrics.classList.contains('hidden')) updateMetrics();
+  if (panelEvents && !panelEvents.classList.contains('hidden')) updateEvents(now);
+}
+
+function setSidePanel(panel, btn, open) {
+  if (!panel) return;
+  panel.classList.toggle('hidden', !open);
+  if (btn && btn.classList) btn.classList.toggle('active', open);
+  if (open) updatePanels(true);   // 打开即刻出数，不等下个节流窗口
+}
+
+function toggleSidePanel(panel, btn) {
+  if (!panel) return;
+  setSidePanel(panel, btn, panel.classList.contains('hidden'));
+}
+
+if (btnMetrics) btnMetrics.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleSidePanel(panelMetrics, btnMetrics);
+});
+if (btnEvents) btnEvents.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleSidePanel(panelEvents, btnEvents);
+});
+if (btnCloseMetrics) btnCloseMetrics.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setSidePanel(panelMetrics, btnMetrics, false);
+});
+if (btnCloseEvents) btnCloseEvents.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setSidePanel(panelEvents, btnEvents, false);
+});
+
 btnLoadMap.addEventListener('click', () => {
   if (!S.ws || S.ws.readyState !== 1) {
     setMsg('未连接到桥，无法加载底图');

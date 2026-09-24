@@ -220,7 +220,9 @@ body.presentation #dock,
 body.presentation #layers,
 body.presentation #scheme,
 body.presentation #msg,
-body.presentation #hint { display: none !important; }
+body.presentation #hint,
+body.presentation #panelMetrics,
+body.presentation #panelEvents { display: none !important; }
 
 /* ---------- 系统状态横幅（崩溃/停滞/断连时显示） ---------- */
 #sysBanner {
@@ -334,4 +336,93 @@ body.presentation #hint { display: none !important; }
   background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 700;
 }
 .confirm-btn.confirm-primary:hover { filter: brightness(1.08); background: var(--bad); }
+/* dock 按钮点亮态：对应的常驻侧栏处于打开状态 */
+.dock-btn.active { border-color: var(--accent); color: var(--accent); }
+
+/* ---------- 常驻侧栏（左：运行指标 / 右：冲突事件 + 监管建议） ----------
+   实现范式与既有浮层一致（#layers style.css:134-139 / #scheme style.css:183-189）：
+   absolute 覆盖在 canvas 之上 + 同一批面板变量 + backdrop-filter 毛玻璃 +
+   由 .hidden（style.css:52）统一显隐。
+
+   z-index 28 是刻意选的：低于 #dock(30) 与 #levelIndicator(30)，高于内容区
+   (canvas 0 / #hint 10 / #topbar·#legend·#msg 20)，也不会压住 #tooltip(40)。
+
+   bottom 抬升是为了避让既有角部元素：
+     · 右栏 200px —— 让开 #legend(right:14 bottom:14) + #levelIndicator(bottom:78)
+     · 左栏  60px —— 让开 #msg(left:16 bottom:16) */
+.side-panel {
+  position: absolute; top: 72px; bottom: 60px;
+  width: 304px; display: flex; flex-direction: column;
+  z-index: 28;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: var(--shadow); backdrop-filter: blur(10px);
+  font-size: 12px; color: var(--text);
+}
+.side-left  { left: 14px; }
+.side-right { right: 14px; bottom: 200px; }
+
+.sp-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 9px 12px; border-bottom: 1px dashed var(--border); flex: 0 0 auto;
+}
+.sp-title { font-size: 12px; font-weight: 700; letter-spacing: .4px; }
+.sp-close {
+  appearance: none; border: 0; background: transparent; color: var(--sub);
+  font-size: 16px; line-height: 1; padding: 2px 7px; border-radius: 6px; cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.sp-close:hover { background: rgba(120, 160, 200, 0.14); color: var(--text); }
+body[data-theme="light"] .sp-close:hover { background: rgba(30, 60, 90, 0.08); }
+
+.sp-body {
+  overflow-y: auto; padding: 10px 12px; flex: 1 1 auto;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.sp-sec {
+  display: flex; flex-direction: column; gap: 6px;
+  border-top: 1px dashed var(--border); padding-top: 8px;
+}
+.sp-sec:first-child { border-top: 0; padding-top: 0; }
+.sp-sec-title { font-size: 11px; color: var(--sub); letter-spacing: .4px; }
+
+/* 同 .scheme-row（style.css:190）：标签左、数值右；中间标签撑开保证数值右对齐 */
+.sp-row { display: flex; align-items: center; gap: 8px; }
+.sp-row > span.sp-dot { flex: 0 0 auto; }
+.sp-row > span:not(.sp-dot) { flex: 1 1 auto; color: var(--sub); }
+.sp-row > b {
+  flex: 0 0 auto; font-size: 13px; font-weight: 650;
+  font-variant-numeric: tabular-nums; color: var(--text);
+}
+.sp-row > b.dim { color: var(--sub); font-weight: 500; }
+
+/* 状态色点：复用车辆配色变量，主题切换自动跟随 */
+.sp-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.sp-dot.driving { background: var(--veh-driving); }
+.sp-dot.parking { background: var(--veh-parking); }
+.sp-dot.braking { background: var(--veh-braking); }
+.sp-dot.done    { background: var(--veh-done); }
+
+.sp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.sp-list li {
+  padding: 6px 8px; border-radius: 8px; line-height: 1.55;
+  background: var(--panel-solid); border: 1px solid var(--border); color: var(--text);
+  word-break: break-word;
+}
+/* 严重度着色：**刻意不改文字颜色**。
+ * 浅色主题下 --ok(#1f9e6e) / --warn(#b8860b) 对白底只有约 3.2–3.4:1 对比度，
+ * 12px 小字达不到可读性要求；把它们整段上色会翻车。
+ * 因此：文字恒用 --text（深/浅主题都保证高对比），严重度靠「3px 左侧色条 + 边框染色」表达。 */
+.sp-list li { border-left: 3px solid transparent; }
+.sp-list li.sev-bad  { border-color: var(--bad);  border-left-color: var(--bad); }
+.sp-list li.sev-warn { border-color: var(--warn); border-left-color: var(--warn); }
+.sp-list li.sev-ok   { border-color: var(--ok);   border-left-color: var(--ok); }
+.sp-list li.sp-empty { color: var(--sub); opacity: .75; border-style: dashed; border-left-color: transparent; }
+.sp-list li .sp-meta { display: block; font-size: 11px; color: var(--sub); margin-top: 2px; }
+#advList { counter-reset: adv; }
+#advList li { padding-left: 24px; position: relative; }
+#advList li::before {
+  counter-increment: adv; content: counter(adv);
+  position: absolute; left: 8px; top: 6px; font-size: 11px; opacity: .75;
+}
+#advList li.sp-empty::before { content: ''; }
 body[data-theme="light"] .confirm-btn:hover { background: rgba(30, 60, 90, 0.08); }
