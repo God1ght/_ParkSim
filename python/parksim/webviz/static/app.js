@@ -525,7 +525,7 @@ function connect() {
       S.simState = normalizeSimState(_simState);
       applySimStateUI();
       updateSimChip();
-      // 启动期关键资产缺失 → 黄色横幅（仿真将无法正常发车；不阻断启动，仅告知原因）
+      // 启动期关键资产缺失 → 黄色横幅（桥侧自检未通过；不阻断启动，仅告知原因）
       if (S.degraded) showSysBanner('warn:degraded', degradedBannerText(), true);
       buildStatic();
       fitView();
@@ -1182,13 +1182,18 @@ function hideSysBanner() {
   }
 }
 
-/* 关键资产缺失横幅文案：列出缺失路径（最多 3 条，其余折叠计数） */
+/* 关键资产缺失横幅文案：列出缺失路径（最多 3 条，其余折叠计数）。
+ * 注意措辞：该自检只覆盖「桥侧资产根」（PARKSIM_ASSET_ROOT / 默认根）；
+ * 仿真节点读的是自己的资产根，不受此覆盖影响 —— 实测该场景下仿真照样发车，
+ * 所以不能断言「仿真将无法正常发车」，只能提示可能失败并指路日志。 */
 function degradedBannerText() {
   const miss = (S.assetsMissing || []).filter(Boolean);
-  if (!miss.length) return '关键资产缺失（仿真将无法正常发车）';
+  const tail = '（桥侧资产自检未通过；若为 PARKSIM_ASSET_ROOT 覆盖所致，仿真节点仍读真实资产、可正常发车；' +
+    '若资产确实缺失，发车会失败——详见服务端日志）';
+  if (!miss.length) return '关键资产缺失' + tail;
   const shown = miss.slice(0, 3).join('、');
   const more = miss.length > 3 ? (' 等共 ' + miss.length + ' 项') : '';
-  return '关键资产缺失：' + shown + more + '（仿真将无法正常发车）';
+  return '关键资产缺失：' + shown + more + tail;
 }
 
 /* 告警解除/被更严重横幅占用后，回落到「基础横幅」：

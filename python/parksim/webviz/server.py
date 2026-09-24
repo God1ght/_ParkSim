@@ -186,7 +186,8 @@ def update_asset_status(shared, payload=None, log=False):
         payload['assets_missing'] = list(missing)
     if log:
         if missing:
-            print('[webviz] ERROR 关键资产缺失（仿真将无法正常发车），共 %d 项：' % len(missing))
+            print('[webviz] ERROR 关键资产缺失（桥侧资产自检未通过；若为 PARKSIM_ASSET_ROOT 覆盖所致，'
+                  '仿真节点仍读真实资产、不受影响），共 %d 项：' % len(missing))
             for _p in missing:
                 print('[webviz] ERROR   缺失: %s' % _p)
             print('[webviz] ERROR 资产根=%s（可用 PARKSIM_ASSET_ROOT 覆盖）' % asset_root)
