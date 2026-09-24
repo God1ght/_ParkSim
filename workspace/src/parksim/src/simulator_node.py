@@ -9,6 +9,9 @@ from pathlib import Path
 import glob
 import time
 import os
+import math
+
+from collections import Counter
 
 import traceback
 import json
@@ -185,7 +188,10 @@ class SimulatorNode(MPClabNode):
         # 晚期串扰「一次性可见化」状态（不杀进程；见 _maybe_report_late_cross_talk）：
         # 两个启动检查点之后才被本域发现的外来节点，当前实现会完全静默（与 N7「静默降级」同类）——
         # 仿真继续跑、操作者不知情。故在 1 Hz spawn_status 路径低频补扫一次做可见化。
-        # 观察窗起点复用 self._foreign_guard_t0（= 首个检查点/init 时刻）。
+        # 观察窗起点用 self._late_window_t0（钉在两个启动检查点都过完之后），不再复用
+        # _foreign_guard_t0（那是 startup 时刻；宿主上首车要到 T+17~27s 才出现，从它起算
+        # 会把 60s 晚期窗口的有效覆盖压缩掉一大截）。
+        self._late_window_t0 = None                # 晚期观察窗起点（post-dataset-load 检查点后钉住）
         self._late_cross_talk_warned = False       # 一次性：命中后不再打印（防刷屏）
         self._late_cross_talk_last_scan = None     # 单调时钟：上次扫描时刻（5 s 节流）
 
@@ -225,6 +231,10 @@ class SimulatorNode(MPClabNode):
         # 后本检查点距 startup 仅 ~0.25s，需主动补足观察时间，否则守卫形同虚设；宿主上两检查点
         # 间隔本就 > 该窗口，故增量延迟为 0。
         self._check_foreign_vehicles('post-dataset-load')
+
+        # 晚期串扰观察窗起点：钉在「两个启动检查点都过完之后、开始 spin 之前」，不再用 startup
+        # 时刻（宿主上首车 T+17~27s 才出现，若从 startup 起算，60s 晚期窗的有效覆盖只剩约一半）。
+        self._late_window_t0 = time.monotonic()
 
         # Parking Spaces
         self.parking_spaces, self.occupied = self._gen_occupancy()
@@ -402,7 +412,7 @@ class SimulatorNode(MPClabNode):
     _FOREIGN_ALLOW_TRUTHY = ('1', 'true', 'yes', 'on')   # PARKSIM_ALLOW_FOREIGN_VEHICLES 真值
     # 晚期串扰「一次性可见化」（不杀进程；见 _maybe_report_late_cross_talk）：
     _LATE_CROSS_TALK_INTERVAL = 5.0   # 晚期串扰扫描周期（秒）
-    _LATE_CROSS_TALK_WINDOW = 60.0    # 晚期串扰观察窗（自 _foreign_guard_t0 起；之后停止扫描，避免长期开销/噪声）
+    _LATE_CROSS_TALK_WINDOW = 60.0    # 晚期串扰观察窗（自 _late_window_t0 = 末个启动检查点之后起；之后停止扫描）
 
     def _foreign_vehicles_allowed(self) -> bool:
         """逃生开关：环境变量 PARKSIM_ALLOW_FOREIGN_VEHICLES 为真时跳过外来节点检查。
@@ -425,6 +435,10 @@ class SimulatorNode(MPClabNode):
             value = float(str(raw).strip())
         except (TypeError, ValueError):
             return default
+        # 非有限值（'inf'/'nan'）会让「elapsed_total < min_window」永远成立 -> 启动挂死；
+        # 这里挡掉并回落默认，配合 _check_foreign_vehicles 里的 min(min_window, max_wait) 双重保险。
+        if not math.isfinite(value):
+            return default
         return value if value >= 0.0 else default
 
     def _scan_foreign_nodes(self, exclude_own_vehicles: bool = False):
@@ -432,8 +446,10 @@ class SimulatorNode(MPClabNode):
 
         判定口径（均排除自身）：
           - 外来 vehicle   ：name == 'vehicle'（命名空间 /vehicle_<id>），与改前口径一致。
-            注：exclude_own_vehicles=True 时额外排除**本实例自己已 spawn 的车**
-            （命名空间 /vehicle_<id>，id ∈ [1, self.num_vehicles]，id 单调递增）。
+            注：exclude_own_vehicles=True 时按「出现次数 - 1（自身应占）」排除**本实例自己已
+            spawn 的车**（命名空间 /vehicle_<id>，id ∈ [1, self.num_vehicles]，id 单调递增）：
+            同名同 ns 在图 API 里会返回多条，故外来车即使 id 落在本实例区间内也能被检出
+            （旧的「命名空间精确匹配后整段排除」会让它静默，见函数内注释）。
             启动期（两个检查点）本实例尚未 spawn 任何车（num_vehicles=0），且默认 False，
             故启动口径**逐字节不变**；运行期晚期扫描必须传 True，否则会把自己的车误报为外来。
           - 外来 simulator ：name == 自身节点名（'simulator'）。自身与其它 simulator 的
@@ -455,13 +471,21 @@ class SimulatorNode(MPClabNode):
         own_vehicle_ns = set()
         if exclude_own_vehicles:
             own_vehicle_ns = {'/vehicle_%d' % i for i in range(1, int(self.num_vehicles) + 1)}
+        # 同名同命名空间在图 API 里会返回多条（QA 实测：注入 /vehicle_1/vehicle 后 node list 里
+        # 出现两条），故按「出现次数 - 自身应占条数」判定，而不是「命名空间精确匹配后整段排除」。
+        # 后者会让 id 落在本实例区间内的外来车辆被当成自己的车排除（masking 盲点）——两实例都用
+        # 从 1 开始的 id 生成器时，真实撞车恰好落在这个区间，告警会完全静默（QA 已实证）。
+        # 口径与下方 simulator 分支「same_as_self - 1」一致。
+        pair_counts = Counter((name, norm_ns(ns)) for name, ns in pairs)
 
         def _is_foreign_vehicle(name, ns):
             if name != 'vehicle':
                 return False
-            return not (exclude_own_vehicles and norm_ns(ns) in own_vehicle_ns)
+            expected = 1 if (exclude_own_vehicles and norm_ns(ns) in own_vehicle_ns) else 0
+            return pair_counts[(name, norm_ns(ns))] > expected
 
-        foreign_vehicle = [name for name, ns in pairs if _is_foreign_vehicle(name, ns)]
+        # 返回 label(name, ns)（形如 /vehicle_999/vehicle）而非裸 name：运维可直接定位到节点。
+        foreign_vehicle = [label(name, ns) for name, ns in pairs if _is_foreign_vehicle(name, ns)]
 
         self_name = str(self.get_name())
         self_ns = norm_ns(str(self.get_namespace()))
@@ -486,7 +510,8 @@ class SimulatorNode(MPClabNode):
           elapsed_total 判界，必然终止）。原因：发布镜像瘦身后 Dataset.load() 近瞬时完成，
           两检查点间隔由宿主 ~6s 塌缩到容器 ~0.25s，DDS 发现来不及收敛 -> 守卫在
           「显式关隔离 + 存在外来 simulator」时会漏检；宿主上间隔本就 > 窗口，故零额外延迟。
-        - 最长观察 _FOREIGN_CHECK_MAX_WAIT 秒上限、连续确认要求均保持不变。
+        - 最长观察 _FOREIGN_CHECK_MAX_WAIT 秒上限、连续确认要求均保持不变；最小观察窗亦被
+          max_wait 夹住（min(min_window, max_wait)），避免超大窗口值时 clean 分支永不放行。
         - 每轮打印 checkpoint / 轮次 / 看到的全部节点 / 连续命中计数 / 耗时与最终判定，便于复盘。
         """
         if self._foreign_vehicles_allowed():
@@ -504,6 +529,10 @@ class SimulatorNode(MPClabNode):
 
         interval = self._FOREIGN_CHECK_INTERVAL
         max_wait = self._FOREIGN_CHECK_MAX_WAIT
+        # 最小观察窗不得超过最长观察窗：否则 clean 分支会无限等待「窗口满足」而永不放行
+        # （QA 实测 PARKSIM_FOREIGN_GUARD_WINDOW=3600：50s 内 34 轮 “window not met”、0 辆车）。
+        # 必须放在 max_wait 定义之后；恢复 docstring 声明的「最长观察 _FOREIGN_CHECK_MAX_WAIT 秒上限」。
+        min_window = min(min_window, max_wait)
         confirm = self._FOREIGN_CHECK_CONFIRM
         hits = 0
         round_idx = 0
@@ -570,8 +599,10 @@ class SimulatorNode(MPClabNode):
         - 复用**既有** 1 Hz 派生状态定时器路径（publish_spawn_status），不新建线程、不新建 timer
           对象，避免与已有执行器交互出事；用单调时钟累积达到 _LATE_CROSS_TALK_INTERVAL 才扫。
         - 仅在 self.sim_is_running 为真时扫。
-        - 观察窗 _LATE_CROSS_TALK_WINDOW = 60 s，**起点复用 self._foreign_guard_t0**
-          （= 首个检查点/init 时刻，已在 __init__ 钉住）；超过窗口即停止扫描，避免长期开销与噪声。
+        - 观察窗 _LATE_CROSS_TALK_WINDOW = 60 s，**起点为 self._late_window_t0**（钉在两个启动
+          检查点都过完之后；不再复用 _foreign_guard_t0 —— 那是 startup 时刻，宿主上首车要到
+          T+17~27 s 才出现，从它起算会把晚期窗口的有效覆盖压缩一半）。超过窗口即停止扫描，
+          避免长期开销与噪声。
         - 命中外来 vehicle/simulator（复用 _scan_foreign_nodes()，判定口径不改）时**只打一条**
           WARN（实例标志位 _late_cross_talk_warned 保证一次性、防刷屏）；**不 raise、不杀进程**。
         - 逃生开关 PARKSIM_ALLOW_FOREIGN_VEHICLES 为真时**整路跳过**（与两个启动检查点一致），
@@ -585,8 +616,10 @@ class SimulatorNode(MPClabNode):
             return
         if not self.sim_is_running:
             return
-        t0 = self._foreign_guard_t0
-        if t0 is None:                            # 无起点（异常/未设）则不做，避免误判
+        t0 = self._late_window_t0
+        if t0 is None:                            # 未钉住（异常路径）则回退到首个检查点起点
+            t0 = self._foreign_guard_t0
+        if t0 is None:                            # 仍无起点则不扫描，避免误判
             return
         now = time.monotonic()
         if now - t0 > self._LATE_CROSS_TALK_WINDOW:   # 超出观察窗：停止扫描
