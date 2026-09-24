@@ -1202,7 +1202,8 @@ function restoreBaseBanner() {
   }
   if (S.degraded) {
     showSysBanner('warn:degraded', degradedBannerText(), true);
-  } else if (S.simState === 'idle') {
+  } else if (S.simState === 'idle' || S.simState === 'stopped') {
+    // stopped 与 idle 同属「仿真未运行」：回落到 idle 提示（带「开启仿真」按钮）
     showSysBanner('idle', '底图已加载（仿真未启动）。点击「开启仿真」启动车辆仿真。', true);
   } else {
     hideSysBanner();
@@ -1302,6 +1303,9 @@ function onSchemeStatus(m) {
   } else if (v === 'stopped') {
     clearControlAck('stop');   // status 广播的 stopped 亦视作停止 ack
     setSimState('stopped');
+    // 停止后不得残留红色停滞横幅（暂停/停止期间时钟冻结属正常，不是停滞）：
+    // 'stalled' → 回落基础横幅；'null'（含被客户端兜底隐藏的 stalled）→ 显示 idle 提示
+    if (S.sysBannerKind === 'stalled' || S.sysBannerKind === null) restoreBaseBanner();
   } else if (v === 'idle') {
     setSimState('idle');
     if (S.degraded) {
@@ -1429,6 +1433,8 @@ function refreshSchemeCurrent() {
 function onSimStopped(m) {
   clearControlAck('stop');   // 收到停止 ack → 清除超时计时器
   setSimState('stopped');
+  // 停止后不得残留红色停滞横幅（stalled → 回落；无横幅 → idle 提示）
+  if (S.sysBannerKind === 'stalled' || S.sysBannerKind === null) restoreBaseBanner();
   S.paused = false;
   updatePauseLabel();
   const t = (m && m.message) || '仿真已停止（场内车辆已清空）';

@@ -876,6 +876,10 @@ class BridgeNode(Node):
         with self.shared['lock']:
             self.shared['frame'] = frame
             self.shared['running'] = (not self.paused)
+            # 暂停标记（与 running 区分）：running 在停止/结束态同样为 False，
+            # 不能拿来判暂停；sim_watchdog 用 sim_paused 区分
+            # 「时钟被设计成冻结」与真的停滞。
+            self.shared['sim_paused'] = bool(self.paused)
         if self.status_pub is not None:
             msg = Bool()
             msg.data = not self.paused
@@ -887,6 +891,12 @@ class BridgeNode(Node):
     # ---------- 控制 ----------
     def set_paused(self, value):
         self.paused = bool(value)
+        # 立即同步到 shared（不必等下一帧发布），供 sim_watchdog 判暂停
+        try:
+            with self.shared['lock']:
+                self.shared['sim_paused'] = bool(self.paused)
+        except Exception:
+            pass
 
     def clear_vehicles(self):
         """重启前清空车辆缓存与聚焦（桥进程存活，等待新仿真重新发布）。"""
@@ -898,6 +908,11 @@ class BridgeNode(Node):
         self.focus = 0
         self.sim_time = 0.0
         self.paused = False
+        try:
+            with self.shared['lock']:
+                self.shared['sim_paused'] = False
+        except Exception:
+            pass
         self._ghosts = []
         self._ghosts_t = None
 
@@ -2335,12 +2350,21 @@ def create_app(shared, node):
                     continue
                 proc = sm.proc
                 if proc is not proc_seen:
+                    # 进程切换（新仿真启动 / 停止后 proc 置 None）：若上一轮残留
+                    # stalled，先广播 resumed 清掉红色停滞横幅，再复位本轮基准。
+                    if state == 'stalled':
+                        state = ('alive',)
+                        sim_state_tracker.note_dataflow_stall(False)
+                        await broadcast_all(shared, {'type': 'status', 'value': 'resumed'})
                     proc_seen = proc
                     state = None
                     last_t = None
                     last_t_change = time.time()
                     proc_start = time.time()
                     sim_state_tracker.note_dataflow_stall(False)
+                if proc is None:
+                    # 无仿真进程（未启动 / 已停止 / restart 间隙）：不做停滞判定
+                    continue
                 if proc is not None:
                     code = proc.poll()
                     if code is not None:
@@ -2353,6 +2377,18 @@ def create_app(shared, node):
                                 'message': '仿真进程已退出（code %s），可点击重启恢复' % code})
                             await broadcast_all(shared, {'type': 'status', 'value': 'stopped'})
                         continue
+                # 暂停期间仿真时钟被**设计成**冻结：跳过帧驱动的状态机推进与
+                # 停滞判定，并持续刷新 last_t_change —— 否则恢复瞬间会把暂停期间
+                # 累积的时长一次算成停滞（误报）。若暂停发生时已误报 stalled，
+                # 这里主动解除，避免红色横幅残留到整个暂停期间。
+                paused = bool(shared.get('sim_paused'))
+                if paused:
+                    last_t_change = time.time()
+                    if state == 'stalled':
+                        state = ('alive',)
+                        sim_state_tracker.note_dataflow_stall(False)
+                        await broadcast_all(shared, {'type': 'status', 'value': 'resumed'})
+                    continue
                 frame = shared.get('frame')
                 if frame is not None:
                     # 运行状态机的帧驱动迁移（starting→running→finished）
