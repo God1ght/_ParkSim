@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ParkSim JTH · 本地入口</title>
+<!--
+  ParkSim.html —— Windows 侧双击打开的**入口壳**。
+
+  它不做任何可视化，只做一件事：探测本机 http://127.0.0.1:8099/ 上的
+  ParkSim 服务是否就绪；就绪就跳过去，没就绪就给排查指引。
+
+  约束：不依赖任何外网 / CDN，单文件、纯本地、离线可用。
+  真正的可视化页面由 WSL 里的 run.sh 提供（python3 webviz/server.py）。
+-->
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --line:#262b36; --txt:#e6e9ef; --dim:#98a1b3;
+    --ok:#3ddc84; --warn:#ffb454; --err:#ff6b6b; --accent:#4c9ffe;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);
+    font-family:"Microsoft YaHei","PingFang SC","Hiragino Sans GB",system-ui,-apple-system,"Segoe UI",sans-serif;}
+  .wrap{max-width:860px;margin:0 auto;padding:28px 20px 60px;}
+  header{display:flex;align-items:center;gap:14px;margin-bottom:22px;}
+  .logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#4c9ffe,#3ddc84);
+    display:flex;align-items:center;justify-content:center;font-weight:800;color:#0b0d11;font-size:20px;}
+  h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.3px;}
+  .sub{color:var(--dim);font-size:13px;margin-top:3px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px;}
+  .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .dot{width:12px;height:12px;border-radius:50%;background:var(--dim);flex:0 0 auto;}
+  .dot.probing{background:var(--warn);animation:pulse 1s infinite;}
+  .dot.ok{background:var(--ok);}
+  .dot.err{background:var(--err);}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .status{font-size:15px;font-weight:600;}
+  .hint{color:var(--dim);font-size:13px;margin-top:6px;line-height:1.7;}
+  code, .mono{font-family:Consolas,"SFMono-Regular",Menlo,monospace;}
+  code{background:#0b0d11;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12.5px;color:#cfe3ff;}
+  pre{background:#0b0d11;border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow:auto;
+      font-family:Consolas,Menlo,monospace;font-size:12.5px;line-height:1.65;color:#d7e3f4;margin:10px 0 0;}
+  button{background:var(--accent);color:#08121f;border:0;border-radius:8px;padding:9px 16px;font-size:14px;
+    font-weight:700;cursor:pointer;}
+  button.ghost{background:transparent;color:var(--txt);border:1px solid var(--line);font-weight:600;}
+  button:disabled{opacity:.5;cursor:not-allowed;}
+  input[type=text]{background:#0b0d11;border:1px solid var(--line);border-radius:8px;color:var(--txt);
+    padding:8px 10px;font-size:13px;min-width:260px;font-family:Consolas,Menlo,monospace;}
+  h2{font-size:15px;margin:0 0 10px;color:var(--txt);}
+  ol,ul{margin:8px 0 0;padding-left:22px;line-height:1.85;font-size:13.5px;color:#cfd6e4;}
+  li{margin-bottom:4px;}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);
+    color:var(--dim);margin-left:6px;}
+  .bad{color:var(--err);} .good{color:var(--ok);} .warn{color:var(--warn);}
+  .stepnum{display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:50%;
+    background:#222836;color:var(--dim);font-size:11px;margin-right:6px;}
+  footer{color:#5d6679;font-size:12px;text-align:center;margin-top:30px;line-height:1.8;}
+  a{color:var(--accent);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">P</div>
+    <div>
+      <h1>ParkSim JTH · 本地入口</h1>
+      <div class="sub">本页只负责探测并跳转，真正的可视化由 WSL / Ubuntu 里的 <code>run.sh</code> 提供</div>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="row">
+      <span class="dot" id="dot"></span>
+      <span class="status" id="status">正在探测 …</span>
+      <span class="tag" id="target">http://127.0.0.1:8099/</span>
+    </div>
+    <div class="hint" id="hint">每 3 秒探测一次，最多 20 次。服务起来后会自动跳转。</div>
+    <div class="row" style="margin-top:14px">
+      <button id="btnOpen" disabled>打开可视化</button>
+      <button class="ghost" id="btnRetry">重新探测</button>
+      <label style="font-size:13px;color:var(--dim);display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" id="autoGo" checked style="width:15px;height:15px;"> 就绪后自动跳转
+      </label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <input type="text" id="altHost" placeholder="换个地址试，例如 http://172.20.10.5:8099/">
+      <button class="ghost" id="btnAlt">探测这个地址</button>
+    </div>
+  </div>
+
+  <div class="card" id="okCard" style="display:none">
+    <h2 class="good">✓ 已连接</h2>
+    <div class="hint">服务已就绪，马上跳转到可视化页面。若没自动跳，点下面按钮。</div>
+    <div class="row" style="margin-top:12px">
+      <button id="btnOpen2">立即打开可视化</button>
+      <button class="ghost" id="btnStay">停留在本页</button>
+    </div>
+  </div>
+
+  <div class="card" id="errCard">
+    <h2>连不上时的排查顺序</h2>
+    <ol>
+      <li><span class="stepnum">1</span><b>WSL 装了吗？</b>
+        管理员 PowerShell 执行 <code>wsl --status</code>。没装就先执行
+        <code>wsl --install -d Ubuntu-20.04</code>，装完重启电脑。</li>
+      <li><span class="stepnum">2</span><b>包装了吗？</b>
+        在 Ubuntu 窗口里解压并执行安装脚本：
+        <pre>tar -xzf parksim-jth-portable-&lt;date&gt;.tar.gz
+cd parksim-jth-portable-&lt;date&gt;
+sudo bash install.sh</pre>
+        这一步会建 <code>/media/step/data/Yccc7/ParkSim-JTH</code>、装 ROS 依赖（包里自带 ROS 2 Foxy，<b>不要</b> <code>apt install ros-foxy-*</code>）。</li>
+      <li><span class="stepnum">3</span><b>服务起来了吗？</b>
+        在 Ubuntu 窗口里执行 <code>bash /media/step/data/Yccc7/ParkSim-JTH/run.sh</code>，
+        看到 <code>serving on http://0.0.0.0:8099/</code> 才算好。
+        注意必须绑 <code>0.0.0.0</code>——WSL2 是 NAT，绑 127.0.0.1 时 Windows 侧访问不到。</li>
+      <li><span class="stepnum">4</span><b>还是不通？</b>
+        localhost 转发在「快速启动 / 休眠」之后可能失效。Windows PowerShell 里执行
+        <code>wsl --shutdown</code>，再重启服务。</li>
+      <li><span class="stepnum">5</span><b>兜底：直接用 WSL 的 IP。</b>
+        在 Ubuntu 窗口里执行 <code>ip -4 addr show eth0</code>（或 <code>hostname -I</code>），
+        拿到例如 <code>172.20.10.5</code>，然后在上面输入框里填
+        <code>http://172.20.10.5:8099/</code> 再点「探测这个地址」。</li>
+      <li><span class="stepnum">6</span><b>Win11 22H2+ 还被拦？</b>
+        可能是 Hyper-V 虚拟防火墙。管理员 PowerShell：
+        <pre>Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -DefaultInboundAction Allow</pre>
+        或在 <code>C:\Users\&lt;你&gt;\.wslconfig</code> 里写 <code>[wsl2]</code> + <code>firewall=false</code>，然后 <code>wsl --shutdown</code>。</li>
+    </ol>
+    <div class="hint" style="margin-top:12px">
+      也可以用同目录的 <code>ParkSim.bat</code>——它会替你拉服务、轮询、开浏览器，并把服务日志单独开一个窗口显示。
+    </div>
+  </div>
+
+  <footer>
+    本文件是纯本地入口壳，不连任何外网、不加载任何 CDN 资源。<br>
+    若你看到的是旧页面，按 <code>Ctrl + F5</code> 强制刷新。
+  </footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var DEFAULT_URL = 'http://127.0.0.1:8099/';
+  var PROBE_PATH  = 'base_map.png';      // 服务必然存在的小文件；只探测「有没有应答」
+  var MAX_TRY     = 20;
+  var INTERVAL_MS = 3000;
+
+  var el = function (id) { return document.getElementById(id); };
+  var dot = el('dot'), status = el('status'), hint = el('hint'), target = el('target');
+  var btnOpen = el('btnOpen'), btnOpen2 = el('btnOpen2'), btnRetry = el('btnRetry');
+  var btnStay = el('btnStay'), btnAlt = el('btnAlt'), altHost = el('altHost');
+  var okCard = el('okCard'), errCard = el('errCard'), autoGo = el('autoGo');
+
+  var tries = 0, timer = null, current = DEFAULT_URL, done = false, goTimer = null;
+
+  function normalize(u) {
+    u = (u || '').trim();
+    if (!u) { return DEFAULT_URL; }
+    if (!/^https?:\/\//i.test(u)) { u = 'http://' + u; }
+    return u.replace(/\/+$/, '') + '/';
+  }
+
+  function setProbing(msg) {
+    dot.className = 'dot probing';
+    status.textContent = msg;
+  }
+
+  function setOk(url) {
+    done = true;
+    if (timer) { clearTimeout(timer); timer = null; }
+    dot.className = 'dot ok';
+    status.textContent = '已连接';
+    hint.innerHTML = '服务就绪：<b>' + url + '</b>';
+    target.textContent = url;
+    btnOpen.disabled = false;
+    okCard.style.display = '';
+    errCard.style.display = 'none';
+    if (autoGo.checked) {
+      hint.innerHTML += ' —— <span class="good">即将自动跳转</span>（1.5 秒）…';
+      goTimer = setTimeout(function () { window.location.href = url; }, 1500);
+    }
+  }
+
+  function setErr(msg) {
+    dot.className = 'dot err';
+    status.textContent = msg;
+    btnOpen.disabled = true;
+    okCard.style.display = 'none';
+    errCard.style.display = '';
+  }
+
+  /**
+   * 探测服务是否应答。
+   * 用 mode:'no-cors' 的 fetch：只要服务端有 HTTP 应答就 resolve（读不到内容也没关系），
+   * 连不上（ECONNREFUSED）才 reject。这样绕开了 file:// 跨域读取的限制。
+   */
+  function probe(url) {
+    var probeUrl = url + PROBE_PATH + '?probe=' + Date.now();
+    var finished = false;
+    return new Promise(function (resolve) {
+      var killer = setTimeout(function () {
+        if (!finished) { finished = true; resolve(false); }
+      }, 2500);
+
+      function settle(v) {
+        if (finished) { return; }
+        finished = true;
+        clearTimeout(killer);
+        resolve(v);
+      }
+
+      var p;
+      try {
+        p = fetch(probeUrl, { method: 'GET', mode: 'no-cors', cache: 'no-store' });
+      } catch (e) {
+        settle(false);
+        return;
+      }
+      p.then(function () { settle(true); }, function () { settle(false); });
+    });
+  }
+
+  function tick() {
+    if (done) { return; }
+    tries += 1;
+    setProbing('正在探测 ' + current + ' （第 ' + tries + '/' + MAX_TRY + ' 次）…');
+    probe(current).then(function (ok) {
+      if (ok) { setOk(current); return; }
+      if (tries >= MAX_TRY) {
+        setErr('连不上 ' + current);
+        hint.innerHTML = '已探测 ' + MAX_TRY + ' 次都没应答。请按下面顺序排查；' +
+                         '改好之后点「重新探测」或直接填新地址。';
+        return;
+      }
+      timer = setTimeout(tick, INTERVAL_MS);
+    });
+  }
+
+  function restart(url) {
+    done = false;
+    tries = 0;
+    current = url;
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (goTimer) { clearTimeout(goTimer); goTimer = null; }
+    target.textContent = url;
+    okCard.style.display = 'none';
+    errCard.style.display = 'none';
+    btnOpen.disabled = true;
+    tick();
+  }
+
+  function openNow() {
+    if (goTimer) { clearTimeout(goTimer); goTimer = null; }
+    window.location.href = current;
+  }
+
+  btnOpen.addEventListener('click', openNow);
+  btnOpen2.addEventListener('click', openNow);
+  btnStay.addEventListener('click', function () {
+    if (goTimer) { clearTimeout(goTimer); goTimer = null; }
+    hint.innerHTML = '已取消自动跳转。随时点「立即打开可视化」进入。';
+  });
+  btnRetry.addEventListener('click', function () { restart(current); });
+  btnAlt.addEventListener('click', function () { restart(normalize(altHost.value)); });
+  altHost.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { restart(normalize(altHost.value)); }
+  });
+
+  target.textContent = DEFAULT_URL;
+  restart(DEFAULT_URL);
+})();
+</script>
+</body>
+</html>

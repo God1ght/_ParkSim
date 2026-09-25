@@ -23,9 +23,17 @@
 # =============================================================================
 FROM ubuntu:20.04
 
+# 构建溯源信息：由 docker/build_image.sh 通过 --build-arg 注入真实 commit；
+# 手工 `docker build` 时保持 unknown（不会因此构建失败）。写入 /opt/parksim/BUILDINFO，
+# 供 `install.sh --version` 与现场排障回答「这个镜像到底是哪个 commit」。
+ARG PARKSIM_GIT_HEAD=unknown
+ARG PARKSIM_GIT_BRANCH=unknown
+ARG PARKSIM_BUILD_TIME=unknown
+
 LABEL org.opencontainers.image.title="parksim-jth" \
       org.opencontainers.image.description="Self-contained ParkSim JTH simulator + webviz (bundled ROS 2 Foxy, no conda, no /opt/ros)" \
-      org.opencontainers.image.version="v1"
+      org.opencontainers.image.version="v1" \
+      org.opencontainers.image.revision="${PARKSIM_GIT_HEAD}"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -137,7 +145,32 @@ RUN set -e; \
     python3 -c "import json; p='/media/step/data/Yccc7/ParkSim-JTH/_ParkSim/python/parksim/priorFiles/data/DJI_0012_%s.json'; [json.load(open(p % n)) for n in ('scene','agents','obstacles','frames','instances')]; print('[assets] OK: priorFiles + DJI_0012 subset + jth_b1 assets present, DJI json all valid')"
 
 # -----------------------------------------------------------------------------
-# 7) 入口
+# 7) webviz 前端资产断言 + 构建溯源
+#    为什么在**构建期**断言：交付过一整轮「镜像里的 webviz/static 只有
+#    app.js/index.html/style.css，没有 charts.js/charts.css」的旧内容——
+#    镜像照样构建成功、install.sh 照样报「就绪」，用户看到的却是没有图表模块
+#    的旧页面，直到人工比对才发现。把断言放到构建期，陈旧前端根本无法出镜像。
+# -----------------------------------------------------------------------------
+RUN set -e; \
+    S=/media/step/data/Yccc7/ParkSim-JTH/_ParkSim/python/parksim/webviz/static; \
+    for f in index.html app.js style.css charts.js charts.css; do \
+        test -f "$S/$f" || { echo "MISSING webviz frontend asset: $f"; exit 1; }; \
+    done; \
+    grep -q 'charts\.js' "$S/index.html" || { echo "index.html 未引用 charts.js"; exit 1; }; \
+    grep -q 'charts\.css' "$S/index.html" || { echo "index.html 未引用 charts.css"; exit 1; }; \
+    grep -q 'metricsViz' "$S/index.html" || { echo "index.html 缺 #metricsViz 容器"; exit 1; }; \
+    grep -q 'eventsViz' "$S/index.html" || { echo "index.html 缺 #eventsViz 容器"; exit 1; }; \
+    echo "[assets] OK: webviz frontend complete (incl. charts module)"
+
+RUN set -e; \
+    mkdir -p /opt/parksim; \
+    printf 'image        : parksim-jth:v1\nsource       : _ParkSim (git archive HEAD)\ngit_branch   : %s\ngit_head     : %s\nbuilt_at     : %s\ncanonical_root: /media/step/data/Yccc7/ParkSim-JTH\n' \
+        "${PARKSIM_GIT_BRANCH}" "${PARKSIM_GIT_HEAD}" "${PARKSIM_BUILD_TIME}" \
+        > /opt/parksim/BUILDINFO; \
+    cat /opt/parksim/BUILDINFO
+
+# -----------------------------------------------------------------------------
+# 8) 入口
 # -----------------------------------------------------------------------------
 COPY run_app.sh /usr/local/bin/run_app.sh
 RUN chmod +x /usr/local/bin/run_app.sh
