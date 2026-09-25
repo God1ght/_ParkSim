@@ -14,6 +14,7 @@
 #   bash build_image.sh --no-save       # 只 build，不打 tar（快速验证）
 #   bash build_image.sh --refresh-payload  # 连 foxy/dlp/dji/priorfiles 也重新铺一遍
 #   bash build_image.sh --no-prune      # 构建后不回收 dangling 镜像
+#   bash build_image.sh --no-sync       # 构建后不把交付脚本同步到 OUT_DIR
 #   bash build_image.sh --strict-clean  # 工作区有未提交改动时直接失败（默认只警告）
 #   bash build_image.sh --tag parksim-jth:v2
 #
@@ -36,6 +37,7 @@ FRONTEND_FILES="index.html app.js style.css charts.js charts.css"
 
 DO_SAVE=1
 DO_PRUNE=1
+DO_SYNC=1
 REFRESH_PAYLOAD=0
 STRICT_CLEAN=0
 
@@ -43,6 +45,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --no-save)         DO_SAVE=0; shift ;;
     --no-prune)        DO_PRUNE=0; shift ;;
+    --no-sync)         DO_SYNC=0; shift ;;
     --refresh-payload) REFRESH_PAYLOAD=1; shift ;;
     --strict-clean)    STRICT_CLEAN=1; shift ;;
     --tag)             IMAGE="$2"; shift 2 ;;
@@ -133,6 +136,20 @@ log "payload/parksim OK（0 个历史备份）"
 if [ -d "${SRC_REPO}/workspace/install" ] && [ ! -d "${P}/workspace/install" ]; then
   cp -a "${SRC_REPO}/workspace/install" "${P}/workspace/install"
   log "已补 payload/parksim/workspace/install"
+  # 关键：ament_python 的安装树是**整目录原样搬**的，源码树里就地编辑留下的 *.bak_*
+  # 会被一并搬进镜像（实测 6 个，含 simulator_node.py.bak_*、vehicle.yaml.bak_*）。
+  # 这里在拷贝后立即过滤，作为上面那条「先扫后拷」漏洞的实际修补。
+  _n="$(find "${P}/workspace/install" -type f \
+          \( -name '*bak*' -o -name '*.orig' -o -name '*.old' -o -name '*.rej' -o -name '*~' \) \
+          2>/dev/null | wc -l)"
+  if [ "${_n}" -ne 0 ]; then
+    find "${P}/workspace/install" -type f \
+      \( -name '*bak*' -o -name '*.orig' -o -name '*.old' -o -name '*.rej' -o -name '*~' \) \
+      -delete 2>/dev/null || true
+    log "已从 install 树副本中清除 ${_n} 个历史备份文件"
+  fi
+  find "${P}/workspace/install" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
+  find "${P}/workspace/install" -type f -name '*.pyc' -delete 2>/dev/null || true
 fi
 
 # -----------------------------------------------------------------------------
@@ -193,6 +210,34 @@ for f in parking_maneuvers.pickle spots_data.pickle waypoints_graph.pickle agent
   [ -n "${a}" ] && [ "${a}" = "${b}" ] || die "priorfiles_root/${f} 与 archive 不一致（会用旧件覆盖新件），请 --refresh-payload 重铺"
 done
 log "priorfiles_root 与 archive 一致 OK"
+
+# -----------------------------------------------------------------------------
+# 4b) 全量载荷的「历史备份」红线复核（必须在所有 cp 之后！）
+#     曾经的漏洞：第 3 步末尾的备份断言只扫 payload/parksim，且扫在 `cp -a` 活 install 树**之前**；
+#     紧接着那一步 cp 把 workspace/install 整棵搬进来（ament_python 安装树不排除 *.bak），
+#     于是断言报「0 个备份」通过后立刻被注入 6 个 *.bak_*，一路进了镜像，长期无人发现。
+#     检查必须落在「最后一次改动载荷之后」，否则就是自欺欺人（check-then-mutate 顺序陷阱）。
+# -----------------------------------------------------------------------------
+log "全量载荷历史备份红线复核（顺序陷阱：检查必须在所有 cp 之后）..."
+NB_ALL="$(find "${PAYLOAD_ROOT}" -type f \
+            \( -name '*bak*' -o -name '*.orig' -o -name '*.old' -o -name '*.rej' -o -name '*~' \) \
+            2>/dev/null | wc -l)"
+if [ "${NB_ALL}" -ne 0 ]; then
+  find "${PAYLOAD_ROOT}" -type f \
+    \( -name '*bak*' -o -name '*.orig' -o -name '*.old' -o -name '*.rej' -o -name '*~' \) \
+    2>/dev/null | sed "s#^${PAYLOAD_ROOT}/#  #" | head -20 >&2
+  die "全量载荷里仍有 ${NB_ALL} 个历史备份文件，拒绝构建（交付物不得夹带备份源码）"
+fi
+log "全量载荷 0 个历史备份 OK"
+
+# 顶层载荷目录白名单：防止「手工铺的残留」混进镜像（只允许已知的 5 个目录）
+for d in "${PAYLOAD_ROOT}"/*/; do
+  n="$(basename "${d}")"
+  case "${n}" in
+    parksim|foxy|dlp|dji_subset|priorfiles_root) : ;;
+    *) die "载荷目录出现预期外的条目: payload/${n}（只允许 parksim/foxy/dlp/dji_subset/priorfiles_root）" ;;
+  esac
+done
 
 # -----------------------------------------------------------------------------
 # 5) 构建
@@ -259,6 +304,33 @@ if [ "${DO_PRUNE}" = "1" ]; then
 fi
 
 # -----------------------------------------------------------------------------
+# 8b) 同步交付目录脚本（把「人工记得覆盖」变成「构建即保证」）
+#     原先这一步只打印一行提醒，靠人执行。曾经发生过的故障就是交付目录里的
+#     install.sh/Dockerfile 停留在旧版，装完机器前端缺 charts.js/charts.css，
+#     而且两边都没有内容自检，只能靠人工比对 md5 才发现。现在由脚本兜住。
+# -----------------------------------------------------------------------------
+if [ "${DO_SYNC}" = "1" ]; then
+  log "同步交付脚本 -> ${OUT_DIR}/"
+  for f in Dockerfile .dockerignore requirements-app.txt run_app.sh \
+           install.sh build_image.sh docker-compose.yml README.md; do
+    src="${SRC_REPO}/docker/${f}"
+    [ -f "${src}" ] || continue
+    cp -p "${src}" "${OUT_DIR}/${f}"
+    printf '[build]   %-22s %8s B  md5=%s\n' \
+      "${f}" "$(stat -c%s "${OUT_DIR}/${f}")" "$(md5sum "${OUT_DIR}/${f}" | cut -c1-12)"
+  done
+  # 交付目录里的脚本必须与仓库同源，否则装机故障无法复现
+  DRIFT=0
+  for f in Dockerfile install.sh run_app.sh docker-compose.yml build_image.sh; do
+    [ -f "${SRC_REPO}/docker/${f}" ] || continue
+    cmp -s "${SRC_REPO}/docker/${f}" "${OUT_DIR}/${f}" || { warn "交付目录 ${f} 与仓库不一致"; DRIFT=1; }
+  done
+  [ "${DRIFT}" = "0" ] && log "交付目录与仓库 docker/ 逐字节一致 ✅"
+else
+  log "按 --no-sync 跳过交付目录同步（交付目录可能落后于仓库，装机前请自行核对）"
+fi
+
+# -----------------------------------------------------------------------------
 # 9) 摘要
 # -----------------------------------------------------------------------------
 cat <<EOF
@@ -268,7 +340,7 @@ $(printf '\033[1;32m')==== 构建完成 ====$(printf '\033[0m')
   源码    : ${GIT_BRANCH} @ ${GIT_HEAD}   (built_at ${BUILD_TIME})
   上下文  : ${BUILD_CTX}
   交付包  : ${TARBALL}$( [ "${DO_SAVE}" = "1" ] && echo " + .sha256" )
+  交付目录: ${OUT_DIR}$( [ "${DO_SYNC}" = "1" ] && echo "  （脚本已同步，与仓库同源）" || echo "  （未同步！用 --no-sync 关闭了）" )
   查看版本: docker run --rm --entrypoint cat ${IMAGE} /opt/parksim/BUILDINFO
-  同步交付目录脚本: 把 ${SRC_REPO}/docker/{install.sh,run_app.sh,docker-compose.yml,README.md} 覆盖到 ${OUT_DIR}/
 
 EOF

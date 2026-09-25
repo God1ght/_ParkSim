@@ -26,9 +26,14 @@ FROM ubuntu:20.04
 # 构建溯源信息：由 docker/build_image.sh 通过 --build-arg 注入真实 commit；
 # 手工 `docker build` 时保持 unknown（不会因此构建失败）。写入 /opt/parksim/BUILDINFO，
 # 供 `install.sh --version` 与现场排障回答「这个镜像到底是哪个 commit」。
+#
+# ⚠ 缓存注意：ARG 的值会进入**其后所有指令**的缓存键。
+#   - PARKSIM_GIT_HEAD / PARKSIM_GIT_BRANCH：同一 commit 内稳定，且下面 LABEL 要用 → 放这里无害；
+#   - PARKSIM_BUILD_TIME：每次构建都是新时间戳。**绝不能声明在这个位置**，否则其后每一层
+#     缓存全部失效，每次构建都退化成全量重建（实测 COPY payload/foxy 单步就要 582s ≈ 9.7 分钟，
+#     整轮约 20 分钟）。它只在写入 BUILDINFO 时用到，故一并声明在文件末尾那条 RUN 之前。
 ARG PARKSIM_GIT_HEAD=unknown
 ARG PARKSIM_GIT_BRANCH=unknown
-ARG PARKSIM_BUILD_TIME=unknown
 
 LABEL org.opencontainers.image.title="parksim-jth" \
       org.opencontainers.image.description="Self-contained ParkSim JTH simulator + webviz (bundled ROS 2 Foxy, no conda, no /opt/ros)" \
@@ -78,7 +83,10 @@ RUN python3 -m pip install --no-cache-dir "pip==24.2" "setuptools==75.1.0" "whee
 # -----------------------------------------------------------------------------
 # 3a) ROS 2 Foxy install-tree
 COPY payload/foxy/ /media/step/data/Yccc7/ParkSim-JTH/deps/ros/foxy/
-# 3b) ParkSim 源码（git archive HEAD=cc5c98f，含 jth_b1 地图资产与 4 个运行必需 pickle）
+# 3b) ParkSim 源码（git archive HEAD，commit 见下方 PARKSIM_GIT_HEAD 与镜像内
+#     /opt/parksim/BUILDINFO；含 jth_b1 地图资产与 4 个运行必需 pickle）
+#     注意：此处不要写死某个 sha —— 曾经写成 "HEAD=cc5c98f" 而长期无人更新，
+#     反而误导现场排障。真实 commit 一律以 BUILDINFO 为准。
 COPY payload/parksim/ /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/
 # 3c) dlp 数据集 python 包（webviz 与 simulator 均 import；只带包，不带 277M pickle）
 COPY payload/dlp/ /media/step/data/Yccc7/ParkSim-JTH/deps/dlp-dataset/
@@ -161,6 +169,10 @@ RUN set -e; \
     grep -q 'metricsViz' "$S/index.html" || { echo "index.html 缺 #metricsViz 容器"; exit 1; }; \
     grep -q 'eventsViz' "$S/index.html" || { echo "index.html 缺 #eventsViz 容器"; exit 1; }; \
     echo "[assets] OK: webviz frontend complete (incl. charts module)"
+
+# PARKSIM_BUILD_TIME 只被下面这条 BUILDINFO 写入用到，因此**故意延到这里**（所有重量级层
+# 之后）才声明：它每次都不同，提前声明会让 COPY payload/foxy(9.7min) / pip / colcon 全部失去缓存。
+ARG PARKSIM_BUILD_TIME=unknown
 
 RUN set -e; \
     mkdir -p /opt/parksim; \
