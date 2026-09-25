@@ -6,6 +6,29 @@
 
 ---
 
+## 0. 本版版本与校验（交付/迁移时请核对）
+
+| 项 | 值 |
+|---|---|
+| 源码 HEAD | `724fd75`（本轮 10 笔：`fd298aa` / `691c23d` / `b537fd9` / `52c876e` / `23f4202` / `18acb29` / `c84bce6` / `1095f83` / `263ca5f` / `724fd75`；父提交 `d4f5ca6`） |
+| 镜像 tag / id | `parksim-jth:v1` / `sha256:b4587e3ea407…` |
+| 镜像构建时间 / 体积 | 2026-09-25 14:14:35 +08:00，1,275,473,120 B（≈1.28 GB） |
+| tar 包 | `parksim-jth-v1.tar.gz`，**376,727,675 B**（≈359 MiB），md5 `ce2f1cabdbe419f2a2b292efcb4a20cb` |
+| `webviz/server.py` | md5 `e104d3dc7472b4f40bab192151abc692` |
+| `webviz/static/app.js` | md5 `e4879a8655ab56140de04593fbe0fa9f` |
+| `webviz/static/index.html` | md5 `e410bc7229a925a2267d8b802ca0b6c5`（内含 `app.js?v=31-panels`、`style.css?v=10`） |
+| `webviz/static/style.css` | md5 `c9f9b6c2956deb88d6100c0859474d06` |
+| `workspace/src/parksim/src/simulator_node.py` | md5 `a893f261ca4475101c3c8bb31835a1d5` |
+
+- 上表 5 个源码文件的 md5 **在仓库与镜像内逐字节一致**（镜像里是构建时 COPY 进去的实体文件，不是符号链接）。
+- tar 已做**装载回验**：`docker load -i parksim-jth-v1.tar.gz` → `docker image inspect parksim-jth:v1`
+  得到 `sha256:b4587e3ea407…`，与源镜像 id **完全一致**，即"打包—迁移—装载"链路无失真。
+- 本轮相对上一版的实质改动：**页面控制行为**（§4.1–§4.3）、**仿真侧外来节点守护**
+  （§3.2 晚期告警 + 最小观察窗）、**暂停不再被误报为数据流停滞**（§4.4）、
+  **页面左右常驻监控面板**（§4.5）。
+
+---
+
 ## 1. 目标机要求
 
 | 项 | 要求 |
@@ -79,8 +102,49 @@ docker logs -f parksim-jth        # 看日志（仿真 + webviz 全部走 stdout
 | `PARKSIM_AUTOSTART` | `0` | 是否开机即自动发车。`0`（默认）= 就绪后停在「已停止」态，由页面「开启仿真」触发；`1`/`true`/`yes`/`on` = 容器一起来就开跑 |
 | `ROS_DOMAIN_ID` | `0` | DDS 域 |
 | `ROS_LOCALHOST_ONLY` | `1` | **已在镜像内固化**；置 `1` 时 DDS 只走容器自身 `lo` |
+| `PARKSIM_ALLOW_FOREIGN_VEHICLES` | 空（=关） | 逃生开关。置真值（`1`/`true`/`yes`/`on`，大小写不敏感）时**整路跳过**外来节点检查：两个启动检查点 + 运行期晚期告警都不做，且启动期会打印 `skipping foreign node check` |
+| `PARKSIM_FOREIGN_GUARD_WINDOW` | `3.0` | **只**控制「启动期最小观察窗」（秒）。设 `0` = 关闭该窗；与上一行**相互独立**：关窗**不会**关掉晚期告警。⚠️ 实测安全边界：该值**会被夹到 ≤ `_FOREIGN_CHECK_MAX_WAIT`(10 s)**；设 `3600` 只会等 10 s（早期版本会**无限挂死、一辆车都不发**）；`inf` / `nan` / 非法值一律**回落默认 3.0** |
+| `PARKSIM_ASSET_ROOT` | 空 | ⚠️ **只影响 webviz 桥，不影响仿真节点** —— 详见 §8.3，别拿它当"让仿真换资产目录"的旋钮 |
 
-### ⚠️ DDS 隔离的正确姿势（重要，早期文档写错了）
+### 3.2 外来节点守护：启动期检查点 + 运行期晚期告警
+
+仿真侧的 `simulator_node` 有两道机制处理"本域里出现了别人的 vehicle/simulator 节点"：
+
+1. **启动期两个检查点**（startup / post-dataset-load）：发现外来 vehicle 会直接
+   `ERROR … Some vehicle nodes are not shut down cleanly` → `RuntimeError: simulator exited early`
+   → **进程退出**。这是**硬拦**，行为未变。
+2. **运行期晚期告警**（本版新增）：启动窗口**之后**才被本域发现的外来节点，
+   旧实现会**完全静默**（仿真照跑、操作者不知情）。现在会打一条 WARN：
+
+   ```
+   Late cross-talk detected: foreign node(s) [foreign vehicle=['/vehicle_999/vehicle']] appeared
+   after startup checkpoints; this instance and another are sharing one DDS domain.
+   Isolate with ROS_LOCALHOST_ONLY=1 or set PARKSIM_ALLOW_FOREIGN_VEHICLES=1 to silence.
+   ```
+
+   性质：**只报不杀** —— 不 raise、不杀进程、仿真继续跑。设计上是"可见化"而非"硬拦"，
+   避免把一个还能用的仿真直接打死。
+
+   触发条件（四条同时满足）：仿真在跑（`sim_is_running`）→ 未超过观察窗 → 距上次扫描 ≥5 s 节流
+   → 真的扫到外来节点。命中后由 `_late_cross_talk_warned` 置位，**整个进程生命周期只打一次**
+   （防刷屏）。
+
+   ⚠️ **观察窗只有 60 s**：起点是**两个启动检查点都过完的时刻**（`_late_window_t0`，即
+   post-dataset-load 之后）。实测首车约在 T+12 s 出现，因此首车之后的有效覆盖约 **56 s**；
+   **超过窗口之后才出现的串扰仍旧静默** —— 这条告警不是全程哨兵。
+   需要全程保障请依赖 `ROS_LOCALHOST_ONLY=1` 隔离本身（§3.3）。
+
+   **判定口径（本版修过一个真盲点）**：运行期扫描要排除本实例自己的车，早期实现是"按命名空间
+   精确匹配"（`/vehicle_1 … /vehicle_<num_vehicles>` 都算自己的），结果**外来实例只要 id 落在自己
+   区间内就会被静默排除** —— 而两个实例都用从 1 开始的同一套 id 生成器，晚启动那家的 id 必然与
+   我方重叠，**正是最该报警的场景反而报不出来**。实测对照：注入 `/vehicle_999` 报警、注入
+   `/vehicle_1` 完全静默。
+   现改为按「同名同命名空间出现次数 − 自身应占条数」判定（DDS 图 API 对同名同 ns 会返回多条）：
+   复现同一实验，注入 `/vehicle_1` 现在**稳定报 1 条**，且 WARN 文本带完整节点名
+   （`/vehicle_1/vehicle`，早期只打裸 `vehicle`，看不出是哪个节点）。
+   干净路径已验证零误报：跑满 210 s / 累计发车 46 辆、车正常停好退出、节点数从 24 降到 13，全程 0 条。
+
+### ⚠️ 3.3 DDS 隔离的正确姿势（重要，早期文档写错了）
 
 **错误说法**（本 README 早期版本曾这样写）：默认 bridge + 端口映射下，DDS 在容器自己的
 网络命名空间里，不会与宿主/其它 ParkSim 实例互相发现。
@@ -103,7 +167,99 @@ docker logs -f parksim-jth        # 看日志（仿真 + webviz 全部走 stdout
 
 ---
 
-## 4. 镜像里装了什么 / 怎么组织的
+## 4. 页面控制行为与状态显示（本版新增 / 变更）
+
+这一节写的是**人在浏览器里能直接看到的行为**，全部经真实 Chromium 实测，不是"代码里有所以算实现了"。
+
+### 4.1 暂停状态灯（新）
+
+旧版点「暂停」后，右上角状态灯**仍显示「仿真运行中 · N 车」**，只有车不动 ——
+灯和行为不一致，排查时极易误判成"暂停没生效"。
+
+本版新增 `sim-paused` 状态：暂停时灯显示 **「已暂停 · N 车」**（`--warn` 色），恢复后回到
+「仿真运行中 · N 车」。同步发生在 `updateSimChip()`，并在**两处**调用：收到 `{type:'paused'}`
+的 WS 推送时、以及点暂停按钮的本地回执时 —— 所以不管是自己点的还是服务端推的，灯都会跟上。
+
+> 一个容易误报的旁证：暂停瞬间车数可能 +1（如 16→17）。这不是"暂停还在发车"，而是暂停前
+> 已进 spawn 队列的车在这一帧落了地；`timer_callback` 本身有 `if self.sim_is_running:` 门禁。
+> 实测干净暂停 60 s：仿真时钟冻结在 40.3 s、车数稳定 12 辆不变。**已确认为非缺陷，未改代码。**
+
+### 4.2 确认框改为页面内非阻塞弹窗（真实缺陷修复）
+
+旧版用浏览器原生 `window.confirm()`。实测：**模态期间整个页面的 JS 事件循环被冻住** ——
+在确认框上停留 45 s，心跳出现 **92.5 s 的空洞**；更糟的是「停止」指令**确实发出去了**，
+但服务端这段时间处理不到、前端也收不到回执，表现为**静默失败**（点了没反应、也不报错）。
+
+本版改为页面内自绘的 `#confirmModal`（`askConfirm(text)` 返回 Promise），不阻塞事件循环。
+同条件复测：停留 40 s，心跳**最大间隔 0 ms**，停止指令正常送达并成功；
+取消路径（Esc / 点「取消」）实测**不会**发出停止指令。
+
+### 4.3 控制指令的 ack 超时与重发（新）
+
+控制指令（停止 / 暂停）现在有确认机制：
+
+- 发出后等 **12 s** ack（`CONTROL_ACK_TIMEOUT_MS`）；
+- 超时后**重发一次**；再超时就在页面上给出**可见的失败提示**（不再是"点了没反应"）；
+- **重发用的是首次发送时冻结的那份载荷，逐字节相同**。这是刻意的：暂停是 toggle，
+  若重发时按当前状态重新计算，可能把语义反转（本来要暂停 → 重发变成恢复）。
+  已用抓帧证明首次与重发的 payload 完全一致。
+
+失败矩阵实测（真实浏览器）：正常停止 / 确认框停留 40 s / Esc 取消 / 桥接无响应时的停止 /
+桥接无响应时的暂停 / 失败后手工重试 —— **全部符合预期**；全流程交互后 JS 错误列表为 `[]`。
+
+### 4.4 暂停不再被误报成「数据流停滞」（真实缺陷修复）
+
+早期版本点「暂停」后约 20 s 就会弹红色横幅 `仿真数据流停滞（约 22 秒未推进）。点击「重启仿真」恢复。`
+—— 因为 webviz 的 `sim_watchdog` 只看仿真时钟有没有推进，**对"暂停"无感知**；而暂停时时钟本来就该冻结。
+更糟的是它引导用户「重启仿真」，重启会**直接毁掉这次暂停的运行**，且停止后横幅还残留。
+
+本版：桥节点把 `sim_paused` 写入共享状态，看门狗在暂停期间**跳过停滞判定**并持续刷新基准
+（否则恢复瞬间会把暂停时长一次算成停滞）；暂停时若已误报则主动解除；停止/未启动时不做停滞判定。
+
+实测（真实浏览器）：暂停 **55~66 s** → 状态灯「已暂停 · N 车」、**红色横幅保持隐藏**；
+恢复后仿真时钟继续推进、无即时误报；停止后横幅回落 idle 文案「底图已加载（仿真未启动）…」。
+**反向验证**：用 `kill -STOP` 冻住仿真进程（不是暂停），停滞检测**仍然在 35 s 内正常报警**
+（`status: stalled / 约 22 秒`）—— 说明真实停滞没被一起吞掉。
+
+### 4.5 左右常驻监控面板（新）
+
+页面两侧新增两块常驻面板，由控制坞的两个按钮开关：**「指标」**（左，`#btnMetrics`）/
+**「事件」**（右，`#btnEvents`）。默认**收起**，点开**即刻出数**（`setSidePanel(..., true)` 会强制
+立刻刷新一次，不等节流窗口），面板上的 `×` 收起。刷新由 `updateChips()` 驱动，固定 **400 ms**
+（`PANEL_REFRESH_MS = 400`）一次，且**只刷当前可见的那块**（收起的不算）。
+
+**左：运行指标**（`#panelMetrics`）—— 数据全部来自已有的 WS 推送（`frame` / `occupancy` /
+`departing`），**不额外发请求**，因此开面板不会增加桥的负担：
+
+| 分组 | 字段 |
+|---|---|
+| 仿真状态 | 生命周期、仿真时刻 |
+| 车辆状态分布 | 行驶中 / 泊车机动 / 制动等待 / 已完成 / 在场合计 |
+| 泊位占用 | 已占用 / 总数、占用率、入库呈现（去重）、正在出库 |
+| 链路时效 | 前端 FPS、WS 延迟 |
+
+**右：冲突事件 · 监管建议**（`#panelEvents`）
+
+- **当前冲突**：让行对（`wait` 字段，一对车互相等待时升级为 `互等环（死锁前兆）`，
+  且 A→B / B→A 只展示一条）、**最小车距**、车辆与停放车的最小距离。
+- **生效告警**：`S.activeAlerts` 的全部告警码，外加比 alert 更严重的**横幅态**
+  （`sim_dead` / `stalled` / `error` / `disconnected` / `assets_missing`）。
+- **下一步监管建议**：**纯前端规则引擎**（`buildAdvice()`）——服务端**不**产出"建议"类数据，
+  所以这一栏的内容完全由浏览器本地推导（如"泊位 N 被多车同时瞄准 → 检查泊位分配与互斥锁"），
+  按 `bad > warn > info` 排序。
+
+> ⚠️ **「最小车距」是按车辆中心点算的，不是车身净距**（车身约 4.6 × 1.85 m）。面板 meta 里已写明；
+> 当净距看会系统性低估风险。
+>
+> ⚠️ **让行判定存在退化路径**：若对端服务端版本较旧 / `wait` 字段恒为 0，会退化到用状态色
+> `c === 2`（制动等待）近似，并在 meta 里**明确标注"退化判定"** —— 看到这行字即说明当前冲突
+> 信息的精度较低，不要据此下强结论。
+>
+> ℹ️ 面板是**只读可见化**：不改变仿真行为、不下发任何控制指令、不写任何状态。
+
+---
+
+## 5. 镜像里装了什么 / 怎么组织的
 
 镜像刻意把载荷放在**与构建机完全相同的绝对路径**下——ROS 的 install-tree
 （`setup.bash`、ament index）内部写死了绝对路径，重定位极易损坏，路径同构是最稳的做法：
@@ -112,12 +268,12 @@ docker logs -f parksim-jth        # 看日志（仿真 + webviz 全部走 stdout
 /media/step/data/Yccc7/ParkSim-JTH/
 ├── deps/ros/foxy/          # 内置 ROS 2 Foxy install-tree（278M，非 /opt/ros）
 ├── deps/dlp-dataset/dlp/   # DLP 数据集 python 包（webviz/simulator 都 import）
-└── _ParkSim/               # 源码（git archive HEAD=cc5c98f）+ 镜像内 colcon build 产物
+└── _ParkSim/               # 源码（git archive HEAD=724fd75）+ 镜像内 colcon build 产物
     ├── python/parksim/
     │   ├── webviz/         # 浏览器前端 + WS 桥（server.py）
     │   ├── priorFiles/
     │   │   ├── maps/jth_b1/   # jth_b1 全套资产：有向图、逐泊位机动表、车位、障碍物、底图
-    │   │   ├── parking_maneuvers.pickle 等（现已在库，见 §7）
+    │   │   ├── parking_maneuvers.pickle 等（现已在库，见 §8）
     │   │   └── data/DJI_0012_*.json      # webviz 启动自检所需：scene/agents/obstacles
     │   │                                 # 为真实文件，frames/instances 为 {} 占位
     │   └── ...
@@ -132,7 +288,7 @@ docker logs -f parksim-jth        # 看日志（仿真 + webviz 全部走 stdout
 
 ---
 
-## 5. 常见问题（FAQ）
+## 6. 常见问题（FAQ）
 
 **Q: 打开页面空白 / 连不上？**
 先看日志：`docker logs parksim-jth`。正常启动会依次出现
@@ -152,6 +308,24 @@ docker logs -f parksim-jth        # 看日志（仿真 + webviz 全部走 stdout
 点「Restart」会返回 `status: error`、点「Stop」会返回 `stop_failed`（仿真不受控）。
 运维排查时若发现按钮点了没反应，先确认容器是不是以只读方式起的（本镜像入口默认带
 `--control --manage-sim`，正常部署不会出现只读）。
+
+**Q: 点「停止」/「暂停」没反应，或页面提示失败？**
+本版已把"静默失败"变成可见：指令 12 s 未 ack 会**自动重发一次**，再失败就在页面上明确提示
+（§4.3）。看到失败提示时，先看 `docker logs` 里 bridge 侧是否还活着；桥活着而仍失败，
+多半是仿真进程已处于 finished/starting 中间态，重试一次即可。
+**旧版的原生 `window.confirm` 会冻住页面事件循环导致静默失败**的缺陷本版已修（§4.2）。
+
+**Q: 日志里出现 `Late cross-talk detected: …` 是什么意思？**
+说明本实例的 DDS 域里**出现了别人的 vehicle/simulator 节点**，且是在启动检查点之后才被发现的。
+**这条只是告警，不会杀进程**，仿真仍在跑。处理：确认是否真的需要多实例共存，
+不需要就用 `ROS_LOCALHOST_ONLY=1` 隔离（本镜像已默认固化）；确需联调就设
+`PARKSIM_ALLOW_FOREIGN_VEHICLES=1` 静音。注意它**只打一次**且只有 60 s 观察窗（§8.9），
+别把它当全程哨兵。
+
+**Q: 页面提示"资产缺失"/底图降级是什么情况？**
+webviz 启动时做资产自检，缺文件会在日志里逐条列出并进入**降级模式**：只能显示底图、
+不能发车。本镜像自带完整 jth_b1 资产，正常部署不会出现；出现即说明资产目录被挂载覆盖了。
+`PARKSIM_ASSET_ROOT` 只能影响**桥**的自检路径，不影响仿真（§8.8）。
 
 **Q: 想和宿主上的 ROS 节点互相发现？**
 默认**不**互相发现（镜像固化 `ROS_LOCALHOST_ONLY=1`，隔离是特性不是缺陷，见 §3）。
@@ -186,7 +360,7 @@ ros2 topic list
 
 ---
 
-## 6. 从源码重建镜像（可选）
+## 7. 从源码重建镜像（可选）
 
 构建机需要：Docker、能访问 pypi 镜像源（默认清华）、能 apt（默认 archive.ubuntu.com）。
 
@@ -217,12 +391,24 @@ cd $BUILD && docker build -t parksim-jth:v1 .
 
 ```bash
 mkdir -p /media/step/data/ParkSim-JTH-image
-docker save parksim-jth:v1 | gzip -1 > /media/step/data/ParkSim-JTH-image/parksim-jth-v1.tar.gz
+docker save parksim-jth:v1 | gzip -6 > /media/step/data/ParkSim-JTH-image/parksim-jth-v1.tar.gz
+md5sum parksim-jth-v1.tar.gz        # 与 §0 的校验表对一下
 ```
+
+导出后建议做一次**装载回验**（这是唯一能证明"包没坏、迁移等价"的手段）：
+
+```bash
+docker load -i parksim-jth-v1.tar.gz
+docker image inspect parksim-jth:v1 --format '{{.Id}}'   # 应等于 §0 里的镜像 id
+```
+
+> 若镜像有更新，**必须先重新导出 tar 再发货** —— tar 不会自动跟着镜像变。
+> 实测踩过一次：镜像已在 06:51 重建完毕，但目录里的 tar 仍是 05:33 的旧包（md5 `a5afe318…`），
+> 两者相差两个提交。发货前请核对 §0 的 md5。
 
 ---
 
-## 7. 已知限制
+## 8. 已知限制
 
 1. **只带 jth_b1**：为了体积，7.5 GB DJI 数据集未打包。DJI 地图只能显示底图。
 2. **priorFiles 的 4 个 pickle（已入库）**：`parking_maneuvers.pickle`、`waypoints_graph.pickle`、
@@ -246,5 +432,38 @@ docker save parksim-jth:v1 | gzip -1 > /media/step/data/ParkSim-JTH-image/parksi
    - 7.5 GB 的 DJI 全量数据集不带。
 4. 镜像内 foxy 树、`_ParkSim` 路径与构建机**完全一致**；若要改路径，
    必须同时改 `setup.bash` 里的绝对路径，否则 ament index 会失效。
-5. **bridge 网络不隔离 DDS**：这是本镜像把 `ROS_LOCALHOST_ONLY=1` 固化的原因，见 §3。
+5. **bridge 网络不隔离 DDS**：这是本镜像把 `ROS_LOCALHOST_ONLY=1` 固化的原因，见 §3.3。
    若有人手动改成 `0`（多机联调），务必意识到多个实例之间会互相发现。
+6. **跨隔离边界的 DDS 发现：>12 s 且不收敛，加观察窗没用**。实测 `--network host` +
+   `ROS_LOCALHOST_ONLY=0` 的跨边界发现，等 12 s 仍未收敛，且**继续等也不会好** —— 这不是
+   "起得慢"，是隔离模式下发现本身就不可靠。因此不要试图用"把等待时间调大"来绕开，
+   **正确解法是隔离本身**（`ROS_LOCALHOST_ONLY=1`，本镜像已固化）。
+7. **容器启动比宿主多约 3 s**：同样流程在宿主上是 0 增量，容器里约 +3 s（镜像层解压/文件系统开销）。
+   排障时别把这 3 s 误当成"卡住了"。
+8. **`PARKSIM_ASSET_ROOT` 只影响 webviz 桥，不影响仿真节点**（易踩）：
+   `python/parksim/webviz/server.py` 里 `resolve_asset_root()`（L134-141）是**唯一**读这个变量的
+   地方（全文件 4 处命中：L120/137/140/192）；仿真侧节点对它的引用次数是 **0**。
+   含义：设了它只会让**桥接**去别的目录找资产（用来复现"资产缺失"降级场景很有用），
+   **仿真节点仍然读真实资产**。所以"用 `PARKSIM_ASSET_ROOT` 让整体换一套资产"是错的用法；
+   想让仿真也换，得改仿真侧的资产根（`PARKSIM_DATA_ROOT` 等）或挂载覆盖目录。
+   - **实测证据**：用 `-e PARKSIM_ASSET_ROOT=/tmp/empty_assets2`（空目录）起容器，页面出现黄色横幅
+     `关键资产缺失：… 等共 7 项`，但**点「开启仿真」后仿真照常发车**，
+     车辆正常生成、寻路、入库，实测跑到 13 辆。
+   - ⚠️ 因此横幅措辞**不再断言**"仿真将无法正常发车"（自 `263ca5f` 起改为：
+     `桥侧资产自检未通过；若为 PARKSIM_ASSET_ROOT 覆盖所致，仿真节点仍读真实资产、可正常发车；
+     若资产确实缺失，发车会失败——详见服务端日志`）。
+     判读时仍建议看 `docker logs` 里仿真节点有没有真的报 `FileNotFoundError`：
+     真正的资产缺失（仿真侧也读不到）才会导致发车失败。
+9. **晚期串扰告警的三个边界**（见 §3.2，别把它当全程哨兵）：
+   - **60 s 观察窗**：起点是两个启动检查点都过完的时刻，超过窗口后才出现的串扰**仍旧静默**；
+   - **只打一次**：`_late_cross_talk_warned` 命中即置位，进程生命周期内不再重复。
+     也就是说"报过一次"不代表"之后就干净了" —— 日志里**没有**新 WARN **不等于没有**串扰，
+     且窗口内**第二批**（不同于第一次那批的）外来节点也不会再报；
+   - **自己的车已退出、外来同名节点顶上**这类场景仍无法区分（`enter_procs/exit_procs` 只保留存活
+     进程，两种情形在图 API 上表现相同）。主场景（两实例 id 重叠 → 同名同 ns 出现两条）已能检出。
+10. **仓库里有一份陈旧的前端副本**：`python/parksim/webviz/index.html`（`style.css?v=6`，结构更旧）
+    **不在服务路径上** —— 服务端只吃 `python/parksim/webviz/static/index.html`。改前端请改 `static/`
+    下那份，改错文件不会生效、还会制造分歧。
+11. **前端缓存串是"双保险"**：服务端 `index()` 会按 `app.js` 的 **mtime** 自动重写 `?v=`，且首页带
+    `Cache-Control: no-store`，所以即使忘了升手写的缓存串，改过的 JS 一般也会重新拉取。但手写的
+    `?v=` 在重写失败的回退分支（`web.FileResponse`）里才生效 —— **所以改了前端仍应同时升缓存串**。
