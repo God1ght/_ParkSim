@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>ParkSim · 停车场景仿真可视化</title>
 <link rel="stylesheet" href="/static/style.css?v=10"/>
+<link rel="stylesheet" href="/static/charts.css?v=3"/>
 </head>
 <body data-theme="dark">
 <canvas id="cv"></canvas>
@@ -76,6 +77,7 @@
       <div class="sp-sec-title">链路时效</div>
       <div class="sp-row"><span>前端 FPS</span><b id="mFps">--</b></div>
       <div class="sp-row"><span>WS 延迟</span><b id="mLat">--</b></div>
+      <div id="metricsViz"></div>
     </div>
   </div>
 </aside>
@@ -90,6 +92,7 @@
     <div class="sp-sec">
       <div class="sp-sec-title">当前冲突</div>
       <ul id="evList" class="sp-list"><li class="sp-empty">暂无数据</li></ul>
+      <div id="eventsViz"></div>
     </div>
     <div class="sp-sec">
       <div class="sp-sec-title">生效告警</div>
@@ -196,6 +199,7 @@
 <div id="hint">H 隐藏界面 · B 底图对比 · 单击车辆跟随 · 双击空白取消 · 滚轮缩放</div>
 
 <img id="bg" alt="" style="display:none"/>
+<script src="/static/charts.js?v=4"></script>
 <script src="/static/app.js?v=31-panels"></script>
 </body>
 </html>

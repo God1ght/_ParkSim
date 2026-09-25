@@ -1,0 +1,226 @@
+/* =============================================================================
+ * ParkSim · 指标 + 事件可视化模块（charts.css）
+ * -----------------------------------------------------------------------------
+ * 作用域：#metricsViz / #eventsViz 内部，全部类名以 ch- 前缀，避免与 style.css 冲突。
+ * 配色复用 style.css 的主题变量（--panel-solid / --text / --sub / --border），
+ * 主题切换自动跟随；事件类型色按视觉规范硬编码（暗色下取值最稳）。
+ * 侧栏宽 304px，本模块所有内容在该宽度内排布。
+ * ========================================================================== */
+
+/* 事件类型色（暗色规范值；浅色主题在文末做少量覆盖） */
+#metricsViz, #eventsViz {
+  --ev-enter: #4cc2ff;
+  --ev-parked: #3ddbb4;
+  --ev-exit: #8296ab;
+  --ev-alert: #e8b224;
+  --ev-conflict: #e06060;
+}
+
+.ch-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ch-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+  min-width: 0;
+}
+.ch-sec:first-child { border-top: 0; padding-top: 0; }
+
+.ch-sec-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--sub);
+  letter-spacing: .4px;
+}
+
+/* ---------------------------------------------------------------- 图例 -- */
+.ch-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 10px;
+  color: var(--sub);
+  line-height: 1.4;
+}
+.ch-legend .ch-lg { display: inline-flex; align-items: center; white-space: nowrap; }
+.ch-legend .ch-lg i {
+  width: 10px; height: 10px; border-radius: 2px;
+  display: inline-block; margin-right: 4px; flex: 0 0 auto;
+}
+.ch-dist-legend { margin-top: 2px; }
+
+/* ------------------------------------------------------------- KPI 卡 -- */
+.ch-kpi-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.ch-kpi {
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 7px 9px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ch-kpi-label { font-size: 11px; color: var(--sub); }
+.ch-kpi-value {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  min-width: 0;
+}
+.ch-kpi-num {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.ch-kpi-unit { font-size: 10px; font-weight: 500; color: var(--sub); }
+
+/* sparkline：内联 SVG，非等比拉伸填满卡片宽度 */
+.ch-spark {
+  display: block;
+  width: 100%;
+  height: 22px;
+  overflow: visible;
+}
+
+/* -------------------------------------------------- 图表容器（Canvas） -- */
+/* 每张图一个独立 <canvas>（不复用页面主画布 #cv），外层 relative 供 tooltip 定位 */
+.ch-chart {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+.ch-chart-state { height: 130px; }
+.ch-chart-occ   { height: 96px; }
+.ch-chart-rate  { height: 96px; }
+
+/* CSS 尺寸按逻辑像素（JS 里 canvas.width/height 另按 devicePixelRatio 设） */
+.ch-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+}
+
+/* 悬停 tooltip：HTML 覆盖层（自绘，非 Canvas 内绘制，保证文字清晰可选） */
+/* 底色/文字用主题变量（style.css 已按 data-theme 定义），切主题自动跟随 */
+.ch-tip {
+  position: absolute;
+  z-index: 3;
+  left: 0; top: 0;
+  pointer-events: none;
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 7px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .45);
+}
+.ch-tip.hidden { display: none; }
+.ch-tip-t { color: var(--sub); margin-bottom: 2px; font-variant-numeric: tabular-nums; }
+.ch-tip-r { display: flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }
+.ch-tip-r i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex: 0 0 auto; }
+.ch-tip-sum { margin-top: 2px; padding-top: 2px; border-top: 1px solid var(--border); color: var(--sub); }
+
+/* ---------------------------------------------------------- 事件时间轴 -- */
+.ch-tl {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.ch-tl-row {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  padding: 4px 0 5px 15px;
+  min-width: 0;
+}
+/* 左侧竖线（相邻行首尾相接形成连续时间轴） */
+.ch-tl-row::before {
+  content: '';
+  position: absolute;
+  left: 4px; top: 0; bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.ch-tl-row:first-child::before { top: 9px; }
+.ch-tl-row:last-child::before { bottom: auto; height: 9px; }
+.ch-tl-dot {
+  position: absolute;
+  left: 2px; top: 9px;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--sub);
+}
+.ch-tl-dot.ev-enter    { background: var(--ev-enter); }
+.ch-tl-dot.ev-parked   { background: var(--ev-parked); }
+.ch-tl-dot.ev-exit     { background: var(--ev-exit); }
+.ch-tl-dot.ev-alert    { background: var(--ev-alert); }
+.ch-tl-dot.ev-conflict { background: var(--ev-conflict); }
+
+.ch-tl-main { flex: 1 1 auto; min-width: 0; }
+.ch-tl-meta {
+  font-size: 10px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+.ch-tl-text {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text);
+  word-break: break-word;
+}
+
+/* -------------------------------------------------------- 类型分布条 -- */
+.ch-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .05);
+}
+.ch-bar > i { display: block; height: 100%; }
+.ch-bar > i.ch-bar-empty { flex: 1 1 auto; background: transparent; }
+
+/* -------------------------------------------------------------- 空态 -- */
+.ch-empty {
+  font-size: 11px;
+  color: var(--sub);
+  opacity: .75;
+  padding: 6px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+/* -------------------------------------------------- 浅色主题少量覆盖 -- */
+body[data-theme="light"] .ch-bar { background: rgba(20, 40, 60, .08); }
+body[data-theme="light"] #metricsViz,
+body[data-theme="light"] #eventsViz {
+  --ev-enter: #0a7f6b;
+  --ev-parked: #1f9e6e;
+  --ev-exit: #6d7885;
+  --ev-alert: #b8860b;
+  --ev-conflict: #c94b4b;
+}

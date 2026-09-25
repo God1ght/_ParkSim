@@ -1131,7 +1131,11 @@ class SimulatorNode(MPClabNode):
                 os.killpg(vehicle.pid, signal.SIGKILL)
             except ProcessLookupError:
                 continue
-            vehicle.wait(timeout=2)
+            try:
+                vehicle.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                # 不吞掉后面车辆的处理：SIGKILL 已在途，这里只负责不因超时中断整轮清理
+                continue
 
         print("Vehicle nodes are down")
 
@@ -1390,6 +1394,18 @@ def main(args=None):
         print('Unknown exception', flush=True)
         traceback.print_exc()
     finally:
+        # 停止期间 SIGINT 会到两次：webviz 对 simulator 所在进程组 killpg 一次，
+        # ros2 launch 收到后又向子进程转发一次。第二次 SIGINT 若落在
+        # shutdown_vehicles() 中途会再抛 KeyboardInterrupt，把清理打断在半途
+        # （实测打断在 send_signal 循环 / wait 处），而车辆是 start_new_session
+        # 独立进程组、不随本进程组退出，被打断后即成为 ppid==1 的孤儿 —— 表现为
+        # 「停止看起来正常，但下一次启动被外来节点守卫判为 foreign vehicle 拒绝启动」。
+        # 故清理期间屏蔽 SIGINT，保证 shutdown_vehicles() 一次跑完；若清理真的卡死，
+        # webviz 侧的 SIGTERM/SIGKILL 升级路径仍可兜底强制终止。
+        try:
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+        except Exception:
+            pass
         print('[DIAG] finally: shutdown_vehicles ...', flush=True)
         simulator.shutdown_vehicles()
         print('[DIAG] finally: destroy_node ...', flush=True)

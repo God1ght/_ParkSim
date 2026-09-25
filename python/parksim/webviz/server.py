@@ -1992,6 +1992,16 @@ class SimManager(object):
                 for pattern in self.SWEEP_PATTERNS:
                     subprocess.call(['pkill', '-f', pattern], stderr=subprocess.DEVNULL)
                 time.sleep(2)
+            else:
+                # 优雅停止（launch 自己退出）不等于后代全部退出：车辆由 simulator 以
+                # start_new_session 启动、自成进程组，既不在本进程组内、也不受 killpg
+                # 覆盖，其清理由 simulator 的 shutdown_vehicles() 负责。该清理一旦被打断
+                # （实测会被「第二次 SIGINT」打断），车辆 launch 会 reparent 到 pid 1 成为
+                # 孤儿：停止动作本身不报错，直到下一次启动才以「外来 vehicle 节点」暴露，
+                # 只能 docker restart 恢复。这里做一次兜底自检，把孤儿当场清掉。
+                # 稍等片刻是为了让 hang 死的进程完成 reparent（ppid 由 simulator 变为 1）。
+                time.sleep(1.0)
+                self._clean_orphans()
         elif proc is not None and proc.poll() is not None:
             # 仿真异常退出（崩溃/被杀）：只清理真正的孤儿进程（ppid==1），
             # 不影响其他实例的在树进程。
@@ -1999,27 +2009,37 @@ class SimManager(object):
         # proc 为 None（从未启动）→ 不做任何清扫
 
     def _clean_orphans(self):
-        """清理脱离父进程的仿真/车辆孤儿进程（ppid == 1），避免污染下一轮。"""
-        try:
-            out = subprocess.check_output(['ps', '-eo', 'pid=,ppid=,args='], text=True)
-        except Exception:
-            return
-        killed = 0
-        for line in out.splitlines():
-            parts = line.strip().split(None, 2)
-            if len(parts) < 3:
-                continue
-            pid, ppid, args = parts
-            if ppid != '1':
-                continue
-            if any(re.search(pat, args) for pat in self.SWEEP_PATTERNS):
-                try:
-                    os.kill(int(pid), signal.SIGKILL)
-                    killed += 1
-                except Exception:
-                    pass
-        if killed:
-            print('[webviz] cleaned %d orphan parksim process(es)' % killed)
+        """清理脱离父进程的仿真/车辆孤儿进程（ppid == 1），避免污染下一轮。
+
+        需要多轮扫描：车辆是两层进程（`ros2 launch vehicle.launch.py` → `vehicle_node.py`）。
+        SIGKILL 掉车辆 launch 之后，其子 vehicle_node 才会 reparent 到 pid 1，
+        因此单轮扫描只能清掉第一层，剩余的第二层要下一轮才可见。
+        """
+        for pass_idx in range(3):
+            try:
+                out = subprocess.check_output(['ps', '-eo', 'pid=,ppid=,args='], text=True)
+            except Exception:
+                return
+            killed = 0
+            for line in out.splitlines():
+                parts = line.strip().split(None, 2)
+                if len(parts) < 3:
+                    continue
+                pid, ppid, args = parts
+                if ppid != '1':
+                    continue
+                if any(re.search(pat, args) for pat in self.SWEEP_PATTERNS):
+                    try:
+                        os.kill(int(pid), signal.SIGKILL)
+                        killed += 1
+                    except Exception:
+                        pass
+            if killed:
+                print('[webviz] cleaned %d orphan parksim process(es) (pass %d)'
+                      % (killed, pass_idx + 1))
+            if not killed:
+                break
+            time.sleep(0.8)
 
 
 def parse_launch_args(text):

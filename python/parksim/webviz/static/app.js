@@ -239,6 +239,9 @@ function setTheme(t, persist = true) {
   S.theme = t;
   document.body.dataset.theme = t;
   if (persist) { try { localStorage.setItem('parksim_theme', t); } catch (e) {} }
+  if (window.ParkSimCharts && typeof window.ParkSimCharts.refreshTheme === 'function') {
+    try { window.ParkSimCharts.refreshTheme(); } catch (e) { console.warn('ParkSimCharts.refreshTheme failed:', e); }
+  }
 }
 function cycleTheme() { setTheme(S.theme === 'dark' ? 'light' : 'dark'); }
 
@@ -576,9 +579,15 @@ function connect() {
       S.paused = !m.running;
       updatePauseLabel();
       updateTrails();
+      if (window.ParkSimCharts && typeof window.ParkSimCharts.onFrame === 'function') {
+        try { window.ParkSimCharts.onFrame(m); } catch (e) { console.warn('ParkSimCharts.onFrame failed:', e); }
+      }
     } else if (m.type === 'occupancy') {
       S.occupancy = m.data || null;
       S.occPath = buildOccPath();
+      if (window.ParkSimCharts && typeof window.ParkSimCharts.onOccupancy === 'function') {
+        try { window.ParkSimCharts.onOccupancy(m.data); } catch (e) { console.warn('ParkSimCharts.onOccupancy failed:', e); }
+      }
     } else if (m.type === 'departing') {
       S.departing = m.data || null;
       S.occPath = buildOccPath();
@@ -591,6 +600,9 @@ function connect() {
       onSchemeStatus(m);
     } else if (m.type === 'alert') {
       onSimAlert(m);
+      if (window.ParkSimCharts && typeof window.ParkSimCharts.onAlert === 'function') {
+        try { window.ParkSimCharts.onAlert(m); } catch (e) { console.warn('ParkSimCharts.onAlert failed:', e); }
+      }
     } else if (m.type === 'stopped') {
       onSimStopped(m);
     } else if (m.type === 'stop_failed') {
@@ -1303,6 +1315,9 @@ function onSchemeStatus(m) {
       S.obstacleMode = (m.config.init_mode === 'random') ? 'occupancy' : 'dataset';
     }
     setSimState('running');
+    if (window.ParkSimCharts && typeof window.ParkSimCharts.reset === 'function') {
+      try { window.ParkSimCharts.reset(); } catch (e) { console.warn('ParkSimCharts.reset failed:', e); }
+    }
     refreshSchemeCurrent();
     btnApplyScheme.disabled = false;
     btnApplyScheme.textContent = '应用并重启仿真';
@@ -2535,6 +2550,11 @@ function setSidePanel(panel, btn, open) {
   panel.classList.toggle('hidden', !open);
   if (btn && btn.classList) btn.classList.toggle('active', open);
   if (open) updatePanels(true);   // 打开即刻出数，不等下个节流窗口
+  window.requestAnimationFrame(() => {
+    if (window.ParkSimCharts && typeof window.ParkSimCharts.resize === 'function') {
+      try { window.ParkSimCharts.resize(); } catch (e) { console.warn('ParkSimCharts.resize failed:', e); }
+    }
+  });
 }
 
 function toggleSidePanel(panel, btn) {
@@ -2657,6 +2677,9 @@ setTimeout(() => hintEl.classList.add('fade'), 7000);
 initTheme();
 initLayers();
 resize();
+if (window.ParkSimCharts && typeof window.ParkSimCharts.init === 'function') {
+  try { window.ParkSimCharts.init(); } catch (e) { console.warn('ParkSimCharts.init failed:', e); }
+}
 connect();
 draw();
 })();
