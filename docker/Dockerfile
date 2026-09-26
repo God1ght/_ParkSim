@@ -27,18 +27,17 @@ FROM ubuntu:20.04
 # 手工 `docker build` 时保持 unknown（不会因此构建失败）。写入 /opt/parksim/BUILDINFO，
 # 供 `install.sh --version` 与现场排障回答「这个镜像到底是哪个 commit」。
 #
-# ⚠ 缓存注意：ARG 的值会进入**其后所有指令**的缓存键。
-#   - PARKSIM_GIT_HEAD / PARKSIM_GIT_BRANCH：同一 commit 内稳定，且下面 LABEL 要用 → 放这里无害；
-#   - PARKSIM_BUILD_TIME：每次构建都是新时间戳。**绝不能声明在这个位置**，否则其后每一层
-#     缓存全部失效，每次构建都退化成全量重建（实测 COPY payload/foxy 单步就要 582s ≈ 9.7 分钟，
-#     整轮约 20 分钟）。它只在写入 BUILDINFO 时用到，故一并声明在文件末尾那条 RUN 之前。
-ARG PARKSIM_GIT_HEAD=unknown
-ARG PARKSIM_GIT_BRANCH=unknown
-
-LABEL org.opencontainers.image.title="parksim-jth" \
-      org.opencontainers.image.description="Self-contained ParkSim JTH simulator + webviz (bundled ROS 2 Foxy, no conda, no /opt/ros)" \
-      org.opencontainers.image.version="v1" \
-      org.opencontainers.image.revision="${PARKSIM_GIT_HEAD}"
+# ⚠ 缓存红线（此处已踩过两次，不要再踩第三次）：
+#   ARG 的值会进入**其后所有指令**的缓存键，因此只有「在两次构建之间保持不变」的值
+#   才允许声明在重量级层之前。两次踩坑都出在这一点上：
+#     · PARKSIM_BUILD_TIME —— 每次构建都是新时间戳 ⇒ 每轮全量重建（首轮 22m32s）；
+#     · PARKSIM_GIT_HEAD / PARKSIM_GIT_BRANCH —— **值随 commit 变化**，放在这里等于
+#       「换一个 commit 就全量重建」。它俩原先只是因为下面的 LABEL 要用才被放在这，
+#       造成「同一 commit 重建能命中缓存（40.84s），换 commit 立刻退回全量」的假修复：
+#       实测换 commit 后 apt 层从 #6 开始整层重跑，整轮 ≈20 分钟——而交付新版本恰恰
+#       总是换 commit，即**常态就是全量**。
+#   ⇒ 三个 ARG 与 LABEL **全部下移到文件末尾**（BUILDINFO 之前，所有重量级层之后）。
+#   ⚠ 后续若再加 LABEL：只要它引用了这类「每版都变」的 ARG，就必须同样放在末尾。
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -170,8 +169,17 @@ RUN set -e; \
     grep -q 'eventsViz' "$S/index.html" || { echo "index.html 缺 #eventsViz 容器"; exit 1; }; \
     echo "[assets] OK: webviz frontend complete (incl. charts module)"
 
-# PARKSIM_BUILD_TIME 只被下面这条 BUILDINFO 写入用到，因此**故意延到这里**（所有重量级层
-# 之后）才声明：它每次都不同，提前声明会让 COPY payload/foxy(9.7min) / pip / colcon 全部失去缓存。
+# 以下声明**故意**放在所有重量级层之后：这三个值里 commit 与时间戳每版都会变，
+# 提前声明会让 apt / pip / COPY payload/foxy(9.7min) / colcon 全部失去缓存。
+# 见文件顶部「缓存红线」说明。
+ARG PARKSIM_GIT_HEAD=unknown
+ARG PARKSIM_GIT_BRANCH=unknown
+
+LABEL org.opencontainers.image.title="parksim-jth" \
+      org.opencontainers.image.description="Self-contained ParkSim JTH simulator + webviz (bundled ROS 2 Foxy, no conda, no /opt/ros)" \
+      org.opencontainers.image.version="v1" \
+      org.opencontainers.image.revision="${PARKSIM_GIT_HEAD}"
+
 ARG PARKSIM_BUILD_TIME=unknown
 
 RUN set -e; \
