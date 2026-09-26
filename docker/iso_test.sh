@@ -8,7 +8,7 @@
 # 之后：对两个容器各发一次 restart（入2出2）冒烟；再比对 node list 验证互不可见。
 # =============================================================================
 set -uo pipefail
-IMG=parksim-jth:v1
+IMG="${PARKSIM_IMAGE:-parksim-jth:v2}"
 FOXY=/media/step/data/Yccc7/ParkSim-JTH/deps/ros/foxy
 WS=/media/step/data/Yccc7/ParkSim-JTH/_ParkSim/workspace/install
 

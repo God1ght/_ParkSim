@@ -181,11 +181,13 @@ LABEL org.opencontainers.image.title="parksim-jth" \
       org.opencontainers.image.revision="${PARKSIM_GIT_HEAD}"
 
 ARG PARKSIM_BUILD_TIME=unknown
+# 实际交付 tag 由 build_image.sh 的 --tag 传入（不写死，避免 BUILDINFO 声称与实际标签不符的名字）
+ARG PARKSIM_IMAGE_TAG=parksim-jth:v1
 
 RUN set -e; \
     mkdir -p /opt/parksim; \
-    printf 'image        : parksim-jth:v1\nsource       : _ParkSim (git archive HEAD)\ngit_branch   : %s\ngit_head     : %s\nbuilt_at     : %s\ncanonical_root: /media/step/data/Yccc7/ParkSim-JTH\n' \
-        "${PARKSIM_GIT_BRANCH}" "${PARKSIM_GIT_HEAD}" "${PARKSIM_BUILD_TIME}" \
+    printf 'image        : %s\nsource       : _ParkSim (git archive HEAD)\ngit_branch   : %s\ngit_head     : %s\nbuilt_at     : %s\ncanonical_root: /media/step/data/Yccc7/ParkSim-JTH\nstages       : single-stage (legacy path)\n' \
+        "${PARKSIM_IMAGE_TAG}" "${PARKSIM_GIT_BRANCH}" "${PARKSIM_GIT_HEAD}" "${PARKSIM_BUILD_TIME}" \
         > /opt/parksim/BUILDINFO; \
     cat /opt/parksim/BUILDINFO
 

@@ -24,6 +24,22 @@ PyYAML==6.0.2
 Pillow==10.4.0
 aiohttp==3.10.11
 
+# ---- 运行时（ros2 launch 入口需要） ----
+# ⚠ 归位更正（2026-09-26）：lark-parser 原先被归到「仅构建期」，理由是
+#   rosidl_parser 需要它。但 **ros2 launch 在运行期同样需要**：
+#   `ros2 launch` 的 CLI 入口点（ros2cli 的 launch verb）会 import launch 前端解析器，
+#   而 launch 前端用 lark 解析 launch 文件。缺它时运行期表现为
+#       Failed to load entry point 'launch': No module named 'lark'
+#   而 server.py 的托管仿真正是用 `ros2 launch parksim parksim.launch.py` 起仿真的，
+#   所以缺了它 → 网页点「开启仿真」直接报
+#       RuntimeError: simulator exited early (code 1)
+#   实测证据（v2-thin 多阶段镜像）：不装 lark → `ros2 launch --help` 退出码 1；
+#   只补 lark-parser==0.12.0 → 退出码 0，且自动发车成功
+#   （/simulator + /vehicle_*/vehicle 节点起来，日志出现 "A vehicle with id = N ..."）。
+#   反过来说，同一个实验也证明了 empy / catkin-pkg / colcon-common-extensions
+#   确实只在构建期需要（补齐 lark 后其余全部正常工作，无任何 No module 报错）。
+lark-parser==0.12.0
+
 # ---- 运维排查用（ros2cli 的依赖，应用本身不需要） ----
 # foxy 的 ros2cli/daemon 与 ros2cli/xmlrpc/local_server 都 `import netifaces`，
 # 缺它时 `ros2 node list` / `ros2 topic list` 会以
@@ -32,9 +48,8 @@ aiohttp==3.10.11
 # 因此这里补上属于“镜像比宿主更好排查”，不影响应用链路行为。
 netifaces==0.11.0
 
-# ---- 仅构建期（colcon + rosidl_parser） ----
-# rosidl_parser(foxy) 依赖 lark 与 catkin_pkg；rosidl_cmake 模板依赖 empy
+# ---- 仅构建期（colcon + rosidl_parser 的其余部分） ----
+# rosidl_cmake 模板依赖 empy；rosidl_parser 依赖 catkin_pkg；colcon 用于构建
 empy==3.3.4
-lark-parser==0.12.0
 catkin-pkg==1.0.0
 colcon-common-extensions==0.3.0

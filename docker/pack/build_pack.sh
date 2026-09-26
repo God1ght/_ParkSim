@@ -231,6 +231,14 @@ EOF
 # 8) 打包
 # -----------------------------------------------------------------------------
 log "packing ${TARBALL} ..."
+# 同名旧包先留快照：同一天重出包会用同一个日期戳，直接 rm 会把上一版（可能是另一
+# 个 commit）无声抹掉；快照让「新包不可用」时还有路可退。与 build_image.sh 的
+# *.tar.gz.snapshot-<时间戳> 命名保持一致。
+if [ -f "${TARBALL}" ]; then
+  SNAP="${TARBALL}.snapshot-$(date +%Y%m%d_%H%M%S)"
+  cp -p "${TARBALL}" "${SNAP}"
+  log "旧包留快照 -> ${SNAP}"
+fi
 rm -f "${TARBALL}"
 if command -v pigz >/dev/null 2>&1; then
   tar -cf - -C "${BUILD}" "${PKG}" | pigz -9 -p "$(nproc)" > "${TARBALL}"

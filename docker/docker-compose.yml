@@ -4,7 +4,7 @@
 #   docker compose logs -f
 #   docker compose down
 #
-# 前提：先 `docker load -i parksim-jth-v1.tar.gz` 把镜像载入本地（镜像不在任何 registry，
+# 前提：先 `docker load -i parksim-jth-v2.tar.gz` 把镜像载入本地（镜像不在任何 registry，
 #       compose **不会**自动拉取，必须先 load）。
 #
 # 自动发车（PARKSIM_AUTOSTART）：默认 "0" —— webviz 就绪后停在「已停止」态，由用户在
@@ -16,7 +16,7 @@
 #       启动即退出(1)。仅在多机联调时才把它改成 "0"，并自行承担发现串扰。
 services:
   parksim-jth:
-    image: parksim-jth:v1
+    image: parksim-jth:v2
     container_name: parksim-jth
     restart: unless-stopped
 

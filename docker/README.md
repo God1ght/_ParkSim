@@ -1,4 +1,4 @@
-# ParkSim-JTH 一体化镜像（parksim-jth:v1）
+# ParkSim-JTH 一体化镜像（parksim-jth:v2）
 
 自带 **ROS 2 Foxy + 仿真器 + webviz 前端 + jth_b1 地图资产**的单文件 Docker 镜像。
 目标机**不需要** ROS、不需要 conda、不需要任何源码——只要装了 Docker，一条命令就能起服，
@@ -10,15 +10,15 @@
 
 | 项 | 值 |
 |---|---|
-| 源码分支 / HEAD | `JTH/vision-html` / **`a3e8fd6`** |
-| 本轮 4 笔 | `9f460fa` / `ed5e076` / `d65e1ed` / `a3e8fd6`（父提交 `724fd75`） |
-| `webviz/server.py` | md5 `bbaec45ac74e1f928d65a58d1cbf99de` |
-| `webviz/static/app.js` | md5 `9c81cf6b9abba6c5a48e29d7337c055d` |
-| `webviz/static/index.html` | md5 `ecde37c0cd1e45fabca437f980f78678`（内含 `app.js?v=31-panels`、`style.css?v=10`、`charts.js?v=4`、`charts.css?v=3`） |
+| 源码分支 / HEAD | `JTH/vision-html` / **`ef4f62d`** |
+| 相对上一交付点（`f7223a7`）的 3 笔 | `6df928d`（修复入口放行门三处缺陷）/ `cf16dee`（持续生成 + 占用率门控 + 可选上限 + `spawn_stuck` 误报修复）/ `ef4f62d`（不限并发时 `self.vehicles` 句柄无界增长） |
+| `webviz/server.py` | md5 `bf13bddb4edfa72e7df7c160698a3646` |
+| `webviz/static/app.js` | md5 `a22dfa78ff0da2186dc6c8942fc81f51` |
+| `webviz/static/index.html` | md5 `0a81750fd2abb61a98ab144bfb543f4c`（内含 `app.js?v=31-panels`、`style.css?v=10`、`charts.js?v=4`、`charts.css?v=3`） |
 | `webviz/static/style.css` | md5 `c9f9b6c2956deb88d6100c0859474d06` |
 | `webviz/static/charts.js` | md5 `5c2b3c2e7e051d3746647db01a5b36e8` |
 | `webviz/static/charts.css` | md5 `6c4ba2293641c6e813b374d59cd777a0` |
-| `workspace/src/parksim/src/simulator_node.py` | md5 `c27c4524bda53cf36af0c2a974c46e48` |
+| `workspace/src/parksim/src/simulator_node.py` | md5 `02ec820c5bc4151517c6225de2b67344` |
 
 - 上表源码文件的 md5 **在仓库与镜像内逐字节一致**（镜像里是构建时 COPY 进去的实体文件，不是符号链接）。
 
@@ -26,20 +26,24 @@
 
 | 项 | 权威来源 |
 |---|---|
-| 镜像 tag | `parksim-jth:v1` |
-| 镜像 id / 构建时间 / 源码 commit | `docker image inspect -f '{{.Id}}' parksim-jth:v1`；`./install.sh --version`（读镜像内 `/opt/parksim/BUILDINFO`） |
-| tar 体积 / 校验值 | `ls -l parksim-jth-v1.tar.gz`；`sha256sum -c parksim-jth-v1.tar.gz.sha256` |
+| 镜像 tag | `parksim-jth:v2` |
+| 镜像 id / 构建时间 / 源码 commit | `docker image inspect -f '{{.Id}}' parksim-jth:v2`；`./install.sh --version`（读镜像内 `/opt/parksim/BUILDINFO`） |
+| tar 体积 / 校验值 | `ls -l parksim-jth-v2.tar.gz`；`sha256sum -c parksim-jth-v2.tar.gz.sha256` |
 
 > **为什么这里不再写死镜像 id / 构建时间 / tar 字节数与 md5**：本文件自身会被 `COPY` 进它正在
 > 描述的那个镜像，写死构建产物数值必然在下一次构建后变成错值——本表曾因此长期停留在
 > `724fd75` / 镜像 `b4587e3e` / tar `376,727,675 B` / md5 `ce2f1cab`，**照它核对会把正确的
 > 新包判成错包**。构建产物一律以 `.sha256` 与 `BUILDINFO` 为准。
-- tar 已做**装载回验**：`docker load -i parksim-jth-v1.tar.gz` 后 `docker image inspect` 得到的
+- tar 已做**装载回验**：`docker load -i parksim-jth-v2.tar.gz` 后 `docker image inspect` 得到的
   id 与该次构建的源镜像 id **完全一致**，即"打包—迁移—装载"链路无失真
   （该流程由 `docker/install.sh` 与冒烟脚本共同覆盖）。
-- 本轮相对上一版的实质改动：**交付链加固**（交付内容自检 / 可复现构建 / 版本溯源）、
-  **修掉两个交付链真缺陷**（备份源码泄漏进镜像、`ARG PARKSIM_BUILD_TIME` 摧毁构建缓存）、
-  **交付目录自动同步**、**移除全部陈旧版本信息**。
+- 本轮相对上一版的实质改动：**换基线 + 换构建方式 + 修交付链**。
+  ① 交付基线从 `f7223a7` 升到 `ef4f62d`（补上持续生成 / 占用率门控 / 可选上限 / 句柄泄漏修复）；
+  ② 镜像改为**多阶段瘦身构建**（构建工具链不进最终镜像）：**1,203,652,520 B → 930,247,825 B（−22.7%）**，
+  并新增 8 条**构建期**运行期断言（`C1a/C1b/C1c/C2a/C2b/C3/C4a/C4b`，见 `docker/assert_runtime_deps.sh`）；
+  ③ `build_image.sh` 新增 `--dockerfile` 并默认走多阶段（此前它**无法**选择 Dockerfile，多阶段只能手动 `docker build`）；
+  ④ `install.sh` 改为**按交付目录里的 tar 文件名自动推导镜像标签**，以后换版本号不必改脚本；
+  ⑤ 修正本表——它此前停在 `a3e8fd6`（一个早已作废的历史版本），照它核对会把正确的新包判成错包。
 
 ---
 
@@ -49,7 +53,7 @@
 |---|---|
 | Docker | >= 19.03（需要 `docker load` / `docker run`） |
 | 架构 | linux/amd64（镜像基于 ubuntu:20.04，内含 x86_64 二进制） |
-| 磁盘 | 镜像展开后约 **1.20 GB**，加 tar 包共需 ≥ 2 GB |
+| 磁盘 | 镜像展开后约 **0.93 GB**，加 tar 包（约 0.4 GB）共需 **≥ 1.8 GB** |
 | 内存 | 建议 **≥ 8 GB**（实测 23 车时容器峰值内存 **3.95 GiB**；旧文写「30+ 车峰值 ~1 GB」是不实数据） |
 | CPU | 建议 **≥ 8 核**（实测 23 车时峰值约 **13.5 / 16 核**，load average 42.54） |
 | 网络 | 运行阶段**不需要外网**；仅安装阶段需要能 `docker load` 本地文件 |
@@ -60,7 +64,7 @@
 ## 2. 一条命令起服
 
 ```bash
-# 解压后的目录里（含 parksim-jth-v1.tar.gz、install.sh、docker-compose.yml、README.md）
+# 解压后的目录里（含 parksim-jth-v2.tar.gz、install.sh、docker-compose.yml、README.md）
 chmod +x install.sh
 ./install.sh
 ```
@@ -80,18 +84,18 @@ http://<目标机IP>:8098/
 手动等价命令（不想用脚本时）：
 
 ```bash
-docker load -i parksim-jth-v1.tar.gz
+docker load -i parksim-jth-v2.tar.gz
 docker run -d --name parksim-jth --restart unless-stopped \
     -p 8098:8099 -e PORT=8099 -e PARKSIM_MAP=jth_b1 \
     -e PARKSIM_AUTOSTART=0 \
     -e ROS_LOCALHOST_ONLY=1 \
-    parksim-jth:v1
+    parksim-jth:v2
 ```
 
 或用 compose：
 
 ```bash
-docker load -i parksim-jth-v1.tar.gz
+docker load -i parksim-jth-v2.tar.gz
 docker compose up -d          # 读同目录 docker-compose.yml
 ```
 
@@ -396,7 +400,7 @@ printf '{}' > $BUILD/payload/dji_subset/DJI_0012_frames.json      # 占位（内
 printf '{}' > $BUILD/payload/dji_subset/DJI_0012_instances.json   # 占位（内容不被使用）
 
 # 2) 构建（首次约 7 分钟；改 payload 后借助缓存增量构建 ~15 秒）
-cd $BUILD && docker build -t parksim-jth:v1 .
+cd $BUILD && docker build -t parksim-jth:v2 .
 ```
 
 构建期会**自动断言**关键资产存在且 DJI json 可解析（缺文件/坏 json 直接 build 失败，
@@ -406,15 +410,15 @@ cd $BUILD && docker build -t parksim-jth:v1 .
 
 ```bash
 mkdir -p /media/step/data/ParkSim-JTH-image
-docker save parksim-jth:v1 | gzip -6 > /media/step/data/ParkSim-JTH-image/parksim-jth-v1.tar.gz
-md5sum parksim-jth-v1.tar.gz        # 与 §0 的校验表对一下
+docker save parksim-jth:v2 | gzip -6 > /media/step/data/ParkSim-JTH-image/parksim-jth-v2.tar.gz
+md5sum parksim-jth-v2.tar.gz        # 与 §0 的校验表对一下
 ```
 
 导出后建议做一次**装载回验**（这是唯一能证明"包没坏、迁移等价"的手段）：
 
 ```bash
-docker load -i parksim-jth-v1.tar.gz
-docker image inspect parksim-jth:v1 --format '{{.Id}}'   # 应等于 §0 里的镜像 id
+docker load -i parksim-jth-v2.tar.gz
+docker image inspect parksim-jth:v2 --format '{{.Id}}'   # 应等于 §0 里的镜像 id
 ```
 
 > 若镜像有更新，**必须先重新导出 tar 再发货** —— tar 不会自动跟着镜像变。

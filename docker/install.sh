@@ -6,8 +6,17 @@
 #     ./install.sh                      # 载入镜像并后台启动（宿主端口 8098，默认停在「已停止」态）
 #     ./install.sh --port 9000          # 指定宿主端口
 #     ./install.sh --map jth_b1         # 指定地图
+#     ./install.sh --image parksim-jth:v3  # 指定镜像标签（默认自动推导，见下）
+#     ./install.sh --tar /path/x.tar.gz # 指定镜像包路径
 #     ./install.sh --autostart          # 开机即自动发车（等价 -e PARKSIM_AUTOSTART=1）
 #     ./install.sh --fg                 # 前台运行（Ctrl+C 退出，日志直出）
+#
+#   镜像名与包的解析顺序（**换交付版本号时本脚本不需要改**）：
+#     tar ：--tar 指定 > 与本脚本同目录、与镜像名同名的 <tag>.tar.gz > 同目录里
+#           唯一/最新的 parksim-jth-v*.tar.gz（自动跳过 .snapshot-* 备份）
+#     标签：--image / 环境变量 PARKSIM_IMAGE > 按 tar 文件名推导（parksim-jth-v2.tar.gz
+#           ⇒ parksim-jth:v2）> 内置默认值
+#   因此交付目录整体拷到目标机后，直接 ./install.sh 即可，无需手工对齐版本号。
 #
 #   运维：
 #     ./install.sh --status             # 容器状态 + 侦听端口 + 镜像里的构建版本（哪个 commit）
@@ -33,8 +42,11 @@
 # =============================================================================
 set -eo pipefail
 
-IMAGE_NAME="parksim-jth:v1"
-IMAGE_TAR="$(cd "$(dirname "$0")" && pwd)/parksim-jth-v1.tar.gz"
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+DEFAULT_IMAGE_NAME="parksim-jth:v2"
+# 留空 = 待推导（见下方 tag_from_tar_name / resolve_image_names）
+IMAGE_NAME="${PARKSIM_IMAGE:-}"
+IMAGE_TAR=""
 CONTAINER_NAME="parksim-jth"
 HOST_PORT="8098"
 CONTAINER_PORT="8099"
@@ -64,6 +76,7 @@ while [ $# -gt 0 ]; do
         --port)      HOST_PORT="$2"; shift 2 ;;
         --map)       PARK_MAP="$2"; shift 2 ;;
         --tar)       IMAGE_TAR="$2"; shift 2 ;;
+        --image)     IMAGE_NAME="$2"; shift 2 ;;
         --autostart) PARK_AUTOSTART="1"; shift ;;
         --fg)        FOREGROUND="yes"; shift ;;
         --status)    ACTION="status"; shift ;;
@@ -86,6 +99,53 @@ while [ $# -gt 0 ]; do
 done
 
 command -v docker >/dev/null 2>&1 || { echo "[install] 未找到 docker，请先安装 Docker"; exit 1; }
+
+# ---- 镜像名 / tar 解析（交付目录里换版本号也不用改本脚本）---------------------
+# parksim-jth-v2.tar.gz      -> parksim-jth:v2
+# parksim-jth-v2-thin.tar.gz -> parksim-jth:v2-thin
+tag_from_tar_name() {
+    printf '%s' "$1" | sed -E 's/\.tar\.gz$//; s/^parksim-jth-/parksim-jth:/'
+}
+
+resolve_image_names() {
+    local cand f list
+    # 1) 指定了 tar 但没指定标签 -> 从 tar 文件名推导
+    if [ -n "${IMAGE_TAR}" ] && [ -z "${IMAGE_NAME}" ]; then
+        IMAGE_NAME="$(tag_from_tar_name "$(basename "${IMAGE_TAR}")")"
+    fi
+    # 2) 没指定 tar -> 先按标签找同名包，再退到目录里最新的 parksim-jth-v*.tar.gz
+    if [ -z "${IMAGE_TAR}" ] && [ -n "${IMAGE_NAME}" ]; then
+        cand="${SELF_DIR}/$(printf '%s' "${IMAGE_NAME}" | tr ':' '-').tar.gz"
+        [ -f "${cand}" ] && IMAGE_TAR="${cand}"
+    fi
+    if [ -z "${IMAGE_TAR}" ]; then
+        list=""
+        for f in "${SELF_DIR}"/parksim-jth-v*.tar.gz; do
+            [ -f "${f}" ] || continue
+            case "$(basename "${f}")" in *.snapshot-*) continue ;; esac
+            list="${list}${f}
+"
+        done
+        if [ -n "${list}" ]; then
+            # 多份时取版本号最大的（sort -V，避免 v10 被排到 v2 前面）
+            IMAGE_TAR="$(printf '%s' "${list}" | grep . | sort -V | tail -1)"
+        fi
+    fi
+    # 3) 还没标签 -> 从 tar 推，最后才用内置默认值
+    if [ -z "${IMAGE_NAME}" ]; then
+        if [ -n "${IMAGE_TAR}" ]; then
+            IMAGE_NAME="$(tag_from_tar_name "$(basename "${IMAGE_TAR}")")"
+        else
+            IMAGE_NAME="${DEFAULT_IMAGE_NAME}"
+        fi
+    fi
+    if [ -n "${IMAGE_TAR}" ]; then
+        echo "[install] 交付包：$(basename "${IMAGE_TAR}")　镜像标签：${IMAGE_NAME}"
+    else
+        echo "[install] 交付目录 ${SELF_DIR} 内没有 parksim-jth-v*.tar.gz；将直接使用 ${IMAGE_NAME}"
+    fi
+}
+resolve_image_names
 
 # ---- 辅助 -------------------------------------------------------------------
 image_exists() { docker image inspect "${IMAGE_NAME}" >/dev/null 2>&1; }
@@ -217,12 +277,28 @@ esac
 
 # ---- 1) 载入镜像（tar 存在且镜像尚未载入时）--------------------------------
 if ! image_exists; then
-    if [ -f "${IMAGE_TAR}" ]; then
+    if [ -n "${IMAGE_TAR}" ] && [ -f "${IMAGE_TAR}" ]; then
         verify_tarball
-        echo "[install] 载入镜像：${IMAGE_TAR}（解压后约 1.3 GB，可能需要 1-3 分钟）"
+        # 打包体积按 tar 的**实际字节数**算，不写死（写死的数字会随交付版本过期）
+        _tb="$(stat -c%s "${IMAGE_TAR}" 2>/dev/null || true)"
+        case "${_tb}" in
+            ''|*[!0-9]*) _tsz="" ;;
+            *)           _tsz="，压缩包约 $(( _tb / 1000000 )) MB" ;;
+        esac
+        echo "[install] 载入镜像：$(basename "${IMAGE_TAR}")${_tsz}（需 1-3 分钟）"
         gzip -dc "${IMAGE_TAR}" | docker load
+        # 载入后核对标签：tar 里带的标签若与推导值不符（例如包名被改过），
+        # 这里直接把本机现有标签列出来，而不是让后面的 docker run 报一个难懂的错。
+        if ! image_exists; then
+            echo "[install][FATAL] 已载入，但仍找不到镜像 ${IMAGE_NAME}。"
+            echo "[install] 本机已有的 parksim-jth 标签："
+            docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep '^parksim-jth' | sed 's/^/           /' || true
+            echo "[install] 若标签与预期不符，用 ./install.sh --image <上面的标签> 重试。"
+            exit 1
+        fi
     else
-        echo "[install] 镜像 ${IMAGE_NAME} 不存在，且未找到 ${IMAGE_TAR}"
+        echo "[install] 镜像 ${IMAGE_NAME} 不存在，且未找到镜像 tar。"
+        echo "[install] 请把 parksim-jth-v*.tar.gz 与本脚本放在同一目录，或用 --tar 指定路径。"
         exit 1
     fi
 else

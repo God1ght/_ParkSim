@@ -17,6 +17,12 @@
 #   bash build_image.sh --no-sync       # 构建后不把交付脚本同步到 OUT_DIR
 #   bash build_image.sh --strict-clean  # 工作区有未提交改动时直接失败（默认只警告）
 #   bash build_image.sh --tag parksim-jth:v2
+#   bash build_image.sh --dockerfile Dockerfile            # 退回单阶段构建（旧路径）
+#
+# 默认构建的是**多阶段瘦身**路径（Dockerfile.multistage）：运行阶段只保留实测的运行期
+# 依赖，构建工具链留在被丢弃的 build 阶段。它与单阶段路径产出的功能一致、体积小约 23%，
+# 且自带 8 条运行期断言（C1a/C1b/C1c/C2a/C2b/C3/C4a/C4b）。需要旧路径时显式传
+# --dockerfile Dockerfile。
 #
 # 前置：目标机已装 docker，且 ENV_ROOT 下存在 _ParkSim（git 仓库）、
 #       deps/ros/foxy（内置 ROS 2 Foxy 树）、deps/dlp-dataset/dlp。
@@ -29,7 +35,8 @@ FOXY="${ENV_ROOT}/deps/ros/foxy"
 DLP="${ENV_ROOT}/deps/dlp-dataset"
 BUILD_CTX="/media/step/data/parksim-image-build"
 OUT_DIR="/media/step/data/ParkSim-JTH-image"
-IMAGE="parksim-jth:v1"
+IMAGE="parksim-jth:v2"
+DOCKERFILE="Dockerfile.multistage"
 TARBALL=""
 PAYLOAD_ROOT="${BUILD_CTX}/payload"
 STATIC_REL="python/parksim/webviz/static"
@@ -50,6 +57,8 @@ while [ $# -gt 0 ]; do
     --strict-clean)    STRICT_CLEAN=1; shift ;;
     --tag)             IMAGE="$2"; shift 2 ;;
     --tag=*)           IMAGE="${1#--tag=}"; shift ;;
+    --dockerfile)      DOCKERFILE="$2"; shift 2 ;;
+    --dockerfile=*)    DOCKERFILE="${1#--dockerfile=}"; shift ;;
     --ctx)             BUILD_CTX="$2"; PAYLOAD_ROOT="${BUILD_CTX}/payload"; shift 2 ;;
     --out)             OUT_DIR="$2"; shift 2 ;;
     -h|--help)         awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"; exit 0 ;;
@@ -69,6 +78,18 @@ command -v docker >/dev/null 2>&1 || die "未找到 docker"
 [ -d "${DLP}/dlp" ]       || die "dlp 包不存在: ${DLP}/dlp"
 mkdir -p "${BUILD_CTX}" "${OUT_DIR}" "${PAYLOAD_ROOT}"
 
+# 选中的 Dockerfile 必须真的存在。以前 docker build 不传 -f，永远用构建上下文里的
+# Dockerfile，于是「想构建多阶段但实际构建了单阶段」这件事**没有任何提示**。
+[ -f "${SRC_REPO}/docker/${DOCKERFILE}" ] \
+  || die "仓库缺 docker/${DOCKERFILE}（--dockerfile 写错了？可选：Dockerfile | Dockerfile.multistage）"
+if [ "${DOCKERFILE}" = "Dockerfile.multistage" ]; then
+  # 多阶段路径的运行期护栏依赖这 3 个资产。缺任何一个都必须在这里失败——
+  # 放它过去等于构建一个「没有 8 条断言」的镜像，而且不会有任何提示。
+  for f in requirements-app-runtime.txt so-allowlist-v1.txt assert_runtime_deps.sh; do
+    [ -f "${SRC_REPO}/docker/${f}" ] || die "多阶段构建缺 docker/${f}"
+  done
+fi
+
 GIT_HEAD="$(git -C "${SRC_REPO}" rev-parse --short HEAD)"
 GIT_BRANCH="$(git -C "${SRC_REPO}" rev-parse --abbrev-ref HEAD)"
 BUILD_TIME="$(date '+%Y-%m-%d %H:%M:%S %z')"
@@ -86,7 +107,7 @@ ${DIRTY}"
   warn "工作区有未提交改动（不影响镜像内容；镜像严格等于 HEAD=${GIT_HEAD}）："
   printf '%s\n' "${DIRTY}" | head -10 | sed 's/^/[build][WARN]   /' >&2
 fi
-log "镜像=${IMAGE}  branch=${GIT_BRANCH}  HEAD=${GIT_HEAD}  built_at=${BUILD_TIME}"
+log "镜像=${IMAGE}  dockerfile=${DOCKERFILE}  branch=${GIT_BRANCH}  HEAD=${GIT_HEAD}  built_at=${BUILD_TIME}"
 
 # -----------------------------------------------------------------------------
 # 1) 出包前断言：HEAD 里的 webviz 前端必须齐全（缺了就没必要浪费一次 build）
@@ -109,7 +130,16 @@ for f in Dockerfile .dockerignore requirements-app.txt run_app.sh; do
   [ -f "${SRC_REPO}/docker/${f}" ] || die "仓库缺 docker/${f}"
   cp -p "${SRC_REPO}/docker/${f}" "${BUILD_CTX}/${f}"
 done
+# 多阶段构建（Dockerfile.multistage）的断言资产。存在性已在参数解析后统一校验过
+# （见上面「选中的 Dockerfile 必须真的存在」），这里只负责搬进构建上下文。
+#   so-allowlist-v1.txt 由 v1 实测生成，是 C1b 的独立基线；assert_runtime_deps.sh 是 C1a/C1b/C2/C3/C4。
+for f in Dockerfile.multistage requirements-app-runtime.txt so-allowlist-v1.txt \
+         so-allowlist-v1.PROVENANCE.txt assert_runtime_deps.sh; do
+  [ -f "${SRC_REPO}/docker/${f}" ] || continue
+  cp -p "${SRC_REPO}/docker/${f}" "${BUILD_CTX}/${f}"
+done
 log "已同步 Dockerfile/.dockerignore/requirements-app.txt/run_app.sh 到 ${BUILD_CTX}"
+log "已同步多阶段资产: Dockerfile.multistage requirements-app-runtime.txt so-allowlist-v1.txt(+PROVENANCE) assert_runtime_deps.sh"
 
 # -----------------------------------------------------------------------------
 # 3) 重建 payload/parksim（git archive HEAD，保证是"已提交状态"，无临时文件）
@@ -242,11 +272,13 @@ done
 # -----------------------------------------------------------------------------
 # 5) 构建
 # -----------------------------------------------------------------------------
-log "docker build ..."
+log "docker build -f ${DOCKERFILE} ..."
 docker build \
+  -f "${BUILD_CTX}/${DOCKERFILE}" \
   --build-arg "PARKSIM_GIT_HEAD=${GIT_HEAD}" \
   --build-arg "PARKSIM_GIT_BRANCH=${GIT_BRANCH}" \
   --build-arg "PARKSIM_BUILD_TIME=${BUILD_TIME}" \
+  --build-arg "PARKSIM_IMAGE_TAG=${IMAGE}" \
   -t "${IMAGE}" \
   "${BUILD_CTX}"
 
@@ -312,6 +344,8 @@ fi
 if [ "${DO_SYNC}" = "1" ]; then
   log "同步交付脚本 -> ${OUT_DIR}/"
   for f in Dockerfile .dockerignore requirements-app.txt run_app.sh \
+           Dockerfile.multistage requirements-app-runtime.txt \
+           so-allowlist-v1.txt assert_runtime_deps.sh \
            install.sh build_image.sh docker-compose.yml README.md; do
     src="${SRC_REPO}/docker/${f}"
     [ -f "${src}" ] || continue

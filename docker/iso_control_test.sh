@@ -7,7 +7,7 @@
 #       → RuntimeError: simulator exited early → 容器退出(1)。
 # =============================================================================
 set -uo pipefail
-IMG=parksim-jth:v1
+IMG="${PARKSIM_IMAGE:-parksim-jth:v2}"
 
 echo "### 起两个 ROS_LOCALHOST_ONLY=0 容器（= 旧行为）"
 docker rm -f ctlA ctlB >/dev/null 2>&1

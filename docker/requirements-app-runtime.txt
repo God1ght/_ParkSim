@@ -1,0 +1,47 @@
+# =============================================================================
+# ParkSim-JTH **运行期**最小依赖（多阶段构建的运行阶段专用）
+#
+# 这是 docker/requirements-app.txt 的运行期子集：只去掉「仅构建期」那一节。
+#
+# 之所以拆两份而不是共用一个：多阶段的分工就是「构建阶段的包不进运行镜像」。
+# 被去掉的只有三项（构建期专用）：
+#     empy==3.3.4            （rosidl_cmake 模板）
+#     catkin-pkg==1.0.0      （rosidl_parser）
+#     colcon-common-extensions==0.3.0  （colcon 构建）
+#
+# ⚠ 2026-09-26 更正：**lark-parser 不是构建期专用**，它是运行期依赖，
+#   因此两份文件里都保留。原先把它归到「仅构建期」是错的，代价是
+#   v2-thin 首次构建虽然六条构建期断言全过，但容器里点「开启仿真」直接失败：
+#       Failed to load entry point 'launch': No module named 'lark'
+#       RuntimeError: simulator exited early (code 1)
+#   原因：server.py 的托管仿真就是 `ros2 launch parksim parksim.launch.py`，
+#   而 `ros2 launch` 的 CLI 入口会 import launch 前端解析器，前端用 lark。
+#   实测：不装 lark → `ros2 launch --help` 退出码 1；只补 lark-parser → 退出码 0，
+#   自动发车成功（/simulator + /vehicle_*/vehicle 节点起来）。同一实验也证明
+#   empy / catkin-pkg / colcon-common-extensions 确实只在构建期需要。
+#   现在这条已有构建期断言兜底：见 assert_runtime_deps.sh 的 C4a / C4b
+#   （C4a 跑 `ros2 launch --help`；C4b 真的 `ros2 launch` 一次并断言 /simulator 出现）。
+#
+# ⚠ 维护约定：本文件与 requirements-app.txt 的**运行期条目必须逐字一致**
+#   （同一组包与同一组版本号）。改了一边忘了另一边，会出现
+#   「构建期能 import、运行期 import 失败」这种最难查的偏差。
+#   核对方法：diff <(grep -v '^#' docker/requirements-app.txt) <(grep -v '^#' docker/requirements-app-runtime.txt)
+#             ，只应剩下「仅构建期」的三项差异。
+#
+# 运行期清单的推导口径、以及被排除的训练侧依赖（torch/ray/sklearn/casadi/cv2 等）
+# 见 requirements-app.txt 的注释，此处不重复。
+# =============================================================================
+
+numpy==1.24.4
+scipy==1.10.1
+matplotlib==3.7.5
+pandas==2.0.3
+PyYAML==6.0.2
+Pillow==10.4.0
+aiohttp==3.10.11
+
+lark-parser==0.12.0
+
+# 运维排查用（ros2cli 的依赖，应用本身不需要）：缺它时
+# `ros2 node list` / `ros2 topic list` 会以 No module named 'netifaces' 直接报错。
+netifaces==0.11.0

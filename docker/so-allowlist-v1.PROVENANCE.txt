@@ -1,0 +1,79 @@
+so-allowlist-v1.txt —— 冻结基线来源与含义
+================================================================================
+
+文件内容：112 行，每行是**相对 $ROS_FOXY_ROOT 的路径**，指向一个「ldd 报 not found」
+的 .so。纯路径，无注释行（C1b 会对其做 sort -u 与 comm 比较，不能掺入非路径行）。
+
+md5 : b9af85afd88c6c2a93e3767d77632f8e
+行数: 112
+
+怎么生成的（独立基线，不是自证）
+--------------------------------------------------------------------------------
+在**未瘦身的现状镜像 parksim-jth:v1** 内执行等价于下面这段的测量：
+
+  set +u
+  source $ROS_FOXY_ROOT/setup.bash
+  source $PARKSIM_ROOT/workspace/install/setup.bash
+  set -u
+  find $ROS_FOXY_ROOT -name '*.so*' -type f | while read -r f; do
+    ldd "$f" 2>/dev/null | grep -q 'not found' && echo "${f#$ROS_FOXY_ROOT/}"
+  done | sort -u
+
+v1 是已验证可用的现状镜像，因此这份清单代表「瘦身**之前**就存在、且不影响运行」的缺口。
+它先于 v2-thin 的构建而存在，所以 C1b 用它做对照不是循环论证。
+
+v1 实测数字（同一次测量）
+--------------------------------------------------------------------------------
+  foxy  下 .so 文件总数        = 522
+  foxy  下 unresolved .so 个数 = 112      ← 本文件
+  install 下 .so 文件总数      = 5
+  install 下 unresolved 个数   = 0        ← 应用自身零缺口
+
+缺失依赖（库名）归类：27 个唯一库名，共 1462 个缺失依赖实例
+--------------------------------------------------------------------------------
+  数量  库名
+   257  librticonnextmsgcpp.so            ┐
+   257  librosidl_typesupport_connext_cpp.so
+   257  libnddscpp.so                     ├ Connext DDS（商业，镜像内按设计不装）
+   257  libnddscore.so                    │ 合计 1369 个实例 = 93.6%
+   257  libnddsc.so                       │
+    84  librosidl_typesupport_connext_c.so┘
+    20  libtinyxml.so.2.6.2               （tinyxml 1.x，与已装的 libtinyxml2-6a 不是同一个包）
+    11  libopencv_core.so.4.2             ┐
+     8  libopencv_imgproc.so.4.2         │
+     4  libopencv_imgcodecs.so.4.2       ├ OpenCV（cv_bridge / image_geometry 等视觉链）
+     3  libopencv_calib3d.so.4.2         │
+     1  libopencv_videoio.so.4.2         │
+     1  libopencv_highgui.so.4.2         ┘
+    10  libQt5Core.so.5                   ┐
+     7  libQt5Gui.so.5                    │
+     4  libQt5Widgets.so.5                ├ rviz / rqt / Qt 图形栈
+     2  libGL.so.1                        │
+     3  libGLX.so.0                       │
+     5  libX11.so.6                       │
+     2  libXrandr.so.2                    │
+     1  libshiboken2....so.5.14           │
+     1  libpyside2....so.5.14             │
+     1  Plugin_PCZSceneManager.so.1.12.1  ┘（OGRE 插件）
+     4  libfreetype.so.6
+     3  libassimp.so.5
+     1  libboost_python38.so.1.71.0
+     1  libSDL2-2.0.so.0
+
+这些库全部属于本应用不使用的子系统：Tier-4 商用中间件（Connext）、RViz/rqt 图形界面、
+OGRE 渲染、OpenCV 视觉、3D 模型加载。仿真本体只用 rclpy + fastrtps（见 C2 断言）。
+
+C3 断言的作用
+--------------------------------------------------------------------------------
+C1a/C1b 是"静态"的（逐个 ldd）。C3 从**真实运行的进程**的 /proc/<pid>/maps 里取已加载
+清单，再检查上表这些缺失库是否出现在其中，把"这些缺口对本应用不可达"从推断变成检查。
+若 C3 命中，说明某个被加载的库依赖了缺失库，构建应当失败。
+
+注意：C3 只能证伪不能完全证明（/proc/maps 反映的是那一时刻已加载的映射，惰性 dlopen 的
+库可能尚未出现）。因此 C3 与 C1a 互补：C1a 保证应用自身 5 个 .so 零缺口，C3 保证不是
+"应用自己没缺口、却加载了别人有缺口的库"。
+
+与 / 根盘的关系
+--------------------------------------------------------------------------------
+本文件与 assert_runtime_deps.sh 一并放进镜像 /opt/parksim-assert/（约 12 KB），
+便于事后取证；不影响体积结论。

@@ -1,0 +1,319 @@
+# =============================================================================
+# ParkSim-JTH 一体化镜像（多阶段瘦身版，试验用：只产出 parksim-jth:v2-thin）
+#
+# 目标不变：目标机「无 ROS、无 conda、无源码」——一条 docker run 即起服。
+#
+# 与 v1（单阶段）的**唯一区别**：把「只在构建期需要」的东西关进一个会被丢弃的
+# build 阶段，运行阶段只装实测出来的运行期依赖。
+#
+#   v1 实测 1.204 GB；本版预计 ≈0.98 GB。
+#   省掉的是：编译工具链 217.9 MB（gcc/g++/cpp/-dev/binutils/cmake/libssl-dev/
+#   libpython3.8-dev）+ 可选再省 Perl 44.3 MB。
+#
+# ── 多阶段的三条红线（踩过就不是省钱而是坏镜像）──────────────────────────────
+#   1) **运行期 .so 闭包必须实测，不能猜。** 本文件那份包清单一字不改地来自实测：
+#        对 deps/ros/foxy + workspace/install + dist-packages 下 805 个 .so 逐个 ldd，
+#        取绝对路径依赖去重（142 条），再用 dpkg -S 反查归属包（注意 /lib 是
+#        /usr/lib 的软链，dpkg 记录的是 /lib/...，不归一化会漏掉一大批）。
+#        关键两件：libssl-dev → **libssl1.1**；libtinyxml2-dev → **libtinyxml2-6a**。
+#        （Dockerfile 里 fastrtps 导出 target 写死的 /lib/.../libtinyxml2.so 是**链接期**；
+#          运行期 libfastrtps.so 要的是 libtinyxml2.so.6。）
+#   2) **workspace/build 也是运行期依赖，必须一起搬。** 实测 install 下三个
+#        parksim_s__rosidl_typesupport_*.cpython-38-*.so 的 RUNPATH 指向
+#        workspace/build/parksim/rosidl_generator_py/parksim 与 workspace/build/parksim，
+#        少了 build 树会「import 成功但加载 typesupport 时炸」。
+#   3) **所有 ENV 必须在运行阶段重新声明。** 换 FROM 就是换阶段，build 阶段的 ENV
+#        不会带过来。少一个 ROS_LOCALHOST_ONLY=1 就会退回
+#        「多实例 DDS 互相发现 → 容器启动即退出」那个老坑。
+#
+# ── 其它沿用 v1 的设计（勿改）────────────────────────────────────────────────
+#   * 内置 ROS 2 Foxy：整棵 install-tree 原样复制进镜像并**保持同一绝对路径**。
+#     该树的 setup.bash / ament index 内含绝对路径，重定位极易损坏，
+#     路径同构是成本最低、最可靠的策略。
+#   * _ParkSim 源码同样放在**同一绝对路径**，保证 config/*.yaml 的 ${PARKSIM_ROOT}
+#     与 map.yaml 的 ${PARKSIM_PRIORFILES} 展开、以及 colcon 产物的绝对软链都能解析。
+#   * 系统 python3.8 + pip3（不装 conda），依赖只装最小集，不装 RL/训练侧依赖。
+#   * jth_b1 地图资产随源码 git archive 自带；7.5G DJI 数据集只带最小子集。
+#   * ROS_LOCALHOST_ONLY=1 固化在镜像内（见 ENV，理由同上）。
+#
+# ⚠ 缓存红线（已踩过两次，不要再踩第三次）：
+#   ARG 的值会进入**其后所有指令**的缓存键。PARKSIM_BUILD_TIME 每版都变、
+#   PARKSIM_GIT_HEAD / PARKSIM_GIT_BRANCH 随 commit 变 —— 三者**必须放在所有重量级层之后**
+#   （本文件放在运行阶段末尾、BUILDINFO 之前）。后续若再加引用这类 ARG 的 LABEL，同样放末尾。
+# =============================================================================
+
+# =============================================================================
+# 阶段 1/2：build —— 装编译工具链、pip 全量依赖、colcon 构建。**本阶段结果不进镜像。**
+# =============================================================================
+FROM ubuntu:20.04 AS build
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    TZ=Asia/Shanghai \
+    PARKSIM_ENV_ROOT=/media/step/data/Yccc7/ParkSim-JTH \
+    PARKSIM_ROOT=/media/step/data/Yccc7/ParkSim-JTH/_ParkSim \
+    PARKSIM_DATA_ROOT=/media/step/data/Yccc7/ParkSim-JTH/_ParkSim/python/parksim/priorFiles \
+    ROS_FOXY_ROOT=/media/step/data/Yccc7/ParkSim-JTH/deps/ros/foxy \
+    DLP_DATASET_ROOT=/media/step/data/Yccc7/ParkSim-JTH/deps/dlp-dataset \
+    PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    PIP_NO_CACHE_DIR=1 \
+    ROS_LOCALHOST_ONLY=1
+
+# 构建期需要：编译链（gcc/g++/cpp/make/binutils）+ cmake + pkg-config +
+#             python3-dev（编译 netifaces）+ libssl-dev / libtinyxml2-dev（链接期）
+# 另外 procps/psmisc/ca-certificates 一并在两个阶段都装，避免行为差异。
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        python3 python3-dev python3-pip python3-setuptools \
+        build-essential cmake pkg-config \
+        libssl-dev libtinyxml2-dev \
+        procps psmisc \
+        ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# 构建期装**全量** requirements-app.txt：除运行期 7 项外，
+# empy / lark-parser / catkin-pkg / colcon-common-extensions 只有本阶段需要。
+COPY requirements-app.txt /tmp/requirements-app.txt
+RUN python3 -m pip install --no-cache-dir "pip==24.2" "setuptools==75.1.0" "wheel==0.44.0" \
+ && python3 -m pip install --no-cache-dir -r /tmp/requirements-app.txt \
+ && rm -f /tmp/requirements-app.txt
+
+# 载荷（跑完本阶段即丢弃；运行阶段会从同一 payload 再 COPY 一次）
+COPY payload/foxy/ /media/step/data/Yccc7/ParkSim-JTH/deps/ros/foxy/
+COPY payload/parksim/ /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/
+COPY payload/dlp/ /media/step/data/Yccc7/ParkSim-JTH/deps/dlp-dataset/
+
+# colcon build（15 个 msg + 1 个 srv）
+#   注意 1：不 source /opt/ros/*，只用镜像内自带的 foxy 树
+#   注意 2：source ament 的 setup.bash 时**必须关掉 set -u**，否则 nounset 会让脚本退出
+RUN bash -c 'set -eo pipefail; \
+      set +u; source ${ROS_FOXY_ROOT}/setup.bash; set -u; \
+      cd ${PARKSIM_ROOT}/workspace; \
+      colcon build --packages-select parksim \
+          --cmake-args -DCMAKE_BUILD_TYPE=Release; \
+      set +u; source ${PARKSIM_ROOT}/workspace/install/setup.bash; set -u; \
+      python3 -c "from parksim.msg import VehicleStateMsg, VehicleInfoMsg; from parksim.srv import OccupancySrv; print(\"[build] OK: parksim.msg/parksim.srv importable\")"'
+
+# =============================================================================
+# 阶段 2/2：runtime —— 只有运行期依赖。工具链、pip 构建依赖、colcon 全部不在本阶段。
+# =============================================================================
+FROM ubuntu:20.04 AS runtime
+
+# ⚠ ENV 必须重复一遍：换 FROM 即换阶段，上一阶段的 ENV 不会继承。
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    TZ=Asia/Shanghai \
+    PARKSIM_ENV_ROOT=/media/step/data/Yccc7/ParkSim-JTH \
+    PARKSIM_ROOT=/media/step/data/Yccc7/ParkSim-JTH/_ParkSim \
+    PARKSIM_DATA_ROOT=/media/step/data/Yccc7/ParkSim-JTH/_ParkSim/python/parksim/priorFiles \
+    ROS_FOXY_ROOT=/media/step/data/Yccc7/ParkSim-JTH/deps/ros/foxy \
+    DLP_DATASET_ROOT=/media/step/data/Yccc7/ParkSim-JTH/deps/dlp-dataset \
+    PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    PIP_NO_CACHE_DIR=1 \
+    ROS_LOCALHOST_ONLY=1
+
+# -----------------------------------------------------------------------------
+# 运行期系统库 —— **全部来自实测**（不是按经验列的）
+#
+#   推导方法：对 foxy + workspace/install + dist-packages 下 805 个 .so 逐个 ldd，
+#   汇总绝对路径依赖得 142 条，再 dpkg -S 反查归属包，去重后即下表。
+#   （dpkg 记录的是 /lib/...，ldd 有时报 /usr/lib/...，只查一种会漏掉一大批。）
+#
+#   · python3 / python3-pip / python3-setuptools：运行脚本本身要 python3；
+#     pip 保留是为了现场可用 `ros2 node list` 等排障（与 requirements-app.txt 里
+#     「镜像比宿主更好排查」的既有取向一致）。代价约 22 MB，已权衡。
+#   · procps / psmisc：SimManager 靠 ps / pkill 清理仿真进程，**必须有**。
+#   · libssl1.1 / libtinyxml2-6a：对应 v1 里的 -dev 包，运行期要的是运行时库。
+#   · 其余为 libfastrtps / libcurl / libpython3.8 等的传递依赖。
+# -----------------------------------------------------------------------------
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-setuptools \
+        procps psmisc \
+        ca-certificates \
+        libasn1-8-heimdal \
+        libbrotli1 \
+        libbz2-1.0 \
+        libc6 \
+        libcom-err2 \
+        libcrypt1 \
+        libcurl4 \
+        libdb5.3 \
+        libexpat1 \
+        libffi7 \
+        libgcc-s1 \
+        libgmp10 \
+        libgnutls30 \
+        libgssapi-krb5-2 \
+        libgssapi3-heimdal \
+        libhcrypto4-heimdal \
+        libheimbase1-heimdal \
+        libheimntlm0-heimdal \
+        libhogweed5 \
+        libhx509-5-heimdal \
+        libidn2-0 \
+        libk5crypto3 \
+        libkeyutils1 \
+        libkrb5-26-heimdal \
+        libkrb5-3 \
+        libkrb5support0 \
+        libldap-2.4-2 \
+        liblzma5 \
+        libmpdec2 \
+        libncursesw6 \
+        libnettle7 \
+        libnghttp2-14 \
+        libp11-kit0 \
+        libpsl5 \
+        libpython3.8 \
+        libreadline8 \
+        libroken18-heimdal \
+        librtmp1 \
+        libsasl2-2 \
+        libsqlite3-0 \
+        libssh-4 \
+        libssl1.1 \
+        libstdc++6 \
+        libtasn1-6 \
+        libtinfo6 \
+        libtinyxml2-6a \
+        libunistring2 \
+        libuuid1 \
+        libwind0-heimdal \
+        libzstd1 \
+        zlib1g \
+ && rm -rf /var/lib/apt/lists/*
+
+# 运行期 Python 依赖：只用运行期子集文件，不装 empy/lark-parser/catkin-pkg/colcon-*。
+COPY requirements-app-runtime.txt /tmp/requirements-app-runtime.txt
+RUN python3 -m pip install --no-cache-dir "pip==24.2" "setuptools==75.1.0" "wheel==0.44.0" \
+ && python3 -m pip install --no-cache-dir -r /tmp/requirements-app-runtime.txt \
+ && rm -f /tmp/requirements-app-runtime.txt
+
+# -----------------------------------------------------------------------------
+# 载荷 —— 与 v1 完全相同的三处 COPY（同一 payload、同一绝对路径）
+# -----------------------------------------------------------------------------
+COPY payload/foxy/ /media/step/data/Yccc7/ParkSim-JTH/deps/ros/foxy/
+COPY payload/parksim/ /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/
+COPY payload/dlp/ /media/step/data/Yccc7/ParkSim-JTH/deps/dlp-dataset/
+
+# -----------------------------------------------------------------------------
+# colcon 产物：**build 与 install 都要**（见文件头红线 2）
+#   install 里的 .py 是指向 workspace/src 的**绝对软链**，所以上一行的源码 COPY
+#   必须在场；路径同构，软链自然解析。
+# -----------------------------------------------------------------------------
+COPY --from=build /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/workspace/build \
+                  /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/workspace/build
+COPY --from=build /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/workspace/install \
+                  /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/workspace/install
+
+# -----------------------------------------------------------------------------
+# DJI_0012 最小子集（webviz 启动时 Dataset.load() 必读，内容不使用但文件必须存在）
+# -----------------------------------------------------------------------------
+COPY payload/dji_subset/ /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/python/parksim/priorFiles/data/
+
+# -----------------------------------------------------------------------------
+# 运行必需资产的冗余兜底 COPY（理由同 v1：4 个 pickle 已入库，这里再兜一层）
+# -----------------------------------------------------------------------------
+COPY payload/priorfiles_root/ /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/python/parksim/priorFiles/
+
+# -----------------------------------------------------------------------------
+# 构建期断言 A：先验资产是否齐（这些缺任何一个都会在运行时才炸）
+# -----------------------------------------------------------------------------
+RUN set -e; \
+    PF=/media/step/data/Yccc7/ParkSim-JTH/_ParkSim/python/parksim/priorFiles; \
+    for f in parking_maneuvers.pickle spots_data.pickle waypoints_graph.pickle agents_data_0012.pickle; do \
+        test -f "$PF/$f" || { echo "MISSING required priorFiles asset: $f"; exit 1; }; \
+    done; \
+    for f in DJI_0012_scene.json DJI_0012_agents.json DJI_0012_obstacles.json DJI_0012_frames.json DJI_0012_instances.json; do \
+        test -f "$PF/data/$f" || { echo "MISSING required DLP file: $f"; exit 1; }; \
+    done; \
+    for f in map.yaml layout_rotated.json spots_data.pickle waypoints_graph.pickle \
+             parking_maneuvers_per_spot.pickle base_map_clean.png obstacles.json zone_overview.json; do \
+        test -f "$PF/maps/jth_b1/$f" || { echo "MISSING required jth_b1 asset: $f"; exit 1; }; \
+    done; \
+    python3 -c "import json; p='/media/step/data/Yccc7/ParkSim-JTH/_ParkSim/python/parksim/priorFiles/data/DJI_0012_%s.json'; [json.load(open(p % n)) for n in ('scene','agents','obstacles','frames','instances')]; print('[assets] OK: priorFiles + DJI_0012 subset + jth_b1 assets present, DJI json all valid')"
+
+# -----------------------------------------------------------------------------
+# 构建期断言 B：webviz 前端资产（防「陈旧前端出镜像」——交付过一整轮这种事故）
+#   这两条断言**必须在最终阶段**：留在被丢弃的 build 阶段等于把护栏拆了。
+# -----------------------------------------------------------------------------
+RUN set -e; \
+    S=/media/step/data/Yccc7/ParkSim-JTH/_ParkSim/python/parksim/webviz/static; \
+    for f in index.html app.js style.css charts.js charts.css; do \
+        test -f "$S/$f" || { echo "MISSING webviz frontend asset: $f"; exit 1; }; \
+    done; \
+    grep -q 'charts\.js' "$S/index.html" || { echo "index.html 未引用 charts.js"; exit 1; }; \
+    grep -q 'charts\.css' "$S/index.html" || { echo "index.html 未引用 charts.css"; exit 1; }; \
+    grep -q 'metricsViz' "$S/index.html" || { echo "index.html 缺 #metricsViz 容器"; exit 1; }; \
+    grep -q 'eventsViz' "$S/index.html" || { echo "index.html 缺 #eventsViz 容器"; exit 1; }; \
+    echo "[assets] OK: webviz frontend complete (incl. charts module)"
+
+# -----------------------------------------------------------------------------
+# 构建期断言 C：**多阶段专属** —— 证明运行期 .so 闭包确实够用。
+#   这一条是本版把「静态推算」变成「可验证」的关键。断言脚本与基线 allow-list
+#   都作为构建上下文文件提供（可独立审阅、可脱离构建复跑），不写成内联长串：
+#
+#     C1a  应用自身 install 树 unresolved 必须 = 0         —— 严格，无豁免
+#     C1b  foxy 全量扫描 unresolved ⊆ v1 冻结 allow-list   —— 负向对照：只判"新增缺口"
+#     C1c  workspace/build 存在（install 的 typesupport RUNPATH 指向它）
+#     C2   真实加载 rclpy 节点/发布/服务/消息 + 断言 rmw = fastrtps
+#     C3   反向对照：allow-list 内缺失库是否被应用加载过
+#     C4a  `ros2 launch --help` 必须退出码 0
+#     C4b  真的 `ros2 launch parksim parksim.launch.py` 一次，断言 /simulator 出现
+#
+#   C4 是 2026-09-26 因一次真实回归补上的：首版 v2-thin 的 C1~C3 全过，但容器里
+#   点「开启仿真」失败（Failed to load entry point 'launch': No module named 'lark'），
+#   因为运行期 pip 子集误删了 lark-parser —— 它是 `ros2 launch` 的运行期依赖。
+#   教训：断言的覆盖范围必须包含「结论适用的那类场景」，否则整类缺口是隐形的。
+#
+#   为什么 C1b 需要 allow-list 而不是直接要求 0：
+#     v1（未瘦身、已验证可用的现状镜像）在 foxy 树下本来就有 112 个 unresolved .so
+#     （缺失依赖实例 1462 个，其中 93.6% 是商业化 Connext DDS；其余为 rviz/Qt/OGRE、
+#     OpenCV、SDL2、assimp、tinyxml1、boost_python38）——都是本应用不加载的东西。
+#     要求 0 会把 v1 既有事实误判成回归；只判"新增"才能既抓住瘦身真删依赖，又不虚报。
+#     注意：allow-list 由 **v1 实测** 生成（来源与逐库名归类见随附
+#     so-allowlist-v1.PROVENANCE.txt，md5 b9af85afd88c6c2a93e3767d77632f8e），
+#     先于本次构建存在，所以它是一个独立基线、不是自证。
+#   必须在 source 了 foxy 与 workspace 的 setup.bash 的环境里跑（否则 LD_LIBRARY_PATH
+#   与 AMENT_PREFIX_PATH 不在，会误报一堆 not found）。
+# -----------------------------------------------------------------------------
+COPY so-allowlist-v1.txt /opt/parksim-assert/so-allowlist-v1.txt
+COPY assert_runtime_deps.sh /opt/parksim-assert/assert_runtime_deps.sh
+RUN bash /opt/parksim-assert/assert_runtime_deps.sh /opt/parksim-assert/so-allowlist-v1.txt
+
+# 以下声明**故意**放在所有重量级层之后（同 v1 的缓存红线）。
+ARG PARKSIM_GIT_HEAD=unknown
+ARG PARKSIM_GIT_BRANCH=unknown
+# 实际交付 tag 由 build_image.sh 的 --tag 传入（不再在文件里写死，否则
+# BUILDINFO 会声称一个与实际标签不符的名字）。
+ARG PARKSIM_IMAGE_TAG=parksim-jth:v2
+
+LABEL org.opencontainers.image.title="parksim-jth" \
+      org.opencontainers.image.description="Self-contained ParkSim JTH simulator + webviz (bundled ROS 2 Foxy, no conda, no /opt/ros) — multi-stage slim build" \
+      org.opencontainers.image.version="v2" \
+      org.opencontainers.image.revision="${PARKSIM_GIT_HEAD}"
+
+ARG PARKSIM_BUILD_TIME=unknown
+
+RUN set -e; \
+    mkdir -p /opt/parksim; \
+    printf 'image        : %s\nsource       : _ParkSim (git archive HEAD)\ngit_branch   : %s\ngit_head     : %s\nbuilt_at     : %s\ncanonical_root: /media/step/data/Yccc7/ParkSim-JTH\nstages       : build (discarded) -> runtime (multi-stage slim)\n' \
+        "${PARKSIM_IMAGE_TAG}" "${PARKSIM_GIT_BRANCH}" "${PARKSIM_GIT_HEAD}" "${PARKSIM_BUILD_TIME}" \
+        > /opt/parksim/BUILDINFO; \
+    cat /opt/parksim/BUILDINFO
+
+# -----------------------------------------------------------------------------
+# 入口
+# -----------------------------------------------------------------------------
+COPY run_app.sh /usr/local/bin/run_app.sh
+RUN chmod +x /usr/local/bin/run_app.sh
+
+ENV PORT=8099
+EXPOSE 8099
+WORKDIR /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/python
+
+# 日志一律 stdout/stderr -> docker logs
+ENTRYPOINT ["/usr/local/bin/run_app.sh"]
