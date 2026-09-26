@@ -756,13 +756,26 @@ class SimulatorNode(MPClabNode):
             return ratio < self.entering_occupancy_max
         return ratio > self.exiting_occupancy_min
 
+    def _prune_vehicles(self):
+        """回收已退出车辆的进程句柄。
+
+        `self.vehicles` 只在生成时 append、从不回收。有限模式下总量有上界（= entering +
+        exiting），但**持续模式没有上界**，而 max_concurrent 默认为 0（不限并发）时
+        连 _live_vehicle_count() 这条剪枝路径也不会走到 —— 按 interval_mean=5 s 估算约
+        1.7 万条/天持续增长，而本模式的用途恰恰是长时间不间断运行。
+        故在既有 1 Hz 状态路径上无条件剪枝；shutdown_vehicles() 本就跳过已退出的进程，
+        剪枝不影响关停语义。
+        """
+        if self.vehicles:
+            self.vehicles = [p for p in self.vehicles if p.poll() is None]
+
     def _live_vehicle_count(self):
         """当前仍在运行的车辆进程数。
 
-        不能用 len(self.vehicles)：该列表只在生成时 append、从不回收，记的是「累计生成过
-        多少辆」；拿它当并发数会让 max_concurrent 在第一辆之后立刻误判为已满。
+        不能用累计值：该列表只在生成时 append、从不回收（已由 _prune_vehicles 回收），
+        记的是「累计生成过多少辆」；拿它当并发数会让 max_concurrent 在第一辆之后立刻误判为已满。
         """
-        self.vehicles = [p for p in self.vehicles if p.poll() is None]
+        self._prune_vehicles()
         return len(self.vehicles)
 
     def _concurrency_allows(self):
@@ -797,14 +810,22 @@ class SimulatorNode(MPClabNode):
         照常发布实际长度即可（通常为 0）。
         """
         msg = String()
+        # 1 Hz 无条件回收车辆进程句柄：持续模式（尤其不限并发）下 self.vehicles 无界增长，
+        # 不能只在 max_concurrent > 0 时才剪枝。
+        self._prune_vehicles()
         # continuous / interval_mean 是给 webviz 用的：持续模式下队列余量恒为 1，
         # 「余量 > 0 却零车」不再等于「车辆节点没起来」，服务端需要据此把
         # spawn_stuck 的判定窗口按到达间隔放大，否则 interval_mean 较大时会误报。
+        # live_vehicles / spawned_total 是诊断量，两者之差即「已回收的车辆句柄数」：
+        # 若句柄没被回收，len(self.vehicles) 会等于累计发车数，差值恒为 0。
+        # 放在同一帧报文里自比，比换一份代码做对照更不容易被测量环境干扰。
         msg.data = json.dumps({
             'entering_remaining': len(self.spawn_entering_time),
             'exiting_remaining': len(self.spawn_exiting_time),
             'continuous': bool(self.continuous),
             'interval_mean': float(self.spawn_interval_mean),
+            'live_vehicles': int(len(self.vehicles)),
+            'spawned_total': int(self.num_vehicles),
         })
         self.spawn_status_pub.publish(msg)
         # 复用既有 1 Hz 派生状态路径做低频（5 s）外来节点扫描：晚期串扰一次性可见化，
