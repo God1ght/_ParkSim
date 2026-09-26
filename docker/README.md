@@ -10,7 +10,7 @@
 
 | 项 | 值 |
 |---|---|
-| 源码分支 / HEAD | `JTH/vision-html` / **`ef4f62d`** |
+| 源码分支 / 应用代码版本 | `JTH/vision-html` / **应用代码 = `ef4f62d`**（下表是**应用文件**的指纹，用于核对交付内容；本次构建的仓库提交号以镜像内 `/opt/parksim/BUILDINFO` 的 `git_head` 为准——见紧随其后的说明） |
 | 相对上一交付点（`f7223a7`）的 3 笔 | `6df928d`（修复入口放行门三处缺陷）/ `cf16dee`（持续生成 + 占用率门控 + 可选上限 + `spawn_stuck` 误报修复）/ `ef4f62d`（不限并发时 `self.vehicles` 句柄无界增长） |
 | `webviz/server.py` | md5 `bf13bddb4edfa72e7df7c160698a3646` |
 | `webviz/static/app.js` | md5 `a22dfa78ff0da2186dc6c8942fc81f51` |
@@ -21,6 +21,13 @@
 | `workspace/src/parksim/src/simulator_node.py` | md5 `02ec820c5bc4151517c6225de2b67344` |
 
 - 上表源码文件的 md5 **在仓库与镜像内逐字节一致**（镜像里是构建时 COPY 进去的实体文件，不是符号链接）。
+- ⚠ **为什么上面写「应用代码 = `ef4f62d`」而不直接写「HEAD = 某个提交」**：本文件与它描述的
+  交付脚本同属一个仓库，**每改一次交付链路（`docker/` 目录）就会让 HEAD 前进一格**，而
+  应用代码一个字节都没动。若这里写死 HEAD，构建出来的镜像里就会同时存在「README 说 HEAD=X」
+  与「BUILDINFO 说 git_head=Y」两个互相打架的说法。
+  因此：**应用内容认上表指纹，构建提交认 `BUILDINFO`**。二者不一致时，先 `git diff <BUILDINFO的HEAD> <上表的版本>`：
+  若差异只落在 `docker/`、`docker/pack/` 范围内，就是预期情况，不是内容错版。
+  （查法：`docker run --rm --entrypoint cat <镜像> /opt/parksim/BUILDINFO`，或 `./install.sh --version`。）
 
 **构建产物侧（每次构建都不同，因此本表刻意不写死数值）**
 
