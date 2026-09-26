@@ -132,7 +132,16 @@ verify_tarball() {
     local sha="${IMAGE_TAR}.sha256"
     if [ ! -f "${IMAGE_TAR}" ]; then return 0; fi
     if [ -f "${sha}" ]; then
-        echo "[install] 校验 sha256（$(basename "${IMAGE_TAR}")，约 376 MB，需十几秒）..."
+        # 体积按 tar 的**实际字节数**算，不写死。
+        # 旧版此处硬编码「约 376 MB」，tar 变成 362,263,716 B 之后它就一直报错数，
+        # 而这条提示恰恰是装机现场最先看到的数字，很容易让人误判拿错了包。
+        local _bytes="" _size=""
+        _bytes="$(stat -c%s "${IMAGE_TAR}" 2>/dev/null || true)"
+        case "${_bytes}" in
+            ''|*[!0-9]*) _size="" ;;                                   # stat 不可用就不报体积
+            *)           _size="，约 $(( _bytes / 1000000 )) MB" ;;
+        esac
+        echo "[install] 校验 sha256（$(basename "${IMAGE_TAR}")${_size}，需十几秒）..."
         if ( cd "$(dirname "${IMAGE_TAR}")" && sha256sum -c "$(basename "${sha}")" >/dev/null 2>&1 ); then
             echo "[install] sha256 校验通过"
         else

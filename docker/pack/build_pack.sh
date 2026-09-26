@@ -240,7 +240,7 @@ fi
 log "done: ${TARBALL}"
 ls -lh "${TARBALL}"
 
-# 完整性指纹：376MB/55MB 的包在拷贝、U 盘、跨网络传输中损坏并不罕见，
+# 完整性指纹：几十~几百 MB 的包在拷贝、U 盘、跨网络传输中损坏并不罕见，
 # 有了 .sha256，目标机 install.sh 才能校验而不是"装上才发现坏"。
 if command -v sha256sum >/dev/null 2>&1; then
   ( cd "$(dirname "${TARBALL}")" && sha256sum "$(basename "${TARBALL}")" > "$(basename "${TARBALL}").sha256" )

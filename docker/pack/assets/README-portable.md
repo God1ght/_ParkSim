@@ -3,7 +3,8 @@
 > ### 与 Docker 形态的关系（建议先读这段）
 >
 > **本包是 Docker 镜像 `parksim-jth:v1` 的同构替代品。** 二者同源：源码范围一致（同一个
-> git HEAD `724fd75`）、内置的 ROS 2 Foxy 版本一致、`server.py` 的启动参数一致
+> git commit —— 具体 HEAD 以本包内的 `BUILDINFO.txt` 为准，此处不写死，以免随每次构建过期）、
+> 内置的 ROS 2 Foxy 版本一致、`server.py` 的启动参数一致
 > （`--host 0.0.0.0 --port 8099 --control --manage-sim --launch-args map:=jth_b1`）；
 > 差别只是把「镜像里的文件系统」换成磁盘上的一棵目录树，由 `install.sh` 铺到
 > `/media/step/data/Yccc7/ParkSim-JTH`。

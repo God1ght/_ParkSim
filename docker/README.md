@@ -10,22 +10,36 @@
 
 | 项 | 值 |
 |---|---|
-| 源码 HEAD | `724fd75`（本轮 10 笔：`fd298aa` / `691c23d` / `b537fd9` / `52c876e` / `23f4202` / `18acb29` / `c84bce6` / `1095f83` / `263ca5f` / `724fd75`；父提交 `d4f5ca6`） |
-| 镜像 tag / id | `parksim-jth:v1` / `sha256:b4587e3ea407…` |
-| 镜像构建时间 / 体积 | 2026-09-25 14:14:35 +08:00，1,275,473,120 B（≈1.28 GB） |
-| tar 包 | `parksim-jth-v1.tar.gz`，**376,727,675 B**（≈359 MiB），md5 `ce2f1cabdbe419f2a2b292efcb4a20cb` |
-| `webviz/server.py` | md5 `e104d3dc7472b4f40bab192151abc692` |
-| `webviz/static/app.js` | md5 `e4879a8655ab56140de04593fbe0fa9f` |
-| `webviz/static/index.html` | md5 `e410bc7229a925a2267d8b802ca0b6c5`（内含 `app.js?v=31-panels`、`style.css?v=10`） |
+| 源码分支 / HEAD | `JTH/vision-html` / **`a3e8fd6`** |
+| 本轮 4 笔 | `9f460fa` / `ed5e076` / `d65e1ed` / `a3e8fd6`（父提交 `724fd75`） |
+| `webviz/server.py` | md5 `bbaec45ac74e1f928d65a58d1cbf99de` |
+| `webviz/static/app.js` | md5 `9c81cf6b9abba6c5a48e29d7337c055d` |
+| `webviz/static/index.html` | md5 `ecde37c0cd1e45fabca437f980f78678`（内含 `app.js?v=31-panels`、`style.css?v=10`、`charts.js?v=4`、`charts.css?v=3`） |
 | `webviz/static/style.css` | md5 `c9f9b6c2956deb88d6100c0859474d06` |
-| `workspace/src/parksim/src/simulator_node.py` | md5 `a893f261ca4475101c3c8bb31835a1d5` |
+| `webviz/static/charts.js` | md5 `5c2b3c2e7e051d3746647db01a5b36e8` |
+| `webviz/static/charts.css` | md5 `6c4ba2293641c6e813b374d59cd777a0` |
+| `workspace/src/parksim/src/simulator_node.py` | md5 `c27c4524bda53cf36af0c2a974c46e48` |
 
-- 上表 5 个源码文件的 md5 **在仓库与镜像内逐字节一致**（镜像里是构建时 COPY 进去的实体文件，不是符号链接）。
-- tar 已做**装载回验**：`docker load -i parksim-jth-v1.tar.gz` → `docker image inspect parksim-jth:v1`
-  得到 `sha256:b4587e3ea407…`，与源镜像 id **完全一致**，即"打包—迁移—装载"链路无失真。
-- 本轮相对上一版的实质改动：**页面控制行为**（§4.1–§4.3）、**仿真侧外来节点守护**
-  （§3.2 晚期告警 + 最小观察窗）、**暂停不再被误报为数据流停滞**（§4.4）、
-  **页面左右常驻监控面板**（§4.5）。
+- 上表源码文件的 md5 **在仓库与镜像内逐字节一致**（镜像里是构建时 COPY 进去的实体文件，不是符号链接）。
+
+**构建产物侧（每次构建都不同，因此本表刻意不写死数值）**
+
+| 项 | 权威来源 |
+|---|---|
+| 镜像 tag | `parksim-jth:v1` |
+| 镜像 id / 构建时间 / 源码 commit | `docker image inspect -f '{{.Id}}' parksim-jth:v1`；`./install.sh --version`（读镜像内 `/opt/parksim/BUILDINFO`） |
+| tar 体积 / 校验值 | `ls -l parksim-jth-v1.tar.gz`；`sha256sum -c parksim-jth-v1.tar.gz.sha256` |
+
+> **为什么这里不再写死镜像 id / 构建时间 / tar 字节数与 md5**：本文件自身会被 `COPY` 进它正在
+> 描述的那个镜像，写死构建产物数值必然在下一次构建后变成错值——本表曾因此长期停留在
+> `724fd75` / 镜像 `b4587e3e` / tar `376,727,675 B` / md5 `ce2f1cab`，**照它核对会把正确的
+> 新包判成错包**。构建产物一律以 `.sha256` 与 `BUILDINFO` 为准。
+- tar 已做**装载回验**：`docker load -i parksim-jth-v1.tar.gz` 后 `docker image inspect` 得到的
+  id 与该次构建的源镜像 id **完全一致**，即"打包—迁移—装载"链路无失真
+  （该流程由 `docker/install.sh` 与冒烟脚本共同覆盖）。
+- 本轮相对上一版的实质改动：**交付链加固**（交付内容自检 / 可复现构建 / 版本溯源）、
+  **修掉两个交付链真缺陷**（备份源码泄漏进镜像、`ARG PARKSIM_BUILD_TIME` 摧毁构建缓存）、
+  **交付目录自动同步**、**移除全部陈旧版本信息**。
 
 ---
 
@@ -35,8 +49,9 @@
 |---|---|
 | Docker | >= 19.03（需要 `docker load` / `docker run`） |
 | 架构 | linux/amd64（镜像基于 ubuntu:20.04，内含 x86_64 二进制） |
-| 磁盘 | 镜像展开后约 **1.28 GB**，加 tar 包共需 ≥ 1.8 GB |
-| 内存 | 建议 ≥ 4 GB（仿真 30+ 车时实测峰值 ~1 GB） |
+| 磁盘 | 镜像展开后约 **1.20 GB**，加 tar 包共需 ≥ 2 GB |
+| 内存 | 建议 **≥ 8 GB**（实测 23 车时容器峰值内存 **3.95 GiB**；旧文写「30+ 车峰值 ~1 GB」是不实数据） |
+| CPU | 建议 **≥ 8 核**（实测 23 车时峰值约 **13.5 / 16 核**，load average 42.54） |
 | 网络 | 运行阶段**不需要外网**；仅安装阶段需要能 `docker load` 本地文件 |
 | 其它 | **无需** ROS / conda / python / 编译工具 / 源代码 |
 
@@ -268,7 +283,7 @@ docker logs -f parksim-jth        # 看日志（仿真 + webviz 全部走 stdout
 /media/step/data/Yccc7/ParkSim-JTH/
 ├── deps/ros/foxy/          # 内置 ROS 2 Foxy install-tree（278M，非 /opt/ros）
 ├── deps/dlp-dataset/dlp/   # DLP 数据集 python 包（webviz/simulator 都 import）
-└── _ParkSim/               # 源码（git archive HEAD=724fd75）+ 镜像内 colcon build 产物
+└── _ParkSim/               # 源码（git archive HEAD，commit 见镜像内 /opt/parksim/BUILDINFO）+ 镜像内 colcon build 产物
     ├── python/parksim/
     │   ├── webviz/         # 浏览器前端 + WS 桥（server.py）
     │   ├── priorFiles/
@@ -428,7 +443,8 @@ docker image inspect parksim-jth:v1 --format '{{.Id}}'   # 应等于 §0 里的�
    - `obstacles.json`（58 KB）、`agents.json`（46 KB，幽灵层用）→ 保留真实文件
    - `frames.json` / `instances.json`（原 26 MB + 242 MB，仅幽灵层/经验回放读取）
      → 用 `{}` 占位，**已实测冒烟全过**（对比实验：真实文件 vs `{}`，两次探针 10/10
-     PASS、车辆均正常出现并移动）。这一项让镜像从 1.54 GB 降到 1.28 GB。
+     PASS、车辆均正常出现并移动）。这一项当时让镜像从 1.54 GB 降到 1.28 GB
+     （**历史数值**；当前体积见 §0「构建产物侧」的权威来源）。
    - 7.5 GB 的 DJI 全量数据集不带。
 4. 镜像内 foxy 树、`_ParkSim` 路径与构建机**完全一致**；若要改路径，
    必须同时改 `setup.bash` 里的绝对路径，否则 ament index 会失效。
