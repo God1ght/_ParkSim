@@ -288,13 +288,27 @@ class SimStateTracker(object):
             self._zero_since = None
             self._reset_alerts_locked()
 
-    def note_spawn(self, entering_remaining, exiting_remaining):
-        """缓存最新 /webviz/spawn_status（随 init 下发为 spawn 字段）。"""
+    def note_spawn(self, entering_remaining, exiting_remaining,
+                   continuous=None, interval_mean=None):
+        """缓存最新 /webviz/spawn_status（随 init 下发为 spawn 字段）。
+
+        continuous / interval_mean 是节点侧为「持续生成」补发的两个字段：
+        持续模式下两条队列的余量恒为 1（pop 一个立刻补抽一个），
+        「余量 > 0 却零车」不再等于「车辆节点没起来」，判定窗口必须按到达间隔放大，
+        否则 interval_mean 较大时（车流本来就稀）会误报 spawn_stuck。
+        """
         try:
             entry = {'entering_remaining': int(entering_remaining),
                      'exiting_remaining': int(exiting_remaining)}
         except (TypeError, ValueError):
             return
+        if continuous is not None:
+            entry['continuous'] = bool(continuous)
+        if interval_mean is not None:
+            try:
+                entry['interval_mean'] = max(0.0, float(interval_mean))
+            except (TypeError, ValueError):
+                pass
         with self._lock:
             self.spawn = entry
 
@@ -332,11 +346,22 @@ class SimStateTracker(object):
                                    但 sim_time 不推进（某车节点死锁）。
         余量为 0 的 stall 判定要求**真实收到过** spawn_status（spawn 非 None），
         避免与 finished 的退化语义混淆、也不误报。
+
+        持续生成（continuous）下调两处语义，否则告警会失真：
+          · 队列余量恒为 1（pop 一个立刻补抽一个）→「余量 == 0」不再可用；
+          · 车流可以很稀 →「零车」是正常状态，判定窗口须按到达间隔放大。
         """
         run = (self.state == 'running')
         spawn = self.spawn
         ent = spawn.get('entering_remaining') if spawn else None
         ext = spawn.get('exiting_remaining') if spawn else None
+        cont = bool(spawn.get('continuous')) if spawn else False
+        interval_mean = spawn.get('interval_mean') if spawn else None
+        stuck_window = SPAWN_STUCK_ALERT_S
+        if cont and isinstance(interval_mean, (int, float)) and interval_mean > 0:
+            # 一轮「零车」最长约等于一个到达间隔（车走完了下一辆还没来），
+            # 取 2.5× 作裕量：宁可晚报也不能误报「车辆节点未起来」。
+            stuck_window = max(SPAWN_STUCK_ALERT_S, 2.5 * float(interval_mean))
 
         # ---------- ① 发车异常：余量 > 0 却零车 ----------
         stuck = bool(run and ent is not None and ext is not None
@@ -345,7 +370,7 @@ class SimStateTracker(object):
             if self._spawn_stuck_since is None:
                 self._spawn_stuck_since = now
             elif (not self._spawn_stuck_alerted
-                  and (now - self._spawn_stuck_since) >= SPAWN_STUCK_ALERT_S):
+                  and (now - self._spawn_stuck_since) >= stuck_window):
                 self._spawn_stuck_alerted = True
                 events.append({'type': 'alert', 'code': 'spawn_stuck',
                                'active': True, 'level': 'warn',
@@ -359,7 +384,10 @@ class SimStateTracker(object):
 
         # ---------- ② 停滞兜底：余量空 + 有车，但 sim_time 不推进 ----------
         # 若既有 stalled（数据流停滞）已生效 → 抑制本条，避免重复上报（既有更严重）。
-        stall_base = bool(run and ent == 0 and ext == 0 and n_vehicles > 0)
+        # 持续模式下「余量空」前提不成立（恒为 1），此时「有车 + 主时钟不推进」即为停滞，
+        # 退化为只要 queues_empty 或 continuous 成立即可（否则该告警在持续模式下形同虚设）。
+        stall_base = bool(run and n_vehicles > 0
+                          and ((ent == 0 and ext == 0) or cont))
         if stall_base and not self._dataflow_stalled:
             if prev_t is None or sim_t != prev_t:
                 # sim_time 在推进 → 条件恢复（条件之一：仿真时间恢复推进）
@@ -507,7 +535,9 @@ class BridgeNode(Node):
         except Exception:
             return
         sim_state_tracker.note_spawn(data.get('entering_remaining'),
-                                     data.get('exiting_remaining'))
+                                     data.get('exiting_remaining'),
+                                     data.get('continuous'),
+                                     data.get('interval_mean'))
 
     def _state_cb(self, vid):
         def cb(msg):
@@ -1768,6 +1798,21 @@ class SimManager(object):
         return None
 
     @staticmethod
+    def _bool(value):
+        """宽松布尔解析。
+
+        不能直接用 bool(value)：网页/CLI/YAML 都可能把关闭写成字符串 'false'，
+        而 bool('false') == True —— 会把「关」静默变成「开」。
+        """
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str):
+            return value.strip().lower() in ('1', 'true', 'yes', 'y', 'on')
+        return False
+
+    @staticmethod
     def _int_list(value):
         if value is None:
             return None
@@ -1805,6 +1850,25 @@ class SimManager(object):
                         num = cls._num(rand[key])
                         if num is not None:
                             vals[key] = float(num)
+                # 持续生成 / 占用率门控（布尔，宽松解析）
+                for key in ('continuous', 'occupancy_gate'):
+                    if key in rand:
+                        vals[key] = cls._bool(rand[key])
+                # 占用率上下限：比例量，钳到 [0,1]（与节点侧钳制一致，
+                # 但阀门放在这里更早 —— 免得把 90（百分数）写进 runtime yaml）
+                for key in ('entering_occupancy_max', 'exiting_occupancy_min'):
+                    if key in rand:
+                        num = cls._num(rand[key])
+                        if num is not None:
+                            vals[key] = min(1.0, max(0.0, float(num)))
+                if 'max_duration' in rand:
+                    num = cls._num(rand['max_duration'])
+                    if num is not None:
+                        vals['max_duration'] = max(0.0, float(num))
+                if 'max_concurrent' in rand:
+                    num = cls._num(rand['max_concurrent'])
+                    if num is not None:
+                        vals['max_concurrent'] = max(0, int(num))
                 if 'entering_spot_pool' in rand:
                     lst = cls._int_list(rand['entering_spot_pool'])
                     if lst is not None:

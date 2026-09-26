@@ -33,6 +33,22 @@ from parksim.allocation import (
 from parksim.scenario import load_scenario, effective_mode, load_map, ScenarioError, MapError, VALID_MODES
 from parksim.pytypes import VehicleState, NodeParamTemplate
 
+
+def _lax_bool(value):
+    """宽松布尔解析（场景文件由用户手改，不能假设只被机器写）。
+
+    带引号的 ``continuous: "false"`` 在 YAML 里是**字符串**，bool("false") == True ——
+    会把「关」静默变成「开」，且持续生成一旦误开会无视 entering/exiting 无限发车。
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in ('1', 'true', 'yes', 'y', 'on')
+    return False
+
+
 class SimulatorNodeParams(NodeParamTemplate):
     """
     template that stores all parameters needed for the node as well as default values
@@ -69,6 +85,21 @@ class SimulatorNodeParams(NodeParamTemplate):
         # 超过该时长仍未满足判据时强制放行，避免车辆异常/位置偏远导致入场队列永久停摆。
         # 可被 scenario 的 random.gate_timeout 覆盖。
         self.gate_timeout_s = 45.0
+
+        # ---- 持续运行（无终点的事件生成）----
+        # continuous = true 时忽略 entering/exiting，按到达分布无限地生成事件；
+        # 终止只由人工暂停/停止或 max_duration 决定，不再由「数量用完」决定。
+        self.continuous = False
+        # 占用率门控：把泊位占用率锁在 [exiting_occupancy_min, entering_occupancy_max] 区间内。
+        # 不限量后入场会把场停满、出场会把占用抽空，任一侧饱和都会让该侧事件流实质停摆，
+        # 故用占用率做闭环，让两侧事件流都能长期持续。
+        self.occupancy_gate = False
+        self.entering_occupancy_max = 0.90
+        self.exiting_occupancy_min = 0.10
+        # 可选安全阀（0 = 不限）
+        self.max_duration_s = 0.0
+        self.max_concurrent = 0
+        self._duration_capped = False
 
         # 多出入口（schema v2 有 portals）选口策略：
         #   'random' = 按 random_seed 从可行口里随机；或直接写 portal id（P1/P4 入场，P1/P2/P3 离场）
@@ -178,6 +209,19 @@ class SimulatorNode(MPClabNode):
         if 'gate_timeout' in rand:
             # 下限钳制：<=0 会让放行门每帧都立即超时（等于关掉门控），不是合法语义
             self.gate_timeout_s = max(1.0, float(rand['gate_timeout']))
+        if 'continuous' in rand:
+            self.continuous = _lax_bool(rand['continuous'])
+        if 'occupancy_gate' in rand:
+            self.occupancy_gate = _lax_bool(rand['occupancy_gate'])
+        if 'entering_occupancy_max' in rand:
+            # 占用率是比例，钳到 [0,1]；写错成 90 这种百分数不会静默变成「永不入场」
+            self.entering_occupancy_max = min(1.0, max(0.0, float(rand['entering_occupancy_max'])))
+        if 'exiting_occupancy_min' in rand:
+            self.exiting_occupancy_min = min(1.0, max(0.0, float(rand['exiting_occupancy_min'])))
+        if 'max_duration' in rand:
+            self.max_duration_s = max(0.0, float(rand['max_duration']))
+        if 'max_concurrent' in rand:
+            self.max_concurrent = max(0, int(rand['max_concurrent']))
         # 入口放行门判据可见化：有门户时判据1（y 边界）不适用（入场点由 portal 几何决定，
         # 默认 y 阈值是为旧场地标定的，在这类图上恒不成立），放行只由「驶离入场点 > 30 m」
         # 与 gate_timeout 兜底决定。打一行日志，避免该语义变化不可观测。
@@ -188,6 +232,14 @@ class SimulatorNode(MPClabNode):
                 '[entrance gate] 判据1(y<%s) 已停用（有门户地图）；放行判据 = 驶离入场点 > 30 m，'
                 '兜底 = %.1f s（仿真时钟）'
                 % (self.y_bound_to_resume_spawning, self.gate_timeout_s))
+        # 持续运行的生效参数可见化：不打这行就无法从日志判断本次是不是持续模式，
+        # 也就无法验证「事件流不再终止」。
+        if self.continuous or self.occupancy_gate or self.max_duration_s > 0 or self.max_concurrent > 0:
+            self.get_logger().info(
+                '[continuous] continuous=%s occupancy_gate=%s entering_occupancy_max=%.2f '
+                'exiting_occupancy_min=%.2f max_duration=%.1f s max_concurrent=%d'
+                % (self.continuous, self.occupancy_gate, self.entering_occupancy_max,
+                   self.exiting_occupancy_min, self.max_duration_s, self.max_concurrent))
         if (scenario.get('replay') or {}).get('agents_data_path'):
             self.agents_data_path = str(scenario['replay']['agents_data_path'])
 
@@ -367,9 +419,13 @@ class SimulatorNode(MPClabNode):
 
         # Spawning
         # 生成智能体，生成时间服从指数分布
-        self.spawn_entering_time = list(np.random.exponential(self.spawn_interval_mean, self.spawn_entering))
+        # 持续模式：队列只保留 1 个「待用间隔」，每次放行后由 _refill_spawn_queue 立即补抽。
+        # 有限模式仍按 entering/exiting 抽满 N 个（抽签次数不变 → 同 seed 的可复现性不受影响）。
+        _n_enter = 1 if self.continuous else self.spawn_entering
+        _n_exit = 1 if self.continuous else self.spawn_exiting
+        self.spawn_entering_time = list(np.random.exponential(self.spawn_interval_mean, _n_enter))
 
-        self.spawn_exiting_time = list(np.random.exponential(self.spawn_interval_mean, self.spawn_exiting))
+        self.spawn_exiting_time = list(np.random.exponential(self.spawn_interval_mean, _n_exit))
 
         self.last_enter_id = None
         self.last_enter_sub = None
@@ -674,6 +730,66 @@ class SimulatorNode(MPClabNode):
             paused += max(0.0, now - self._pause_t0)
         return now - self.start_time - paused
 
+    def _refill_spawn_queue(self, queue):
+        """持续模式：pop 掉一个间隔后立即补抽下一个。
+
+        指数分布**无记忆**，所以「先抽 N 个再逐个用」与「用掉一个再抽一个」在分布上完全等价
+        —— 补抽不会改变到达过程的性质，只是把队列从「有限条」变成「无终点的更新过程」。
+        """
+        if self.continuous:
+            queue.append(float(np.random.exponential(self.spawn_interval_mean)))
+
+    def _occupancy_ratio(self):
+        """泊位占用率。口径与可视化 occupancy 发布一致（只计 self.occupied，
+        不含已认领未抵达的车位），这样门控阈值与页面上看到的占用率是同一个数。"""
+        total = len(self.occupied)
+        if not total:
+            return 0.0
+        return float(np.count_nonzero(self.occupied)) / float(total)
+
+    def _gate_allows(self, kind):
+        """占用率门控判定。返回 False 时调用方应当「延后」本次事件而不是丢弃它。"""
+        if not self.occupancy_gate:
+            return True
+        ratio = self._occupancy_ratio()
+        if kind == 'entering':
+            return ratio < self.entering_occupancy_max
+        return ratio > self.exiting_occupancy_min
+
+    def _live_vehicle_count(self):
+        """当前仍在运行的车辆进程数。
+
+        不能用 len(self.vehicles)：该列表只在生成时 append、从不回收，记的是「累计生成过
+        多少辆」；拿它当并发数会让 max_concurrent 在第一辆之后立刻误判为已满。
+        """
+        self.vehicles = [p for p in self.vehicles if p.poll() is None]
+        return len(self.vehicles)
+
+    def _concurrency_allows(self):
+        if self.max_concurrent <= 0:
+            return True
+        return self._live_vehicle_count() < self.max_concurrent
+
+    def _enforce_max_duration(self):
+        """达到 max_duration 后清空两条发车队列。
+
+        清空而不是只加一个 if 判断，是为了让 spawn_status 的余量同时归零 ——
+        webviz 的 finished 判定要求「两队列余量均为 0 且零车」，否则持续模式下余量恒为 1，
+        到了时长上限也永远收不了口。
+        """
+        if self.max_duration_s <= 0 or self._duration_capped:
+            return
+        if self.sim_now() < self.max_duration_s:
+            return
+        self._duration_capped = True
+        pending = (len(self.spawn_entering_time), len(self.spawn_exiting_time))
+        del self.spawn_entering_time[:]
+        del self.spawn_exiting_time[:]
+        self.get_logger().info(
+            'max_duration %.1fs reached: spawn queues cleared (pending %d + %d dropped); '
+            'no further vehicles will be spawned (running vehicles finish normally)'
+            % (self.max_duration_s, pending[0], pending[1]))
+
     def publish_spawn_status(self):
         """上报两个 spawn 队列各自剩余未 pop 的元素个数（JSON 字符串）。
 
@@ -681,9 +797,14 @@ class SimulatorNode(MPClabNode):
         照常发布实际长度即可（通常为 0）。
         """
         msg = String()
+        # continuous / interval_mean 是给 webviz 用的：持续模式下队列余量恒为 1，
+        # 「余量 > 0 却零车」不再等于「车辆节点没起来」，服务端需要据此把
+        # spawn_stuck 的判定窗口按到达间隔放大，否则 interval_mean 较大时会误报。
         msg.data = json.dumps({
             'entering_remaining': len(self.spawn_entering_time),
             'exiting_remaining': len(self.spawn_exiting_time),
+            'continuous': bool(self.continuous),
+            'interval_mean': float(self.spawn_interval_mean),
         })
         self.spawn_status_pub.publish(msg)
         # 复用既有 1 Hz 派生状态路径做低频（5 s）外来节点扫描：晚期串扰一次性可见化，
@@ -1183,6 +1304,11 @@ class SimulatorNode(MPClabNode):
         current_time = self.sim_now()
 
         if self.spawn_entering_time and current_time - self.last_enter_time > self.spawn_entering_time[0]:
+            # 安全阀 / 长期稳态门控：门关时**不 pop、不推进 last_enter_time**，于是本次事件被
+            # 「延后」而不是「丢弃」——门一开就触发。持续模式下队列只留 1 个待用间隔，
+            # 所以延后不会积累成突发。
+            if not self._concurrency_allows() or not self._gate_allows('entering'):
+                return
             # 入库车辆从空位中选择（>0：0 作为「无车位」约定值不用于入库目标；
             # 已认领未抵达的也不可选，避免重复分配）
             claimed = self.entering_claimed | self.exiting_claimed
@@ -1200,9 +1326,12 @@ class SimulatorNode(MPClabNode):
                     empty_spots, self.occupied, self.unavailable_spots, claimed)
                 tandem_locked = before - len(empty_spots)
             if not empty_spots:
-                self.get_logger().warn(
-                    'No free spot for entering vehicle (tandem-locked: %d); retry next interval'
-                    % tandem_locked)
+                # 持续模式下满位会每个 interval 触发一次 → 按仿真时钟节流，避免刷屏。
+                if current_time - getattr(self, '_nofree_enter_warn_at', -1e9) >= 60.0:
+                    self._nofree_enter_warn_at = current_time
+                    self.get_logger().warn(
+                        'No free spot for entering vehicle (tandem-locked: %d); retry next interval'
+                        % tandem_locked)
                 self.last_enter_time = current_time
                 return
             chosen_spot = self.allocator.choose('entering', self.occupied, empty_spots)
@@ -1214,6 +1343,7 @@ class SimulatorNode(MPClabNode):
             self.entering_claimed.add(chosen_spot)
             self.enter_procs.append((proc, self.num_vehicles, int(chosen_spot)))
             self.spawn_entering_time.pop(0)
+            self._refill_spawn_queue(self.spawn_entering_time)   # 持续模式：无终点地补抽
             self.publish_spawn_status()
 
             self.last_enter_time = current_time
@@ -1227,6 +1357,9 @@ class SimulatorNode(MPClabNode):
         current_time = self.sim_now()
 
         if self.spawn_exiting_time and current_time - self.last_exit_time > self.spawn_exiting_time[0]:
+            # 与入库同样的门控：门关时延后本次事件（不 pop、不推进 last_exit_time）。
+            if not self._concurrency_allows() or not self._gate_allows('exiting'):
+                return
             # 出库车辆必须从「当前有虚拟停放车」的车位出发：
             # 已占用 且 未被在位车辆认领（入库车目标 / 已出库车位 / 封锁位均排除）。
             # 车位由车辆在 UNPARK 完成时释放（change_central_occupancy）。
@@ -1244,10 +1377,15 @@ class SimulatorNode(MPClabNode):
                     candidates, self.occupied, self.unavailable_spots, claimed)
                 tandem_locked = before - len(candidates)
             if not candidates:
-                self.get_logger().warn(
-                    'No departable spot (occupied & unclaimed) for exiting vehicle '
-                    '(tandem-locked: %d); entry skipped' % tandem_locked)
+                # 无「可出发车位」时这次事件被真正丢弃（thinning）。持续模式下会每 interval
+                # 复现，故按仿真时钟节流告警。
+                if current_time - getattr(self, '_nofree_exit_warn_at', -1e9) >= 60.0:
+                    self._nofree_exit_warn_at = current_time
+                    self.get_logger().warn(
+                        'No departable spot (occupied & unclaimed) for exiting vehicle '
+                        '(tandem-locked: %d); entry skipped' % tandem_locked)
                 self.spawn_exiting_time.pop(0)
+                self._refill_spawn_queue(self.spawn_exiting_time)   # 持续模式：无终点地补抽
                 self.publish_spawn_status()
             else:
                 chosen_spot = int(self.allocator.choose('exiting', self.occupied, candidates))
@@ -1258,6 +1396,7 @@ class SimulatorNode(MPClabNode):
                 # 释放保障：记录 (进程, 车辆号, 车位)；若车辆未发释放即退出，由看门狗代发
                 self.exit_procs.append((proc, self.num_vehicles, chosen_spot))
                 self.spawn_exiting_time.pop(0)
+                self._refill_spawn_queue(self.spawn_exiting_time)   # 持续模式：无终点地补抽
                 self.publish_spawn_status()
 
             self.last_exit_time = current_time
@@ -1326,6 +1465,8 @@ class SimulatorNode(MPClabNode):
     def timer_callback(self):
 
         if self.sim_is_running:
+            # 时长安全阀：到点即清空发车队列（只停新增，已在场车辆正常跑完）
+            self._enforce_max_duration()
             if self.scenario_mode == 'custom':
                 self.try_spawn_custom()
             elif self.scenario_mode == 'replay':

@@ -187,6 +187,13 @@ const scBlocked = document.getElementById('scBlocked');
 const scOccupied = document.getElementById('scOccupied');
 const scOccRandom = document.getElementById('scOccRandom');
 const scOccCount = document.getElementById('scOccCount');
+const secContinuous = document.getElementById('secContinuous');
+const scContinuous = document.getElementById('scContinuous');
+const scOccGate = document.getElementById('scOccGate');
+const scEnterOccMax = document.getElementById('scEnterOccMax');
+const scExitOccMin = document.getElementById('scExitOccMin');
+const scMaxDuration = document.getElementById('scMaxDuration');
+const scMaxConcurrent = document.getElementById('scMaxConcurrent');
 const scTimeScale = document.getElementById('scTimeScale');
 const scMaxAgents = document.getElementById('scMaxAgents');
 const scOccDataset = document.getElementById('scOccDataset');
@@ -1051,6 +1058,9 @@ function initSchemePanel() {
   schemeStatus.textContent = managed ? '' : '当前桥为只读模式（未启用 --manage-sim），无法从网页重启仿真。';
   if (!S.schemeWired) {
     scInitMode.addEventListener('change', () => applyModePrefill());
+    // 持续生成 / 占用门控是「开关式」参数：勾选后其管辖的数值项才有意义，随即刷新置灰状态
+    if (scContinuous) scContinuous.addEventListener('change', () => syncContinuousEnabled());
+    if (scOccGate) scOccGate.addEventListener('change', () => syncContinuousEnabled());
     scMap.addEventListener('change', () => {
       setMsg('已选择场地：' + scMap.value + '，点击「加载底图」生效');
       if (btnLoadMap) btnLoadMap.textContent = '加载底图（' + scMap.value + '）';
@@ -1060,6 +1070,24 @@ function initSchemePanel() {
   applyModePrefill();
   applyParamsToInputs(current.params);
   refreshSchemeCurrent();
+}
+
+function syncContinuousEnabled() {
+  // 持续模式下 entering/exiting 被节点忽略 —— 置灰避免误以为它们仍生效。
+  // 用 disabled 而不是隐藏：值仍被 collectParams 读出并保留，取消勾选后原样恢复。
+  const cont = !!(scContinuous && scContinuous.checked);
+  for (const el of [scEntering, scExiting]) {
+    if (!el) continue;
+    if (el.parentElement) el.parentElement.style.opacity = cont ? '0.4' : '';
+    el.disabled = cont;
+  }
+  // 占用率上下限只在门控开启时参与判定。
+  const gate = !!(scOccGate && scOccGate.checked);
+  for (const el of [scEnterOccMax, scExitOccMin]) {
+    if (!el) continue;
+    if (el.parentElement) el.parentElement.style.opacity = gate ? '' : '0.4';
+    el.disabled = !gate;
+  }
 }
 
 function applyModePrefill() {
@@ -1082,6 +1110,14 @@ function applyModePrefill() {
     const ro = r.occupancy_random || {};
     if (scOccRandom) scOccRandom.checked = ro.enable !== false;
     if (scOccCount) scOccCount.value = (ro.count != null) ? ro.count : 0;
+    // 持续运行：默认关（与 scenario.yaml 一致），故缺省一律填 false/默认值
+    if (scContinuous) scContinuous.checked = r.continuous === true;
+    if (scOccGate) scOccGate.checked = r.occupancy_gate === true;
+    if (scEnterOccMax) scEnterOccMax.value = (r.entering_occupancy_max != null) ? r.entering_occupancy_max : 0.90;
+    if (scExitOccMin) scExitOccMin.value = (r.exiting_occupancy_min != null) ? r.exiting_occupancy_min : 0.10;
+    if (scMaxDuration) scMaxDuration.value = (r.max_duration != null) ? r.max_duration : 0;
+    if (scMaxConcurrent) scMaxConcurrent.value = (r.max_concurrent != null) ? r.max_concurrent : 0;
+    syncContinuousEnabled();
   }
   if (mode === 'replay') {
     const rp = d.replay || {};
@@ -1102,6 +1138,14 @@ function applyParamsToInputs(params) {
   if (r.seed != null) scSeed.value = r.seed;
   if (r.y_bound != null) scYBound.value = r.y_bound;
   if (scGateTimeout && r.gate_timeout != null) scGateTimeout.value = r.gate_timeout;
+  // 持续运行：注意用 === true 而非真值判断 —— 服务端可能下发字符串 'false'，真值判断会误开
+  if (scContinuous && r.continuous != null) scContinuous.checked = (r.continuous === true);
+  if (scOccGate && r.occupancy_gate != null) scOccGate.checked = (r.occupancy_gate === true);
+  if (scEnterOccMax && r.entering_occupancy_max != null) scEnterOccMax.value = r.entering_occupancy_max;
+  if (scExitOccMin && r.exiting_occupancy_min != null) scExitOccMin.value = r.exiting_occupancy_min;
+  if (scMaxDuration && r.max_duration != null) scMaxDuration.value = r.max_duration;
+  if (scMaxConcurrent && r.max_concurrent != null) scMaxConcurrent.value = r.max_concurrent;
+  if (secRandom && !secRandom.classList.contains('hidden')) syncContinuousEnabled();
   const occ = r.occupancy || {};
   if (Array.isArray(occ.blocked)) scBlocked.value = occ.blocked.join(',');
   if (Array.isArray(occ.occupied)) scOccupied.value = occ.occupied.join(',');
@@ -1137,6 +1181,18 @@ function collectParams() {
     if (!isNaN(yBound)) random.y_bound = yBound;
     const gateTimeout = scGateTimeout ? parseFloat(scGateTimeout.value) : NaN;
     if (!isNaN(gateTimeout)) random.gate_timeout = gateTimeout;
+    // 持续运行：开关恒发（显式 false 很重要 —— 服务端 _clean 用「键在不在」判断，
+    // 不发就等于沿用 base scenario.yaml 的值，用户关不掉）
+    if (scContinuous) random.continuous = !!scContinuous.checked;
+    if (scOccGate) random.occupancy_gate = !!scOccGate.checked;
+    const enterOccMax = scEnterOccMax ? parseFloat(scEnterOccMax.value) : NaN;
+    if (!isNaN(enterOccMax)) random.entering_occupancy_max = enterOccMax;
+    const exitOccMin = scExitOccMin ? parseFloat(scExitOccMin.value) : NaN;
+    if (!isNaN(exitOccMin)) random.exiting_occupancy_min = exitOccMin;
+    const maxDuration = scMaxDuration ? parseFloat(scMaxDuration.value) : NaN;
+    if (!isNaN(maxDuration)) random.max_duration = maxDuration;
+    const maxConcurrent = scMaxConcurrent ? parseInt(scMaxConcurrent.value, 10) : NaN;
+    if (!isNaN(maxConcurrent)) random.max_concurrent = maxConcurrent;
     const blocked = parseSpotList(scBlocked.value);
     const occupied = parseSpotList(scOccupied.value);
     const occ = {};
@@ -1170,6 +1226,12 @@ function describeScheme(cfg) {
     '参考路径=' + schemeLabel('ref_path_generator', cfg.ref_path_generator || 'spline'),
     '机动=' + schemeLabel('maneuver_provider', cfg.maneuver_provider || 'offline'),
   ];
+  const _rand = (cfg.params && cfg.params.random) || {};
+  if (_rand.continuous === true) {
+    parts.push('持续生成' + (_rand.occupancy_gate === true ? '（占用率门控）' : ''));
+    if (_rand.max_duration > 0) parts.push('上限 ' + _rand.max_duration + 's');
+    if (_rand.max_concurrent > 0) parts.push('并发 ≤ ' + _rand.max_concurrent);
+  }
   if (cfg.params && Object.keys(cfg.params).length) parts.push('含细参数覆盖');
   return parts.join(' · ');
 }
