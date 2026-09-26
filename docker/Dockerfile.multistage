@@ -1,5 +1,5 @@
 # =============================================================================
-# ParkSim-JTH 一体化镜像（多阶段瘦身版，试验用：只产出 parksim-jth:v2-thin）
+# ParkSim-JTH 一体化镜像（多阶段瘦身版）
 #
 # 目标不变：目标机「无 ROS、无 conda、无源码」——一条 docker run 即起服。
 #
@@ -36,10 +36,27 @@
 #   * jth_b1 地图资产随源码 git archive 自带；7.5G DJI 数据集只带最小子集。
 #   * ROS_LOCALHOST_ONLY=1 固化在镜像内（见 ENV，理由同上）。
 #
+# ── 档 1 / 档 2（2026-09-27 新增）：交付物不得夹带可读源码与溯源指针 ──────────
+#   档 2：构建阶段把自研「运行期可达闭包」编译为 Cython 原生扩展（.so），
+#         源码树里的 .py 删除、install 树的符号链接农场物化。
+#         26 个闭包模块中 25 个编译、1 个（webviz/server.py）保留为 6 行 stub
+#         —— 因为 run_app.sh 要直接 exec 它。见 sourceless_build.sh。
+#         最小集按**目录级**裁剪：不含任何闭包模块的包目录整棵删除（否则会留下
+#         「只剩 __init__.py + 说明文档」的空壳），保留目录内非闭包的 .py 逐个删。
+#   档 1：运行阶段只从构建阶段取 python/ 与 workspace/，仓库根不再进镜像
+#         （顺带甩掉 32MB 死重，且 README.md 含上游仓库地址）；
+#         同时清掉 BUILDINFO / docker history / OCI label / README 四条溯源路径。
+#         构建来源改由出包侧的 *.buildinfo sidecar 留存。
+#   两道护栏：构建期 sourceless_build.sh（S7 静态断言）+ 运行期 assert_sourceless.sh
+#   （C5a~C5h）。后者必须在运行阶段跑——某个模块可能在构建阶段导得进、
+#   在运行阶段因缺库而炸，这类缺口在构建阶段是隐形的。
+#
 # ⚠ 缓存红线（已踩过两次，不要再踩第三次）：
-#   ARG 的值会进入**其后所有指令**的缓存键。PARKSIM_BUILD_TIME 每版都变、
-#   PARKSIM_GIT_HEAD / PARKSIM_GIT_BRANCH 随 commit 变 —— 三者**必须放在所有重量级层之后**
-#   （本文件放在运行阶段末尾、BUILDINFO 之前）。后续若再加引用这类 ARG 的 LABEL，同样放末尾。
+#   ARG 的值会进入**其后所有指令**的缓存键。PARKSIM_BUILD_TIME 每版都变 ——
+#   必须放在所有重量级层之后（本文件放在运行阶段末尾、BUILDINFO 之前）。
+#   后续若再加引用这类 ARG 的 LABEL，同样放末尾。
+#   注意：PARKSIM_GIT_HEAD / PARKSIM_GIT_BRANCH 已于档 1 移除（它们既是溯源链，
+#   也正是当年这条缓存红线的成因之一）。
 # =============================================================================
 
 # =============================================================================
@@ -74,9 +91,12 @@ RUN apt-get update \
 
 # 构建期装**全量** requirements-app.txt：除运行期 7 项外，
 # empy / lark-parser / catkin-pkg / colcon-common-extensions 只有本阶段需要。
+# 另加 cython（档 2）：把自研运行期闭包编译为原生扩展，只在构建阶段需要。
 COPY requirements-app.txt /tmp/requirements-app.txt
 RUN python3 -m pip install --no-cache-dir "pip==24.2" "setuptools==75.1.0" "wheel==0.44.0" \
  && python3 -m pip install --no-cache-dir -r /tmp/requirements-app.txt \
+ && python3 -m pip install --no-cache-dir "cython==3.0.11" \
+ && python3 -c "import Cython; print('[build] cython', Cython.__version__)" \
  && rm -f /tmp/requirements-app.txt
 
 # 载荷（跑完本阶段即丢弃；运行阶段会从同一 payload 再 COPY 一次）
@@ -94,6 +114,20 @@ RUN bash -c 'set -eo pipefail; \
           --cmake-args -DCMAKE_BUILD_TYPE=Release; \
       set +u; source ${PARKSIM_ROOT}/workspace/install/setup.bash; set -u; \
       python3 -c "from parksim.msg import VehicleStateMsg, VehicleInfoMsg; from parksim.srv import OccupancySrv; print(\"[build] OK: parksim.msg/parksim.srv importable\")"'
+
+# -----------------------------------------------------------------------------
+# 档 2：把自研运行期闭包编译成原生扩展（.so），并让交付物里不再有可读 Python 源码。
+#
+#   必须在 colcon build **之后**：脚本要物化 install 树，而 install 树是
+#   ament_python_install_package 产出的**符号链接农场**（实测 549 个软链、其中
+#   152 个指向本脚本要删的源码）；只删源码不物化，运行时就会 import 失败。
+#
+#   脚本自身带 7 段断言（编译数、.so 落位、.py/.c 零残留、悬空软链归零、
+#   入口 stub 行数、最小集裁剪完整性），失败即中止构建。
+#   设计说明与踩过的坑见脚本头部注释。
+# -----------------------------------------------------------------------------
+COPY sourceless_build.sh /opt/parksim-build/sourceless_build.sh
+RUN bash /opt/parksim-build/sourceless_build.sh "${PARKSIM_ROOT}"
 
 # =============================================================================
 # 阶段 2/2：runtime —— 只有运行期依赖。工具链、pip 构建依赖、colcon 全部不在本阶段。
@@ -193,21 +227,30 @@ RUN python3 -m pip install --no-cache-dir "pip==24.2" "setuptools==75.1.0" "whee
  && rm -f /tmp/requirements-app-runtime.txt
 
 # -----------------------------------------------------------------------------
-# 载荷 —— 与 v1 完全相同的三处 COPY（同一 payload、同一绝对路径）
+# 载荷
+#
+#   foxy / dlp 仍直接用 payload；**_ParkSim 改为从构建阶段取**（档 1+2 的关键改动）。
+#
+#   为什么必须改：
+#     · 档 2 的编译发生在构建阶段。运行阶段若仍 `COPY payload/parksim/`（未经编译的
+#       源码树），镜像里会**同时**存在可读 .py 与 .so —— 等于封装没做。
+#     · 只取 python/ 与 workspace/ 两棵子树，顺带把仓库根挡在门外：
+#       carla_PythonAPI/(17M) + docs/(15M) + tools/ + README.md + LICENSE +
+#       .gitignore + webviz_runtime.yaml 共约 32MB 死重，其中 README.md 还含
+#       上游仓库地址（溯源链）。
+#     · workspace/build 与 workspace/install 都在 workspace/ 里，原先那两条
+#       `COPY --from=build` 一并合并掉。
+#     注意：install 里的软链指向 workspace/src 与 python/ 的**绝对路径**，
+#     两棵子树都在、路径同构，软链自然解析（已在构建期由 sourceless_build.sh 校验）。
 # -----------------------------------------------------------------------------
 COPY payload/foxy/ /media/step/data/Yccc7/ParkSim-JTH/deps/ros/foxy/
-COPY payload/parksim/ /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/
 COPY payload/dlp/ /media/step/data/Yccc7/ParkSim-JTH/deps/dlp-dataset/
-
-# -----------------------------------------------------------------------------
-# colcon 产物：**build 与 install 都要**（见文件头红线 2）
-#   install 里的 .py 是指向 workspace/src 的**绝对软链**，所以上一行的源码 COPY
-#   必须在场；路径同构，软链自然解析。
-# -----------------------------------------------------------------------------
-COPY --from=build /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/workspace/build \
-                  /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/workspace/build
-COPY --from=build /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/workspace/install \
-                  /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/workspace/install
+COPY --from=build /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/python \
+                  /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/python
+COPY --from=build /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/workspace \
+                  /media/step/data/Yccc7/ParkSim-JTH/_ParkSim/workspace
+COPY --from=build /opt/parksim/CORE_MODULES.txt /opt/parksim/CORE_MODULES.txt
+COPY --from=build /opt/parksim/SOURCELESS.txt   /opt/parksim/SOURCELESS.txt
 
 # -----------------------------------------------------------------------------
 # DJI_0012 最小子集（webviz 启动时 Dataset.load() 必读，内容不使用但文件必须存在）
@@ -284,26 +327,75 @@ COPY so-allowlist-v1.txt /opt/parksim-assert/so-allowlist-v1.txt
 COPY assert_runtime_deps.sh /opt/parksim-assert/assert_runtime_deps.sh
 RUN bash /opt/parksim-assert/assert_runtime_deps.sh /opt/parksim-assert/so-allowlist-v1.txt
 
+# -----------------------------------------------------------------------------
+# 构建期断言 D（档 2 专属）：源码不可读 + 编译产物在本阶段真的能加载。
+#
+#   为什么必须在**运行阶段**而不是构建阶段跑 C5a：
+#     构建阶段有完整工具链与全量 pip 依赖，运行阶段只留实测出的运行期依赖。
+#     某个模块可能"在构建阶段导得进去、在运行阶段因为缺一个库而炸"，
+#     这类缺口在构建阶段是隐形的。所以"能不能导入"只在最终阶段成立才算数。
+#   完整清单见 assert_sourceless.sh（C5a~C5g）。
+# -----------------------------------------------------------------------------
+COPY assert_sourceless.sh /opt/parksim-assert/assert_sourceless.sh
+RUN bash /opt/parksim-assert/assert_sourceless.sh
+
+# -----------------------------------------------------------------------------
+# 溯源链清理（档 1）—— 交付物里不得留下「这份镜像等于哪个 commit」的指针。
+#
+#   原先镜像里有 4 条独立溯源路径：BUILDINFO 的 git_head/git_branch、
+#   docker history 里的 PARKSIM_GIT_HEAD/PARKSIM_GIT_BRANCH 构建参数、
+#   OCI label 的 org.opencontainers.image.revision、以及源码里的 README.md
+#   （含上游仓库地址）。commit hash 是一个**精确快照的全局标识符**——
+#   拿到它就能把交付物与某个具体仓库状态一一对应。故四条一并去除：
+#     · 不再声明 PARKSIM_GIT_HEAD / PARKSIM_GIT_BRANCH → docker history 无痕
+#     · LABEL 去掉 revision
+#     · BUILDINFO 只留镜像 tag 与构建时间
+#     · README.md/LICENSE/.gitignore 等仓库根文件已由上面的最小集 COPY 挡在门外
+#   构建来源（branch/HEAD/built_at）改由 build_image.sh 写到**交付 tar 之外的**
+#   sidecar 文件（*.buildinfo）里，用户本地可查、镜像里没有。
 # 以下声明**故意**放在所有重量级层之后（同 v1 的缓存红线）。
-ARG PARKSIM_GIT_HEAD=unknown
-ARG PARKSIM_GIT_BRANCH=unknown
 # 实际交付 tag 由 build_image.sh 的 --tag 传入（不再在文件里写死，否则
 # BUILDINFO 会声称一个与实际标签不符的名字）。
 ARG PARKSIM_IMAGE_TAG=parksim-jth:v2
 
 LABEL org.opencontainers.image.title="parksim-jth" \
       org.opencontainers.image.description="Self-contained ParkSim JTH simulator + webviz (bundled ROS 2 Foxy, no conda, no /opt/ros) — multi-stage slim build" \
-      org.opencontainers.image.version="v2" \
-      org.opencontainers.image.revision="${PARKSIM_GIT_HEAD}"
+      org.opencontainers.image.version="v2"
 
 ARG PARKSIM_BUILD_TIME=unknown
 
 RUN set -e; \
     mkdir -p /opt/parksim; \
-    printf 'image        : %s\nsource       : _ParkSim (git archive HEAD)\ngit_branch   : %s\ngit_head     : %s\nbuilt_at     : %s\ncanonical_root: /media/step/data/Yccc7/ParkSim-JTH\nstages       : build (discarded) -> runtime (multi-stage slim)\n' \
-        "${PARKSIM_IMAGE_TAG}" "${PARKSIM_GIT_BRANCH}" "${PARKSIM_GIT_HEAD}" "${PARKSIM_BUILD_TIME}" \
+    printf 'image        : %s\nbuilt_at     : %s\ncanonical_root: /media/step/data/Yccc7/ParkSim-JTH\nstages       : build (discarded) -> runtime (multi-stage slim)\nsourceless   : yes (core compiled to .so; see SOURCELESS.txt)\n' \
+        "${PARKSIM_IMAGE_TAG}" "${PARKSIM_BUILD_TIME}" \
         > /opt/parksim/BUILDINFO; \
     cat /opt/parksim/BUILDINFO
+
+# -----------------------------------------------------------------------------
+# 构建期断言 E（档 1 专属）：溯源链必须真的断了。
+#   逐条检查上面说要清理的东西确实不在；
+#   失败即中止构建，避免"以为清了其实没清"。
+# -----------------------------------------------------------------------------
+RUN set -e; \
+    R=/media/step/data/Yccc7/ParkSim-JTH/_ParkSim; \
+    test ! -e "$R/.git" || { echo "溯源链: 镜像里出现了 .git"; exit 1; }; \
+    for f in README.md LICENSE .gitignore webviz_runtime.yaml; do \
+        test ! -e "$R/$f" || { echo "溯源链: 仓库根仍有 $f"; exit 1; }; \
+    done; \
+    for d in docs tools carla_PythonAPI docker; do \
+        test ! -e "$R/$d" || { echo "溯源链: 仓库根仍有 $d"; exit 1; }; \
+    done; \
+    ! grep -q 'git_head\|git_branch' /opt/parksim/BUILDINFO \
+        || { echo "溯源链: BUILDINFO 仍含 git_head/git_branch"; exit 1; }; \
+    if grep -rqE 'XuShenLZ|God1ght|_ParkSim\.git|github\.com/[A-Za-z0-9_-]+/_ParkSim' "$R" 2>/dev/null; then \
+        echo "溯源链: 源码树里仍能找到上游仓库标识："; \
+        grep -rlE 'XuShenLZ|God1ght|_ParkSim\.git' "$R" 2>/dev/null | head -5; exit 1; \
+    fi; \
+    N=$(find "$R/python/parksim" -name '*.py' ! -name '__init__.py' | wc -l); \
+    test "$N" -eq 1 || { echo "可读源码: 非 __init__ 的 .py = $N（应为 1，入口 stub）"; find "$R/python/parksim" -name '*.py' ! -name '__init__.py'; exit 1; }; \
+    J=$(find "$R/python/parksim" \( -name '*.ipynb' -o -name '*.bak*' -o -name '*.pyx' -o -name '*.orig' \) | wc -l); \
+    test "$J" -eq 0 || { echo "可读源码: 仍有 notebook/备份等源码型文件 $J 个"; find "$R/python/parksim" \( -name '*.ipynb' -o -name '*.bak*' \) | head -5; exit 1; }; \
+    echo "[assets] OK: 溯源链已清理（无 .git / 无仓库根文档与目录 / BUILDINFO 无 git_head / 无上游仓库标识 / 非 __init__ 的可读 .py 恰为 1 / 无 notebook 与备份）"
 
 # -----------------------------------------------------------------------------
 # 入口
