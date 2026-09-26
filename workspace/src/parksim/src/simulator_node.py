@@ -65,6 +65,10 @@ class SimulatorNodeParams(NodeParamTemplate):
         self.spawn_exiting = 3
         self.y_bound_to_resume_spawning = 70
         self.spawn_interval_mean = 5 # (s)
+        # 入口放行门强制放行超时（秒，**仿真时钟**）：等待「上一辆入场车驶离入口区域」
+        # 超过该时长仍未满足判据时强制放行，避免车辆异常/位置偏远导致入场队列永久停摆。
+        # 可被 scenario 的 random.gate_timeout 覆盖。
+        self.gate_timeout_s = 45.0
 
         # 多出入口（schema v2 有 portals）选口策略：
         #   'random' = 按 random_seed 从可行口里随机；或直接写 portal id（P1/P4 入场，P1/P2/P3 离场）
@@ -171,6 +175,19 @@ class SimulatorNode(MPClabNode):
             self.spawn_interval_mean = float(rand['interval_mean'])
         if 'y_bound' in rand:
             self.y_bound_to_resume_spawning = float(rand['y_bound'])
+        if 'gate_timeout' in rand:
+            # 下限钳制：<=0 会让放行门每帧都立即超时（等于关掉门控），不是合法语义
+            self.gate_timeout_s = max(1.0, float(rand['gate_timeout']))
+        # 入口放行门判据可见化：有门户时判据1（y 边界）不适用（入场点由 portal 几何决定，
+        # 默认 y 阈值是为旧场地标定的，在这类图上恒不成立），放行只由「驶离入场点 > 30 m」
+        # 与 gate_timeout 兜底决定。打一行日志，避免该语义变化不可观测。
+        # 注意位置：必须在本段（random 解析）之后才打印 gate_timeout_s 的真实取值；
+        # self.portals 已在本方法更早的 _load_portal_data() 里填充完毕。
+        if getattr(self, 'portals', None):
+            self.get_logger().info(
+                '[entrance gate] 判据1(y<%s) 已停用（有门户地图）；放行判据 = 驶离入场点 > 30 m，'
+                '兜底 = %.1f s（仿真时钟）'
+                % (self.y_bound_to_resume_spawning, self.gate_timeout_s))
         if (scenario.get('replay') or {}).get('agents_data_path'):
             self.agents_data_path = str(scenario['replay']['agents_data_path'])
 
@@ -252,7 +269,10 @@ class SimulatorNode(MPClabNode):
         # 出库车辆占用释放保障：(Popen, vehicle_id, spot)；
         # 车辆进程若未发送释放就结束（崩溃/被杀），由看门狗代发释放，避免幽灵占用。
         self.exit_procs = []
-        self._gate_closed_at = 0
+        # 入口放行门关闭时刻（**仿真时钟**，非墙钟）。None = 当前无待放行门。
+        # 用 None 而不是 0 作哨兵：仿真时钟 0 起点处 0 是合法取值，用 0 会让
+        # t≈0 时刚关上的门被判成「未关门」。
+        self._gate_closed_at = None
         # 入库车辆抵达保障（镜像）：(Popen, vehicle_id, spot)；
         # 车辆未抵达即结束（崩溃/被杀）时释放认领，避免车位被无效锁定。
         self.enter_procs = []
@@ -1143,10 +1163,14 @@ class SimulatorNode(MPClabNode):
         self.unpack_msg(msg, self.last_enter_state)
 
         # If vehicle left entrance area, start spawning another one
-        # 判据1（旧场地）：y 边界；判据2（地图规则）：距 spawn 点 > 30m
+        # 判据1（旧场地，无门户地图）：y 边界；判据2（地图规则）：距 spawn 点 > 30m
+        # 判据1 的默认阈值（70/72）是为旧场地标定的。带 portals 的地图（schema v2，如 jth_b1）
+        # 入场点由 portal 几何决定，车辆 y 恒远大于该阈值 → 判据1 恒不成立、该参数沦为空转旋钮
+        # （实测 jth_b1 车辆 y≈150+）。故仅在无门户地图上启用判据1，有门户时交由判据2 决定。
         if getattr(self, '_enter_spawn_pos', None) is None:
             self._enter_spawn_pos = (self.last_enter_state.x.x, self.last_enter_state.x.y)
-        _left = self.last_enter_state.x.y < self.y_bound_to_resume_spawning
+        _use_y_bound = not getattr(self, 'portals', None)
+        _left = bool(_use_y_bound) and self.last_enter_state.x.y < self.y_bound_to_resume_spawning
         if not _left and self._enter_spawn_pos is not None:
             _dx = self.last_enter_state.x.x - self._enter_spawn_pos[0]
             _dy = self.last_enter_state.x.y - self._enter_spawn_pos[1]
@@ -1197,7 +1221,7 @@ class SimulatorNode(MPClabNode):
             self.last_enter_sub = self.create_subscription(VehicleStateMsg, '/vehicle_%d/state' % self.last_enter_id, self.last_enter_cb, 10)
             self.keep_spawn_entering = False
             self._enter_spawn_pos = None   # 新入场车：重置 spawn 位置基准
-            self._gate_closed_at = time.time()
+            self._gate_closed_at = self.sim_now()
 
     def try_spawn_exiting(self):
         current_time = self.sim_now()
@@ -1314,11 +1338,15 @@ class SimulatorNode(MPClabNode):
                         self.last_enter_sub = None
 
                     self.try_spawn_entering()
-                elif getattr(self, '_gate_closed_at', 0) and time.time() - self._gate_closed_at > 45.0:
-                    # 放行门超时兜底：等待「车辆离开入口区域」超时（车辆异常/位置偏远）则强制放行
+                elif (self._gate_closed_at is not None
+                      and self.sim_now() - self._gate_closed_at > self.gate_timeout_s):
+                    # 放行门超时兜底：等待「车辆离开入口区域」超时（车辆异常/位置偏远）则强制放行。
+                    # 计时基准 = 仿真时钟（与发车间隔判据一致）：暂停期间冻结，避免
+                    # 「暂停超过阈值后再恢复 → 立刻强制放行」这种与仿真时间无关的放行。
                     self.get_logger().warn(
-                        'entrance gate timeout (%.0fs); allow next entering spawn' % (time.time() - self._gate_closed_at))
-                    self._gate_closed_at = 0
+                        'entrance gate timeout (%.0fs); allow next entering spawn'
+                        % (self.sim_now() - self._gate_closed_at))
+                    self._gate_closed_at = None
                     if self.last_enter_sub:
                         self.destroy_subscription(self.last_enter_sub)
                         self.last_enter_sub = None

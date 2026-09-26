@@ -182,6 +182,7 @@ const scExiting = document.getElementById('scExiting');
 const scInterval = document.getElementById('scInterval');
 const scSeed = document.getElementById('scSeed');
 const scYBound = document.getElementById('scYBound');
+const scGateTimeout = document.getElementById('scGateTimeout');
 const scBlocked = document.getElementById('scBlocked');
 const scOccupied = document.getElementById('scOccupied');
 const scOccRandom = document.getElementById('scOccRandom');
@@ -1074,6 +1075,7 @@ function applyModePrefill() {
     scInterval.value = (r.interval_mean != null) ? r.interval_mean : 5.0;
     scSeed.value = (r.seed != null) ? r.seed : 0;
     scYBound.value = (r.y_bound != null) ? r.y_bound : 72;
+    if (scGateTimeout) scGateTimeout.value = (r.gate_timeout != null) ? r.gate_timeout : 45;
     const occ = r.occupancy || {};
     scBlocked.value = Array.isArray(occ.blocked) ? occ.blocked.join(',') : '';
     scOccupied.value = Array.isArray(occ.occupied) ? occ.occupied.join(',') : '';
@@ -1099,6 +1101,7 @@ function applyParamsToInputs(params) {
   if (r.interval_mean != null) scInterval.value = r.interval_mean;
   if (r.seed != null) scSeed.value = r.seed;
   if (r.y_bound != null) scYBound.value = r.y_bound;
+  if (scGateTimeout && r.gate_timeout != null) scGateTimeout.value = r.gate_timeout;
   const occ = r.occupancy || {};
   if (Array.isArray(occ.blocked)) scBlocked.value = occ.blocked.join(',');
   if (Array.isArray(occ.occupied)) scOccupied.value = occ.occupied.join(',');
@@ -1132,6 +1135,8 @@ function collectParams() {
     if (!isNaN(seed)) random.seed = seed;
     const yBound = parseFloat(scYBound.value);
     if (!isNaN(yBound)) random.y_bound = yBound;
+    const gateTimeout = scGateTimeout ? parseFloat(scGateTimeout.value) : NaN;
+    if (!isNaN(gateTimeout)) random.gate_timeout = gateTimeout;
     const blocked = parseSpotList(scBlocked.value);
     const occupied = parseSpotList(scOccupied.value);
     const occ = {};

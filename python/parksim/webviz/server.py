@@ -1800,7 +1800,7 @@ class SimManager(object):
                         num = cls._num(rand[key])
                         if num is not None:
                             vals[key] = int(num)
-                for key in ('interval_mean', 'y_bound'):
+                for key in ('interval_mean', 'y_bound', 'gate_timeout'):
                     if key in rand:
                         num = cls._num(rand[key])
                         if num is not None:
