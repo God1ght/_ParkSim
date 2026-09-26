@@ -279,7 +279,7 @@ if [ "${DO_SAVE}" = "1" ]; then
     cp -p "${TARBALL}" "${SNAP}"
   fi
   TMP="${TARBALL}.tmp.$$"
-  log "docker save | 压缩 -> ${TARBALL}（1.28G，需数分钟）..."
+  log "docker save | 压缩 -> ${TARBALL}（镜像约 1.2 GB，需数分钟）..."
   if command -v pigz >/dev/null 2>&1; then
     docker save "${IMAGE}" | pigz -6 -p "$(nproc)" > "${TMP}"
   else
@@ -295,7 +295,7 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# 8) 回收 dangling 镜像（build 每次都会留下 <none>，1.28G 一个）
+# 8) 回收 dangling 镜像（build 每次都会留下 <none>，每个约 1 GB）
 # -----------------------------------------------------------------------------
 if [ "${DO_PRUNE}" = "1" ]; then
   log "回收 dangling 镜像 ..."
