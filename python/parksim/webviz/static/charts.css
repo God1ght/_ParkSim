@@ -2,12 +2,13 @@
  * ParkSim · 指标 + 事件可视化模块（charts.css）
  * -----------------------------------------------------------------------------
  * 作用域：#metricsViz / #eventsViz 内部，全部类名以 ch- 前缀，避免与 style.css 冲突。
- * 配色复用 style.css 的主题变量（--panel-solid / --text / --sub / --border），
- * 主题切换自动跟随；事件类型色按视觉规范硬编码（暗色下取值最稳）。
+ * 配色复用 style.css 的主题变量（--panel-solid / --text / --sub / --border）；
+ * 事件类型色按视觉规范硬编码（暗色下取值最稳）。2026-09-30：浅色主题已移除，
+ * 原先文末的浅色覆盖块一并删除，本文件只剩暗色一套取值。
  * 侧栏宽 304px，本模块所有内容在该宽度内排布。
  * ========================================================================== */
 
-/* 事件类型色（暗色规范值；浅色主题在文末做少量覆盖） */
+/* 事件类型色（暗色规范值） */
 #metricsViz, #eventsViz {
   --ev-enter: #4cc2ff;
   --ev-parked: #3ddbb4;
@@ -212,15 +213,4 @@
   padding: 6px 8px;
   border: 1px dashed var(--border);
   border-radius: 8px;
-}
-
-/* -------------------------------------------------- 浅色主题少量覆盖 -- */
-body[data-theme="light"] .ch-bar { background: rgba(20, 40, 60, .08); }
-body[data-theme="light"] #metricsViz,
-body[data-theme="light"] #eventsViz {
-  --ev-enter: #0a7f6b;
-  --ev-parked: #1f9e6e;
-  --ev-exit: #6d7885;
-  --ev-alert: #b8860b;
-  --ev-conflict: #c94b4b;
 }

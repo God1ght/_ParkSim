@@ -1,4 +1,4 @@
-/* ParkSim webviz v3 — 双主题 / 平滑插值 / 路径图层 / 组件化 UI
+/* ParkSim webviz v3 — 深色单主题 / 平滑插值 / 路径图层 / 组件化 UI
  * 数据协议（与 server.py 配合）：
  *   init  : {type:'init', map_size, scale, spots, waypoints, obstacles, colors, options}
  *   frame : {type:'frame', seq, t, vehicles:[{id,x,y,psi,c,label,v}], ghosts, fpath, running}
@@ -7,7 +7,10 @@
 (() => {
 'use strict';
 
-/* ================= 主题调色板（与 style.css 变量保持同步） ================= */
+/* ================= 主题调色板（与 style.css 变量保持同步） =================
+ * 2026-09-30：浅色主题已彻底移除，只保留 dark 一套。请只通过 THEMES.dark 取用，
+ * 不要再写 THEMES[S.theme] 这类按主题索引的写法。
+ */
 const THEMES = {
   dark: {
     canvasBg: '#0d1219',
@@ -49,46 +52,6 @@ const THEMES = {
     badgeBg: 'rgba(13,18,25,0.85)',
     spotReserved: '#2fd07e',
   },
-  light: {
-    canvasBg: '#f6f3ed',
-    grid: 'rgba(40,60,80,0.06)',
-    gridText: 'rgba(50,66,82,0.5)',
-    rowFill: 'rgba(234,230,222,0.6)',
-    rowStroke: 'rgba(70,90,110,0.10)',
-    slotLine: 'rgba(30,140,220,0.85)',
-    waypoint: 'rgba(70,90,110,0.42)',
-    obstacle: 'rgba(196,208,220,0.92)',
-    obstacleStroke: 'rgba(90,110,135,0.28)',
-    departing: 'rgba(214,152,26,0.80)',
-    departingStroke: 'rgba(146,96,8,0.95)',
-    rampFill: { entry: 'rgba(38,166,102,0.12)', exit: 'rgba(214,130,40,0.12)',
-                layer_down: 'rgba(52,116,190,0.12)', layer_up: 'rgba(140,86,200,0.12)' },
-    rampStroke: { entry: 'rgba(38,166,102,0.6)', exit: 'rgba(214,130,40,0.6)',
-                  layer_down: 'rgba(52,116,190,0.6)', layer_up: 'rgba(140,86,200,0.6)' },
-    rampHatch: 'rgba(70,100,130,0.25)',
-    rampArrow: 'rgba(52,116,190,0.85)',
-    rampLabel: 'rgba(50,66,82,0.92)',
-    entranceFill: 'rgba(38,166,102,0.14)',
-    entranceStroke: 'rgba(22,118,70,0.75)',
-    exitFill: 'rgba(214,80,50,0.14)',
-    exitStroke: 'rgba(168,54,28,0.80)',
-    gateLabel: 'rgba(45,58,72,0.95)',
-    gateLabelBg: 'rgba(246,243,237,0.78)',
-    ghost: 'rgba(45,70,95,0.11)',
-    ghostStroke: 'rgba(45,70,95,0.08)',
-    veh: { driving:'#2f9e6e', parking:'#e08a2c', braking:'#cf4b4b', done:'rgba(138,146,158,0.85)' },
-    vehStroke: 'rgba(255,255,255,0.85)',
-    cabin: 'rgba(255,255,255,0.40)',
-    wedge:  'rgba(255,255,255,0.9)',
-    label: 'rgba(45,60,75,0.92)',
-    path: 'rgba(38,132,150,0.9)',
-    pathGlow: 'rgba(38,132,150,0.15)',
-    trail: '38,132,150',
-    halo: 'rgba(47,158,110,0.28)',
-    scale: 'rgba(55,75,95,0.6)',
-    badgeBg: 'rgba(255,255,255,0.9)',
-    spotReserved: '#1f9e4f',
-  },
 };
 
 const STATE_NAMES = ['行驶中', '泊车机动', '制动等待', '已完成'];
@@ -114,7 +77,6 @@ const S = {
   mouse: { x: 0, y: 0 },
   layers: null,
   bgBase: null,
-  theme: 'dark',
   trailsMap: new Map(),
   fps: 0, _fpsCount: 0, _fpsT: performance.now(), _chipTick: 0,
   mapW: 140, mapH: 80, scale: 10,
@@ -148,7 +110,6 @@ const btnPause = document.getElementById('btnPause');
 const btnStart = document.getElementById('btnStart');
 const btnStop = document.getElementById('btnStop');
 const btnReset = document.getElementById('btnReset');
-const btnTheme = document.getElementById('btnTheme');
 const btnLayers = document.getElementById('btnLayers');
 const layersEl = document.getElementById('layers');
 const btnScheme = document.getElementById('btnScheme');
@@ -235,28 +196,21 @@ const mLat = document.getElementById('mLat');
 
 let W = 0, H = 0;
 
-/* ================= 主题 ================= */
-function initTheme() {
-  const q = new URLSearchParams(location.search).get('theme');
-  let t = q === 'light' ? 'light' : q === 'dark' ? 'dark' : null;
-  if (!t) { try { t = localStorage.getItem('parksim_theme'); } catch (e) {} }
-  if (t !== 'light' && t !== 'dark') t = 'dark';
-  setTheme(t, false);
-}
-function setTheme(t, persist = true) {
-  S.theme = t;
-  document.body.dataset.theme = t;
-  if (persist) { try { localStorage.setItem('parksim_theme', t); } catch (e) {} }
-  if (window.ParkSimCharts && typeof window.ParkSimCharts.refreshTheme === 'function') {
-    try { window.ParkSimCharts.refreshTheme(); } catch (e) { console.warn('ParkSimCharts.refreshTheme failed:', e); }
-  }
-}
-function cycleTheme() { setTheme(S.theme === 'dark' ? 'light' : 'dark'); }
+/* ================= 主题 =================
+ * 2026-09-30：浅色主题已彻底移除（应用户要求）。页面恒为深色：
+ *   · 不再读 ?theme= 查询参数，也不读写 localStorage 的 parksim_theme；
+ *   · 不再提供切换入口（控制坞「主题」按钮与 T 快捷键已删）；
+ *   · 深色变量由 style.css 的 body 规则无条件给出，<body data-theme="dark"> 仅为
+ *     charts.js 取色保留（它按 body.dataset.theme 选调色板）。
+ * 因此原本的 initTheme/setTheme/cycleTheme 三个函数整体删除。
+ */
 
 /* ================= 图层 ================= */
 function defaultLayers() {
   return {
-    baseMap: S.theme === 'light', zoneOverview: false, grid: false, spots: true, waypoints: false,
+    // 2026-09-30（应用户要求）：打开页面默认就显示分区概览图。
+    // 注：「分区概览图」依赖「底图」总开关（见 applyBaseMapVariant），故两者都置 true。
+    baseMap: true, zoneOverview: true, grid: false, spots: true, waypoints: false,
     obstacles: false, ghosts: true, paths: true, trails: false, labels: true,
     ramps: true, entranceExit: true,
   };
@@ -267,7 +221,9 @@ function applyLayerState() {
   });
 }
 function persistLayers() {
-  try { localStorage.setItem('parksim_layers_v5', JSON.stringify(S.layers)); } catch (e) {}
+  // key 由 v5 升到 v6：2026-09-30 改了默认图层（分区概览图默认开）。
+  // 不升 key 的话，老浏览器 localStorage 里的旧状态会盖掉新默认值，改了等于没改。
+  try { localStorage.setItem('parksim_layers_v6', JSON.stringify(S.layers)); } catch (e) {}
 }
 function resetLayers() {
   S.layers = defaultLayers();
@@ -277,7 +233,7 @@ function resetLayers() {
 }
 function initLayers() {
   try {
-    const raw = localStorage.getItem('parksim_layers_v5');
+    const raw = localStorage.getItem('parksim_layers_v6');
     if (raw) S.layers = Object.assign(defaultLayers(), JSON.parse(raw));
   } catch (e) {}
   if (!S.layers) S.layers = defaultLayers();
@@ -1723,7 +1679,7 @@ function estimateSpeed(vh) {
 function drawCarWorld(x, y, psi, color, opt) {
   opt = opt || {};
   const L = opt.L || 4.6, Wd = opt.W || 1.85;
-  const th = THEMES[S.theme];
+  const th = THEMES.dark;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(psi);
@@ -1836,7 +1792,7 @@ function draw() {
     S._fpsCount = 0; S._fpsT = now;
   }
 
-  const th = THEMES[S.theme];
+  const th = THEMES.dark;
   setScreen();
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = th.canvasBg;
@@ -1851,7 +1807,8 @@ function draw() {
   // 底图（世界空间；含变换时按「PNG 像素 → 世界坐标」矩阵绘制）
   if (S.layers.baseMap && bgImg.complete && bgImg.naturalWidth > 0) {
     ctx.save();
-    ctx.globalAlpha = S.theme === 'dark' ? 0.6 : 0.85;
+    // 深色单主题：原为 S.theme === 'dark' ? 0.6 : 0.85
+    ctx.globalAlpha = 0.6;
     if (S.bgT) {
       const t = S.bgT;
       if (t.affine) {
@@ -2154,7 +2111,6 @@ btnStop.addEventListener('click', async () => {
   armControlAck('stop');     // 12s ack 超时 + 一次重发；第二次超时恢复按钮可用
 });
 btnReset.addEventListener('click', () => { S.follow = 0; sendFocus(0); updatePathHint(); fitView(); });
-btnTheme.addEventListener('click', cycleTheme);
 function closeFloatingPanels() {
   layersEl.classList.add('hidden');
   mapPanelEl.classList.add('hidden');
@@ -2702,9 +2658,8 @@ window.addEventListener('keydown', (e) => {
     S.layers.baseMap = !S.layers.baseMap;
     const cb = document.querySelector('#layers input[data-layer="baseMap"]');
     if (cb) cb.checked = S.layers.baseMap;
-    try { localStorage.setItem('parksim_layers_v5', JSON.stringify(S.layers)); } catch (e2) {}
+    try { localStorage.setItem('parksim_layers_v6', JSON.stringify(S.layers)); } catch (e2) {}
   }
-  else if (e.key === 't' || e.key === 'T') cycleTheme();
   else if (e.key === 'Escape') {
     if (!schemeEl.classList.contains('hidden')) { schemeEl.classList.add('hidden'); }
     else if (S.presentation) { S.presentation = false; document.body.classList.remove('presentation'); }
@@ -2741,7 +2696,6 @@ setInterval(() => {
 setTimeout(() => hintEl.classList.add('fade'), 7000);
 
 /* ================= 启动 ================= */
-initTheme();
 initLayers();
 resize();
 if (window.ParkSimCharts && typeof window.ParkSimCharts.init === 'function') {

@@ -41,7 +41,8 @@
   var MIN_TICK_GAP = 4;        // 相邻 x 轴标签之间至少留出的空白（px）
   var DPR_CAP = 3;             // devicePixelRatio 上限，避免超高分屏画布过大
 
-  /* 颜色表 C / EV_COLOR 是**可变**的：refreshTheme() 会就地改写，实现主题切换。
+  /* 颜色表 C / EV_COLOR 是**可变**的：refreshTheme() 会就地改写（从 CSS 变量取色）。
+   * 2026-09-30：浅色主题已移除，取值恒为暗色一套。
    * 下面这套暗色 hex 是视觉规范值，同时作为取不到 CSS 变量时的兜底默认值。 */
   var C = {
     drive: '#38d6c0', park: '#f5b04d', brake: '#e06060', done: '#707e90',
@@ -117,7 +118,7 @@
     lastRenderWall: 0,
     lastInitTry: 0,
     winBound: false,         // 是否已绑定 window resize（只绑一次）
-    theme: 'dark'            // 当前主题（applyTheme 写入）
+    theme: 'dark'            // 当前主题（恒定 dark；浅色主题已移除）
   };
 
   /* ------------------------------------------------------------ 小工具 -- */
@@ -650,10 +651,11 @@
     if (ch.tip) ch.tip.className = 'ch-tip hidden';
   }
 
-  /* -------------------------------------------------------------- 主题 -- */
-  /* 主题切换：Canvas 画不出 CSS 变量，所以由 JS 实时从 style.css / charts.css
+  /* -------------------------------------------------------------- 配色 -- */
+  /* Canvas 画不出 CSS 变量，所以由 JS 实时从 style.css / charts.css
    * 读 --xxx 变量写回颜色表 C / EV_COLOR，再整屏重绘。
-   * 读不到（老浏览器 / 无 getComputedStyle）时回落到上面的暗色默认值。 */
+   * 读不到（老浏览器 / 无 getComputedStyle）时回落到上面的暗色默认值。
+   * 2026-09-30：浅色主题已移除，currentTheme() 恒返回 'dark'。 */
 
   function cssVar(el, name) {
     if (!el || typeof global.getComputedStyle !== 'function') return '';
@@ -665,9 +667,9 @@
   }
 
   function currentTheme() {
-    var b = (global.document && global.document.body) || null;
-    var th = (b && b.dataset) ? b.dataset.theme : '';
-    return (th === 'light' || th === 'dark') ? th : 'dark';
+    // 2026-09-30：浅色主题已彻底移除，页面恒为深色。
+    // 保留 data-theme 属性仅为向后兼容（<body data-theme="dark">），此处不再判读。
+    return 'dark';
   }
 
   function applyTheme() {
@@ -687,11 +689,11 @@
       C[map[i][0]] = v || DEFAULT_C[map[i][0]];
     }
 
-    // 网格线 / 准星：style.css 没有对应变量（需要比 --border 更淡），按主题派生
-    C.grid = (th === 'light') ? 'rgba(0,0,0,.08)' : 'rgba(255,255,255,.06)';
-    C.axisPtr = (th === 'light') ? 'rgba(0,0,0,.18)' : 'rgba(255,255,255,.18)';
+    // 网格线 / 准星：style.css 没有对应变量（需要比 --border 更淡），用暗色常量
+    C.grid = 'rgba(255,255,255,.06)';
+    C.axisPtr = 'rgba(255,255,255,.18)';
 
-    // 事件类型色：charts.css 在挂载点上定义了 --ev-*（含浅色覆盖）
+    // 事件类型色：charts.css 在挂载点上定义了 --ev-*
     var evMap = [
       ['enter', '--ev-enter'], ['parked', '--ev-parked'], ['exit', '--ev-exit'],
       ['alert', '--ev-alert'], ['conflict', '--ev-conflict']
@@ -712,7 +714,9 @@
     S.theme = th;
   }
 
-  /* 对外：主题切换后调用（app.js 的 setTheme() 内已预埋，带 typeof 守卫） */
+  /* 对外：重新取色并整屏重绘。
+   * 2026-09-30：app.js 已不再调用它（原来由 setTheme() 触发，浅色主题移除后无切换场景）；
+   * 保留导出是因为它本身仍有用（例如外部改了 CSS 变量后强制刷新一次），且 init() 内部也调 applyTheme()。 */
   function refreshTheme() {
     applyTheme();
     S.dirty.kpi = true; S.dirty.state = true; S.dirty.occ = true;
@@ -974,7 +978,7 @@
       buildEventsDom(eh);
     }
     S.inited = true;
-    // 首屏：initTheme() 早于 init()，所以这里必须自己按当前主题取一次色
+    // 首屏：这里必须自己取一次色（style.css 的变量要先被解析出来）
     applyTheme();
     // 浏览器窗口尺寸变化会让侧栏宽度变，除了宿主调 resize()，这里也兜一层
     if (!S.winBound && typeof global.addEventListener === 'function') {

@@ -1,7 +1,10 @@
-/* ParkSim webviz v3 — 双主题（dark: night demo / light: engineering paper） */
+/* ParkSim webviz v3 — 深色单主题（night demo）
+ * 2026-09-30：浅色主题（engineering paper）已彻底移除，深色变量无条件生效。
+ * 请勿再新增 body[data-theme="light"] 之类的分支。
+ */
 
 /* ---------- 主题变量 ---------- */
-body[data-theme="dark"] {
+body {
   --bg: #0d1219;
   --panel: rgba(16, 22, 31, 0.86);
   --panel-solid: #121924;
@@ -19,25 +22,6 @@ body[data-theme="dark"] {
   --veh-done: rgba(112, 126, 144, 0.78);
   --ghost: rgba(165, 198, 232, 0.42);
   --obstacle: rgba(96, 120, 150, 0.9);
-}
-body[data-theme="light"] {
-  --bg: #f6f3ed;
-  --panel: rgba(255, 255, 255, 0.90);
-  --panel-solid: #ffffff;
-  --border: rgba(35, 48, 62, 0.13);
-  --text: #23303d;
-  --sub: #6d7885;
-  --accent: #0a7f6b;
-  --ok: #1f9e6e;
-  --bad: #c94b4b;
-  --warn: #b8860b;
-  --shadow: 0 10px 30px rgba(30, 40, 60, 0.16);
-  --veh-driving: #2f9e6e;
-  --veh-parking: #e08a2c;
-  --veh-braking: #cf4b4b;
-  --veh-done: rgba(138, 146, 158, 0.82);
-  --ghost: rgba(45, 70, 95, 0.30);
-  --obstacle: rgba(120, 140, 160, 0.92);
 }
 
 /* ---------- 基础 ---------- */
@@ -126,9 +110,7 @@ html, body {
 .dock-btn.btn-primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
 .dock-btn.btn-danger { color: var(--bad); }
 .dock-btn.btn-danger:hover:not(:disabled) { background: rgba(224, 96, 96, 0.14); }
-body[data-theme="light"] .dock-btn.btn-primary { color: #fff; }
 .dock-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
-body[data-theme="light"] .dock-btn:hover { background: rgba(30, 60, 90, 0.08); }
 
 /* ---------- 图层抽屉 ---------- */
 #layers {
@@ -211,7 +193,6 @@ body[data-theme="light"] .dock-btn:hover { background: rgba(30, 60, 90, 0.08); }
   border-radius: 8px; padding: 6px 8px;
 }
 .scheme-hint { font-size: 11px; color: var(--sub); opacity: .75; }
-body[data-theme="light"] .scheme-apply { color: #fff; }
 
 /* ---------- 演示模式 ---------- */
 body.presentation #topbar,
@@ -372,7 +353,6 @@ body.presentation #panelEvents { display: none !important; }
   transition: background .15s ease, color .15s ease;
 }
 .sp-close:hover { background: rgba(120, 160, 200, 0.14); color: var(--text); }
-body[data-theme="light"] .sp-close:hover { background: rgba(30, 60, 90, 0.08); }
 
 .sp-body {
   overflow-y: auto; padding: 10px 12px; flex: 1 1 auto;
@@ -411,6 +391,8 @@ body[data-theme="light"] .sp-close:hover { background: rgba(30, 60, 90, 0.08); }
 /* 严重度着色：**刻意不改文字颜色**。
  * 浅色主题下 --ok(#1f9e6e) / --warn(#b8860b) 对白底只有约 3.2–3.4:1 对比度，
  * 12px 小字达不到可读性要求；把它们整段上色会翻车。
+ * （2026-09-30：浅色主题已移除，但这条约束在深色下同样成立 —— --warn 对 --bg 的
+ * 对比度也不足以承载 12px 正文，故着色的做法保持不变。）
  * 因此：文字恒用 --text（深/浅主题都保证高对比），严重度靠「3px 左侧色条 + 边框染色」表达。 */
 .sp-list li { border-left: 3px solid transparent; }
 .sp-list li.sev-bad  { border-color: var(--bad);  border-left-color: var(--bad); }
@@ -425,4 +407,3 @@ body[data-theme="light"] .sp-close:hover { background: rgba(30, 60, 90, 0.08); }
   position: absolute; left: 8px; top: 6px; font-size: 11px; opacity: .75;
 }
 #advList li.sp-empty::before { content: ''; }
-body[data-theme="light"] .confirm-btn:hover { background: rgba(30, 60, 90, 0.08); }
