@@ -1477,20 +1477,37 @@ def build_static_payload(ds, dlpvis, opts, root=None):
                         _meta = lay.get('meta') or {}
                         _tr = _meta.get('transform') or {}
                         _u2m = float(_meta.get('unit_to_meter') or 0.2)
-                        _xmax = float(_tr.get('x_max_m'))
-                        _ymin = float(_tr.get('y_min_m'))
+                        # 已撤销 90° 旋转的地图不再提供 x_max/y_min（见 meta.transform.restored）
+                        _restored = bool((_meta.get('transform') or {}).get('restored'))
+                        _xmax = float(_tr.get('x_max_m')) if not _restored else 0.0
+                        _ymin = float(_tr.get('y_min_m')) if not _restored else 0.0
                         _ext_p = os.path.join(os.path.dirname(lay_path), 'tools', 'parking_extraction.json')
                         if os.path.isfile(_ext_p):
                             _ex = json.load(open(_ext_p))
                             _it = ((_ex.get('metadata') or {}).get('image_transform') or {})
                             _sx = float(_it['sx']); _sy = float(_it['sy'])
                             _tx = float(_it['tx']); _ty = float(_it['ty'])
-                            _bgt = {
-                                'kx': _u2m / _sy, 'cx': _ty * _u2m / _sy - _ymin,
-                                'ky': _u2m / _sx, 'cy': _xmax + _tx * _u2m / _sx,
-                            }
-                            print('[webviz] base map transform: kx=%.6f cx=%.3f ky=%.6f cy=%.3f'
-                                  % (_bgt['kx'], _bgt['cx'], _bgt['ky'], _bgt['cy']))
+                            if _restored:
+                                # 撤销 90° 旋转后：PNG 像素 -> CAD 世界是一般仿射
+                                #   px = (sx/u2m)*x + tx  =>  x = (px - tx)*u2m/sx
+                                #   py = ty - (sy/u2m)*y  =>  y = (ty - py)*u2m/sy
+                                _bgt = {'affine': {
+                                    'a': _u2m / _sx, 'b': 0.0, 'c': 0.0,
+                                    'd': -_u2m / _sy,
+                                    'e': -_tx * _u2m / _sx, 'f': _ty * _u2m / _sy}}
+                            else:
+                                _bgt = {
+                                    'kx': _u2m / _sy, 'cx': _ty * _u2m / _sy - _ymin,
+                                    'ky': _u2m / _sx, 'cy': _xmax + _tx * _u2m / _sx,
+                                }
+                            if 'affine' in _bgt:
+                                _af = _bgt['affine']
+                                print('[webviz] base map transform (affine, restored): '
+                                      'a=%.6f b=%.6f c=%.6f d=%.6f e=%.3f f=%.3f'
+                                      % (_af['a'], _af['b'], _af['c'], _af['d'], _af['e'], _af['f']))
+                            else:
+                                print('[webviz] base map transform: kx=%.6f cx=%.3f ky=%.6f cy=%.3f'
+                                      % (_bgt['kx'], _bgt['cx'], _bgt['ky'], _bgt['cy']))
                     except Exception as _exc:
                         print('[webviz] base map transform calc failed: %s' % _exc)
                 # 分区概览图（可选图层）：sidecar zone_overview.json 与对应 PNG 均在时才下发
