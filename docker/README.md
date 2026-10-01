@@ -1,4 +1,4 @@
-# ParkSim-JTH 一体化镜像（parksim-jth:v9）
+# ParkSim-JTH 一体化镜像（parksim-jth:v10）
 
 自带 **ROS 2 Foxy + 仿真器 + webviz 前端 + jth_b1 地图资产**的单文件 Docker 镜像。
 目标机**不需要** ROS、不需要 conda、不需要任何源码——只要装了 Docker，一条命令就能起服，
@@ -10,9 +10,9 @@
 
 | 项 | 值 |
 |---|---|
-| 源码分支 / 应用代码版本 | `JTH/vision-html` / **应用代码 = `ba9fe0f`**（下表是**应用文件**的指纹，用于核对交付内容；本次构建的仓库提交号以镜像内 `/opt/parksim/BUILDINFO` 的 `git_head` 为准——见紧随其后的说明） |
-| 相对上一交付点（`5771b13`）的 1 笔 | `ba9fe0f`（webviz 前端：大屏 iframe 嵌入 `?embed=1&aspect=1:1` 锁定方形视野；修顶栏 6 个状态块与底部操作栏在窄槽位下被挤成竖排） |
-| `webviz/static/app.js` | md5 `7ee00e81e64f430317b77843e1bf48b6` |
+| 源码分支 / 应用代码版本 | `JTH/vision-html` / **应用代码 = `354e953`**（下表是**应用文件**的指纹，用于核对交付内容；本次构建的仓库提交号以镜像内 `/opt/parksim/BUILDINFO` 的 `git_head` 为准——见紧随其后的说明） |
+| 相对上一交付点（`ba9fe0f`）的 1 笔 | `354e953`（webviz 前端：指标/事件侧面板默认打开且按未被遮挡区重适配；「静态停放（障碍）」图层默认显示，localStorage key v6→v7） |
+| `webviz/static/app.js` | md5 `e3c4df7323dafe28ca953279c61b235f` |
 | `webviz/static/index.html` | md5 `38a3c8c547af828aaa7b3bac3c81d473`（内含 `app.js?v=31-panels`、`style.css?v=10`、`charts.js?v=4`、`charts.css?v=3`） |
 | `webviz/static/style.css` | md5 `5e3738239f8dd4d0852704c687400635` |
 | `webviz/static/charts.js` | md5 `2534067d14765f6d8fdb6b31949da0a5` |
@@ -33,30 +33,28 @@
 
 | 项 | 权威来源 |
 |---|---|
-| 镜像 tag | `parksim-jth:v9` |
-| 镜像 id / 构建时间 / 源码 commit | `docker image inspect -f '{{.Id}}' parksim-jth:v9`；`./install.sh --version`（读镜像内 `/opt/parksim/BUILDINFO`） |
-| tar 体积 / 校验值 | `ls -l parksim-jth-v9.tar.gz`；`sha256sum -c parksim-jth-v9.tar.gz.sha256` |
+| 镜像 tag | `parksim-jth:v10` |
+| 镜像 id / 构建时间 / 源码 commit | `docker image inspect -f '{{.Id}}' parksim-jth:v10`；`./install.sh --version`（读镜像内 `/opt/parksim/BUILDINFO`） |
+| tar 体积 / 校验值 | `ls -l parksim-jth-v10.tar.gz`；`sha256sum -c parksim-jth-v10.tar.gz.sha256` |
 
 > **为什么这里不再写死镜像 id / 构建时间 / tar 字节数与 md5**：本文件自身会被 `COPY` 进它正在
 > 描述的那个镜像，写死构建产物数值必然在下一次构建后变成错值——本表曾因此长期停留在
 > `724fd75` / 镜像 `b4587e3e` / tar `376,727,675 B` / md5 `ce2f1cab`，**照它核对会把正确的
 > 新包判成错包**。构建产物一律以 `.sha256` 与 `BUILDINFO` 为准。
-- tar 已做**装载回验**：`docker load -i parksim-jth-v9.tar.gz` 后 `docker image inspect` 得到的
+- tar 已做**装载回验**：`docker load -i parksim-jth-v10.tar.gz` 后 `docker image inspect` 得到的
   id 与该次构建的源镜像 id **完全一致**，即"打包—迁移—装载"链路无失真
   （该流程由 `docker/install.sh` 与冒烟脚本共同覆盖）。
-- 本轮相对上一交付点（`5771b13`）的实质改动：**只动 webviz 前端，后端与地图资产一个字节未动**。
-  ① 新增 URL 参数驱动的**嵌入模式**：`?embed=1` 只走嵌入样式（`body.embed`，隐藏副标题、收紧内边距），
-  `?aspect=1:1` 额外把可视范围**锁成正方形**（同时隐含 embed）。两个参数都不给时行为与上一版完全一致。
-  ② 方形边长取「`content_bounds` ∪ 当前底图实际覆盖范围」再求方形，而不是只按 `content_bounds`。
-  jth_b1 实测：`content_bounds` 207.6 × 144.3 m；分区概览图覆盖 193.6 × 196.9 m；底图覆盖 238.0 × 181.3 m。
-  只按 `content_bounds` 取方形，底图左右各会被裁约 15 m；只按图取方形，外围车位会跑出视野。
-  方形模式放大系数同时由 0.94 提到 0.985。
-  ③ 同批修掉顶栏 6 个状态块与底部操作栏在窄槽位下被压成「一列一个字」的竖排问题
-  （`#dock` 原为绝对定位 + `width:auto`，可用宽度会被算成「容器宽 − left」= 视口宽的一半）。
-  ④ 实测（真实 Chromium，槽位 1544 × 1580）：概览图占画布 **87.7% × 87.1% → 91.8% × 91.1%**；
-  顶栏在 1544 / 900 / 772 / 520 四种宽度下均保持单行横排；无参数访问走负对照，`index.html` 未改动。
-  ⑤ 顺带**重基本表**——它此前长期停在 v2（`ef4f62d` / app.js `a22dfa78…` / tar `parksim-jth-v2.tar.gz`），
-  而镜像早已走到 v8，照旧表核对会把正确的包判成错包。
+- 本轮（v10）相对上一交付点（`ba9fe0f`）的实质改动：**只动 webviz 前端一个文件（app.js），后端与地图资产一个字节未动**。
+  ① **指标 / 事件两个侧面板默认打开**：它们是绝对定位浮层（各 304 px + 14 边距），会盖住画布左右。
+  `fitView` 改为按「未被面板遮挡的有效区」适配居中（`panelInsets`），面板全收时 insets 为 0，与旧行为逐像素一致。
+  ② 面板按可用宽度**自动开合**（启动与 resize 时）：剩余绘图区 < 360 px 就自动收起，保证地图不被挤没；
+   用户手动点过面板按钮后不再自动抢控（`S.panelsAuto=false`）。窄槽位负对照：900×700 / 772×790 均自动收起、
+  地图回到整块画布（772 槽位占比 91.8%）。
+  ③ **「静态停放（障碍）」图层默认显示**（`obstacles: true`）；localStorage key `parksim_layers_v6` → `_v7`，
+  否则老浏览器里存的旧状态会盖掉新默认值，改了等于没改。
+  ④ 实测（真实 Chromium）：1544×1580 时概览图矩形与解析预测差 ≤1 px，完整落在两面板之间；
+  障碍图层开关前后像素差 1.995 %，为车辆运动噪声底（0.140 %）的 **14 倍**，确认真实绘制。
+  ⑤ 上一轮（v9，`ba9fe0f`）的嵌入模式 `?embed=1&aspect=1:1`、方形视野与顶栏/操作栏修复在本版原样保留，此处不再复述。
 - ⚠ **仓库侧脚本里的版本戳是「模板默认值」，不是本版版本号**：`docker/install.sh`、`docker/docker-compose.yml`、
   `docker/build_image.sh`、`docker/Dockerfile.multistage` 里仍写着 `parksim-jth:v2` / `parksim-jth-v2.tar.gz`。
   交付包里的 `install.sh` / `docker-compose.yml` 是**生成时按目标版本重新盖章**的（见 `mk_deliv_*.py`），
@@ -85,7 +83,7 @@
 ## 2. 一条命令起服
 
 ```bash
-# 解压后的目录里（含 parksim-jth-v9.tar.gz、install.sh、docker-compose.yml、README.md）
+# 解压后的目录里（含 parksim-jth-v10.tar.gz、install.sh、docker-compose.yml、README.md）
 chmod +x install.sh
 ./install.sh
 ```
@@ -105,18 +103,18 @@ http://<目标机IP>:8098/
 手动等价命令（不想用脚本时）：
 
 ```bash
-docker load -i parksim-jth-v9.tar.gz
+docker load -i parksim-jth-v10.tar.gz
 docker run -d --name parksim-jth --restart unless-stopped \
     -p 8098:8099 -e PORT=8099 -e PARKSIM_MAP=jth_b1 \
     -e PARKSIM_AUTOSTART=0 \
     -e ROS_LOCALHOST_ONLY=1 \
-    parksim-jth:v9
+    parksim-jth:v10
 ```
 
 或用 compose：
 
 ```bash
-docker load -i parksim-jth-v9.tar.gz
+docker load -i parksim-jth-v10.tar.gz
 docker compose up -d          # 读同目录 docker-compose.yml
 ```
 
@@ -425,7 +423,7 @@ printf '{}' > $BUILD/payload/dji_subset/DJI_0012_frames.json      # 占位（内
 printf '{}' > $BUILD/payload/dji_subset/DJI_0012_instances.json   # 占位（内容不被使用）
 
 # 2) 构建（首次约 7 分钟；改 payload 后借助缓存增量构建 ~15 秒）
-cd $BUILD && docker build -t parksim-jth:v9 .
+cd $BUILD && docker build -t parksim-jth:v10 .
 ```
 
 构建期会**自动断言**关键资产存在且 DJI json 可解析（缺文件/坏 json 直接 build 失败，
@@ -435,15 +433,15 @@ cd $BUILD && docker build -t parksim-jth:v9 .
 
 ```bash
 mkdir -p /media/step/data/ParkSim-JTH-image
-docker save parksim-jth:v9 | gzip -6 > /media/step/data/ParkSim-JTH-image/parksim-jth-v9.tar.gz
-sha256sum parksim-jth-v9.tar.gz     # 与随包 .sha256 核对（§0 刻意不写死数值）
+docker save parksim-jth:v10 | gzip -6 > /media/step/data/ParkSim-JTH-image/parksim-jth-v10.tar.gz
+sha256sum parksim-jth-v10.tar.gz     # 与随包 .sha256 核对（§0 刻意不写死数值）
 ```
 
 导出后建议做一次**装载回验**（这是唯一能证明"包没坏、迁移等价"的手段）：
 
 ```bash
-docker load -i parksim-jth-v9.tar.gz
-docker image inspect parksim-jth:v9 --format '{{.Id}}'   # 应等于该次构建的源镜像 id（见 BUILDINFO）
+docker load -i parksim-jth-v10.tar.gz
+docker image inspect parksim-jth:v10 --format '{{.Id}}'   # 应等于该次构建的源镜像 id（见 BUILDINFO）
 ```
 
 > 若镜像有更新，**必须先重新导出 tar 再发货** —— tar 不会自动跟着镜像变。
