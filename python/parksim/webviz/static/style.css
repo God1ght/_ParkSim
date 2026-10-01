@@ -76,6 +76,35 @@ html, body {
 .chip-sim.sim-paused { color: var(--warn); }
 .chip-sim.sim-paused .dot { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
 
+/* ---------- 顶栏自适应（2026-10-01 新增）----------
+ * 症状：本页被大屏当 iframe 调用、宽度远小于全屏时，顶栏「品牌 + 6 个状态块」一排摆不下，
+ * flex 会一路把状态块压到 min-content：
+ *   · .chip-conn / .chip-sim 的 min-width 被显式写成 auto ⇒ 压到一字一行（「已连接」竖排）
+ *   · .chip 的 min-width:74px 挡不住 .chip-value 折行（「3034.3 s」被拆成两行）
+ * 原则：**宁可让状态块整体换行，也不把语义拆成竖排**（竖排的状态等于读不出来）。 */
+.brand { flex: 0 0 auto; }
+.brand-name, .brand-sub { white-space: nowrap; }
+.chips { flex-wrap: wrap; justify-content: flex-end; row-gap: 6px; max-width: 100%; }
+.chip, .chip-conn, .chip-sim { flex: 0 0 auto; }
+.chip-label, .chip-value { white-space: nowrap; }
+.chip-conn, .chip-sim { min-width: max-content; white-space: nowrap; }
+
+/* 窄宽度：先摘副标题，再收内边距——让状态块始终完整可读 */
+@media (max-width: 1180px) {
+  .brand-sub { display: none; }
+}
+@media (max-width: 760px) {
+  #topbar { padding: 8px 10px; }
+  .brand-mark { width: 28px; height: 28px; font-size: 14px; border-radius: 8px; }
+  .brand-name { font-size: 14px; }
+  .chip { padding: 4px 8px; min-width: 0; }
+  .chip-label { font-size: 9px; }
+  .chip-value { font-size: 12px; }
+  .chips { gap: 6px; }
+}
+/* 嵌入模式（?embed=1）：外层大屏自己有标题，本页副标题只会挤占状态块的位置 */
+body.embed .brand-sub { display: none; }
+
 /* ---------- 图例 ---------- */
 #legend {
   position: absolute; right: 14px; bottom: 14px; z-index: 20;
@@ -93,9 +122,15 @@ html, body {
 .sw[data-state="obstacle"] { background: var(--obstacle); }
 
 /* ---------- 控制坞 ---------- */
+/* 2026-10-01：原来只有 left:50% + translateX(-50%)，绝对定位且 width:auto，
+ * 可用宽度会被算成「容器宽 - left」= **视口宽的一半**，于是视口一窄，flex 就把按钮压扁、
+ * 「重置视图」被拆成两行、「暂停/停止」变成竖排。改成显式 width:max-content（按内容取宽）
+ * 加 max-width 兜底，窄了就让按钮换行，不缩字。全屏下宽度与改前一致。 */
 #dock {
   position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 30;
   display: flex; align-items: center; gap: 4px;
+  width: max-content; max-width: calc(100% - 20px);
+  flex-wrap: wrap; justify-content: center;
   background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
   padding: 6px; box-shadow: var(--shadow); backdrop-filter: blur(10px);
 }
@@ -103,6 +138,7 @@ html, body {
   appearance: none; border: 0; background: transparent; color: var(--text);
   font-size: 13px; font-family: inherit; padding: 8px 14px; border-radius: 10px;
   cursor: pointer; transition: background .15s ease, color .15s ease;
+  white-space: nowrap; flex: 0 0 auto;
 }
 .dock-btn:hover { background: rgba(120, 160, 200, 0.14); }
 .dock-btn:disabled { opacity: .4; cursor: default; }

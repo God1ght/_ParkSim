@@ -56,6 +56,24 @@ const THEMES = {
 
 const STATE_NAMES = ['行驶中', '泊车机动', '制动等待', '已完成'];
 
+/* ================= 嵌入模式（供大屏 / 外层页调用） =================
+ * 2026-10-01：外层「智慧车库」大屏把本页当 iframe 调用，给的可视化槽位是接近 1:1 的方形
+ * （实测 ≈1544×1580），而本页默认按 content_bounds（≈207.5 m × 144.3 m = 1.44:1）适配，
+ * 于是左右铺满、上下各留约 18% 空白，概览图只占到区域的约 87%×87%。
+ *
+ * 约定（两个参数都不写时，行为与加参数之前**完全一致**——我们自己打开页面不受影响）：
+ *   ?embed=1        表示「被嵌入」。目前只用于给 <body> 打上 .embed 类，
+ *                   交给 CSS 处理那些「只适合全屏」的默认值。
+ *   ?aspect=1:1     把可视范围锁成正方形（边长取内容边界的长边），概览图得以最大化。
+ *                   等价写法：?aspect=1
+ *
+ * 外层页推荐写法：  <iframe src="http://<host>:<port>/?embed=1&aspect=1:1">
+ */
+const QS = new URLSearchParams(location.search);
+const _aspectRaw = (QS.get('aspect') || '').trim().toLowerCase();
+const SQUARE_VIEW = (_aspectRaw === '1:1' || _aspectRaw === '1');
+const EMBED = (QS.get('embed') === '1' || QS.get('embed') === 'true' || SQUARE_VIEW);
+
 /* ================= 全局状态 ================= */
 const S = {
   init: null,
@@ -81,6 +99,10 @@ const S = {
   fps: 0, _fpsCount: 0, _fpsT: performance.now(), _chipTick: 0,
   mapW: 140, mapH: 80, scale: 10,
   dpr: 1,
+  // 嵌入模式：embed / squareView 由 URL 参数决定（见文件头「嵌入模式」段）
+  embed: EMBED,
+  squareView: SQUARE_VIEW,
+  userAdjusted: false,   // 用户手动缩放/平移过 → 不再自动重新适配
   hover: 0,
   presentation: false,
   occupancy: null,
@@ -305,6 +327,37 @@ function applyBaseMapVariant() {
   if (url && bgImg.getAttribute('src') !== url) bgImg.src = url;
   S.bgT = t || null;
 }
+/* 当前生效底图（底图 / 分区概览图）在世界坐标下覆盖的矩形 [x0,y0,x1,y1]。
+ * 2026-10-01：嵌入方形模式要用它。content_bounds 只是「数据（车位/图/障碍）」的范围，
+ * 而**图本身**可能比数据更宽或更高：
+ *   - 分区概览图 zone_overview.png：数据 207.6×144.3 m，图覆盖 193.6×196.9 m → 图更高；
+ *   - 底图 base_map_clean.png：数据 207.6×144.3 m，图覆盖 238.0×181.3 m → 图更宽；
+ * 只按 content_bounds 取方形，底图会被上下裁掉；只按图取方形，外围车位会跑出视野。
+ * 所以取并集（调用方负责）。
+ * 变换语义与绘制段一致：x = a*px + c*py + e ; y = b*px + d*py + f
+ * （退化形式 ctx.transform(0,-ky,-kx,0,cx,cy) ⇒ x = cx - kx*py, y = cy - ky*px）。
+ * 图未加载完（naturalWidth=0）时返回 null，调用方回退到 content_bounds。 */
+function activeMapWorldBox() {
+  const t = S.bgT;
+  if (!t) return null;
+  const w = bgImg.naturalWidth, h = bgImg.naturalHeight;
+  if (!w || !h) return null;
+  let xf, yf;
+  if (t.affine) {
+    const A = t.affine;
+    xf = (px, py) => A.a * px + A.c * py + A.e;
+    yf = (px, py) => A.b * px + A.d * py + A.f;
+  } else {
+    xf = (px, py) => t.cx - t.kx * py;
+    yf = (px, py) => t.cy - t.ky * px;
+  }
+  const xs = [], ys = [];
+  for (const c of [[0, 0], [w, 0], [0, h], [w, h]]) {
+    xs.push(xf(c[0], c[1]));
+    ys.push(yf(c[0], c[1]));
+  }
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
 /* 参考路径提示：未聚焦车辆时提醒“点击车辆查看”（聚焦后隐藏） */
 function updatePathHint() {
   const ph = document.getElementById('pathHint');
@@ -330,6 +383,22 @@ if (typeof ResizeObserver !== 'undefined') {
 } else {
   window.addEventListener('resize', resize);
 }
+/* 嵌入模式（?aspect=1:1）：外层槽位尺寸一变，方形视野要跟着重算，否则方框会被切掉。
+ * 前提是用户没有手动缩放/平移过——手动调过视图就以用户为准，不再自动抢回。 */
+if (typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(() => {
+    if (S.squareView && S.init && !S.userAdjusted) fitView();
+  }).observe(cv);
+} else {
+  window.addEventListener('resize', () => {
+    if (S.squareView && S.init && !S.userAdjusted) fitView();
+  });
+}
+/* 方形视野依赖「当前底图的实际覆盖范围」（activeMapWorldBox 要读 naturalWidth/Height）。
+ * init 里第一次 fitView() 时图多半还没解码完 ⇒ 只能退回 content_bounds；图一到就再适配一次。 */
+bgImg.addEventListener('load', () => {
+  if (S.squareView && S.init && !S.userAdjusted) fitView();
+});
 
 function w2s(x, y) {
   const v = S.view;
@@ -1613,22 +1682,45 @@ function closeConfirm(result) {
 let hoverTipVid = 0;
 function updatePauseLabel() { btnPause.textContent = S.paused ? '恢复' : '暂停'; }
 
+/* 视图适配。
+ * 优先按「全内容边界」（服务端下发，含边距）适配——保证全场都在视图内。
+ * 2026-10-01：S.squareView（嵌入模式 ?aspect=1:1）时，把可视范围改成以内容边界
+ * 中心为心、边长取长边的**正方形**，这样 1:1 的概览图能最大化地填满方形槽位。
+ *
+ * 方形边长为什么要并上「当前底图的实际覆盖范围」：
+ *   外层大屏给的槽位是 1544×1580（≈1:1），本页默认按 content_bounds（207.6×144.3 m，
+ *   1.44:1）适配 ⇒ 左右铺满、上下各空一大条；用户看到的就是「可视化区域并不匹配」。
+ *   改方形后，若只按 content_bounds 取边长 207.6 m，则：
+ *     - 分区概览图（图覆盖 193.6×196.9 m）填 93%×95%，尚可；
+ *     - 底图（图覆盖 238.0×181.3 m）横向 238 > 207.6 ⇒ 左右各被裁掉 15 m。
+ *   故取二者并集再求方形：既保证图不被裁，也保证外围车位/障碍不跑出视野。
+ *   实测放大系数也从 0.94 提到 0.985（方形槽位本身就是给图用的，不必再留那么宽的护边）。 */
 function fitView() {
-  // 优先按「全内容边界」（服务端下发，含边距）适配——保证全场都在视图内
   const b = S.init && S.init.content_bounds;
-  if (b && b.length === 4) {
-    const w = Math.max(b[2] - b[0], 1), h = Math.max(b[3] - b[1], 1);
-    const z = Math.min(W / (w * S.scale), H / (h * S.scale)) * 0.94;
-    S.view.zoom = z || 1;
-    const sz = S.scale * S.view.zoom;
-    S.view.x = (W - w * sz) / 2 - b[0] * sz;
-    S.view.y = (H - h * sz) / 2 - (S.mapH - b[3]) * sz;
-    return;
+  const hasBounds = !!(b && b.length === 4);
+  let x0 = hasBounds ? b[0] : 0;
+  let y0 = hasBounds ? b[1] : 0;
+  let x1 = hasBounds ? b[2] : S.mapW;
+  let y1 = hasBounds ? b[3] : S.mapH;
+  if (S.squareView) {
+    const mb = activeMapWorldBox();
+    if (mb) {
+      x0 = Math.min(x0, mb[0]); y0 = Math.min(y0, mb[1]);
+      x1 = Math.max(x1, mb[2]); y1 = Math.max(y1, mb[3]);
+    }
+    const side = Math.max(x1 - x0, y1 - y0, 1);
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    x0 = cx - side / 2; x1 = cx + side / 2;
+    y0 = cy - side / 2; y1 = cy + side / 2;
   }
-  const z = Math.min(W / (S.mapW * S.scale), H / (S.mapH * S.scale)) * 0.94;
+  const w = Math.max(x1 - x0, 1);
+  const h = Math.max(y1 - y0, 1);
+  const pad = S.squareView ? 0.985 : 0.94;
+  const z = Math.min(W / (w * S.scale), H / (h * S.scale)) * pad;
   S.view.zoom = z || 1;
-  S.view.x = (W - S.mapW * S.scale * S.view.zoom) / 2;
-  S.view.y = (H - S.mapH * S.scale * S.view.zoom) / 2;
+  const sz = S.scale * S.view.zoom;
+  S.view.x = (W - w * sz) / 2 - x0 * sz;
+  S.view.y = (H - h * sz) / 2 - (S.mapH - y1) * sz;
 }
 
 /* ================= 尾迹 ================= */
@@ -2040,6 +2132,7 @@ function updateTooltip() {
 
 cv.addEventListener('wheel', (e) => {
   e.preventDefault();
+  S.userAdjusted = true;   // 用户自己调过视图 → 嵌入模式下不再自动重适配
   const factor = Math.exp(-e.deltaY * 0.0012);
   const z1 = Math.min(8, Math.max(0.25, S.view.zoom * factor));
   const mx = e.offsetX, my = e.offsetY;
@@ -2067,6 +2160,7 @@ window.addEventListener('mousemove', (e) => {
     if (S.dragMoved) {
       S.view.x += dx; S.view.y += dy;
       S.follow = 0; // 拖动即退出跟随
+      S.userAdjusted = true;   // 手动平移过 → 嵌入模式下不再自动重适配
     }
     S.lastMouse = [e.clientX, e.clientY];
   } else if (S.frame && !S.presentation) {
@@ -2110,7 +2204,7 @@ btnStop.addEventListener('click', async () => {
   sendControl('stop');
   armControlAck('stop');     // 12s ack 超时 + 一次重发；第二次超时恢复按钮可用
 });
-btnReset.addEventListener('click', () => { S.follow = 0; sendFocus(0); updatePathHint(); fitView(); });
+btnReset.addEventListener('click', () => { S.follow = 0; sendFocus(0); updatePathHint(); S.userAdjusted = false; fitView(); });
 function closeFloatingPanels() {
   layersEl.classList.add('hidden');
   mapPanelEl.classList.add('hidden');
@@ -2652,7 +2746,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'h' || e.key === 'H') {
     S.presentation = !S.presentation;
     document.body.classList.toggle('presentation', S.presentation);
-  } else if (e.key === 'r' || e.key === 'R') { S.follow = 0; sendFocus(0); updatePathHint(); fitView(); }
+  } else if (e.key === 'r' || e.key === 'R') { S.follow = 0; sendFocus(0); updatePathHint(); S.userAdjusted = false; fitView(); }
   else if (e.key === 'b' || e.key === 'B') {
     // 底图对比：快速切换底图显隐，核对矢量与底图重合度
     S.layers.baseMap = !S.layers.baseMap;
@@ -2696,6 +2790,8 @@ setInterval(() => {
 setTimeout(() => hintEl.classList.add('fade'), 7000);
 
 /* ================= 启动 ================= */
+// 嵌入模式标记：?embed=1 / ?aspect=1:1 时给 body 打类，CSS 用它放开「只适合全屏」的默认值
+document.body.classList.toggle('embed', EMBED);
 initLayers();
 resize();
 if (window.ParkSimCharts && typeof window.ParkSimCharts.init === 'function') {
