@@ -103,6 +103,9 @@ const S = {
   embed: EMBED,
   squareView: SQUARE_VIEW,
   userAdjusted: false,   // 用户手动缩放/平移过 → 不再自动重新适配
+  // 侧边面板（指标/事件）是否仍由「可用宽度」自动决定。
+  // 用户一旦手动点过指标/事件按钮，就改 false，之后不再自动开合，免得跟用户抢。
+  panelsAuto: true,
   hover: 0,
   presentation: false,
   occupancy: null,
@@ -233,7 +236,8 @@ function defaultLayers() {
     // 2026-09-30（应用户要求）：打开页面默认就显示分区概览图。
     // 注：「分区概览图」依赖「底图」总开关（见 applyBaseMapVariant），故两者都置 true。
     baseMap: true, zoneOverview: true, grid: false, spots: true, waypoints: false,
-    obstacles: false, ghosts: true, paths: true, trails: false, labels: true,
+    // 2026-10-02（应用户要求）：「静态停放（障碍）」默认打开。
+    obstacles: true, ghosts: true, paths: true, trails: false, labels: true,
     ramps: true, entranceExit: true,
   };
 }
@@ -243,9 +247,11 @@ function applyLayerState() {
   });
 }
 function persistLayers() {
-  // key 由 v5 升到 v6：2026-09-30 改了默认图层（分区概览图默认开）。
-  // 不升 key 的话，老浏览器 localStorage 里的旧状态会盖掉新默认值，改了等于没改。
-  try { localStorage.setItem('parksim_layers_v6', JSON.stringify(S.layers)); } catch (e) {}
+  // ⚠ 每次改 defaultLayers() 的默认值，这里的 key 必须跟着升一格：
+  // 老浏览器 localStorage 里存的旧状态会**盖掉**新默认值，改了等于没改。
+  //   v5 → v6：2026-09-30，分区概览图默认开
+  //   v6 → v7：2026-10-02，静态停放（障碍）默认开
+  try { localStorage.setItem('parksim_layers_v7', JSON.stringify(S.layers)); } catch (e) {}
 }
 function resetLayers() {
   S.layers = defaultLayers();
@@ -255,7 +261,7 @@ function resetLayers() {
 }
 function initLayers() {
   try {
-    const raw = localStorage.getItem('parksim_layers_v6');
+    const raw = localStorage.getItem('parksim_layers_v7');
     if (raw) S.layers = Object.assign(defaultLayers(), JSON.parse(raw));
   } catch (e) {}
   if (!S.layers) S.layers = defaultLayers();
@@ -379,9 +385,9 @@ function resize() {
  * 兼容两种布局；老浏览器保留 window 监听兜底。
  * 注意：resize() 只更新 W/H 与位图尺寸，不重置 S.view，不会打断用户当前的缩放/平移。 */
 if (typeof ResizeObserver !== 'undefined') {
-  new ResizeObserver(() => resize()).observe(cv);
+  new ResizeObserver(() => { resize(); autoSidePanels(); }).observe(cv);
 } else {
-  window.addEventListener('resize', resize);
+  window.addEventListener('resize', () => { resize(); autoSidePanels(); });
 }
 /* 嵌入模式（?aspect=1:1）：外层槽位尺寸一变，方形视野要跟着重算，否则方框会被切掉。
  * 前提是用户没有手动缩放/平移过——手动调过视图就以用户为准，不再自动抢回。 */
@@ -1694,7 +1700,12 @@ function updatePauseLabel() { btnPause.textContent = S.paused ? '恢复' : '暂�
  *     - 分区概览图（图覆盖 193.6×196.9 m）填 93%×95%，尚可；
  *     - 底图（图覆盖 238.0×181.3 m）横向 238 > 207.6 ⇒ 左右各被裁掉 15 m。
  *   故取二者并集再求方形：既保证图不被裁，也保证外围车位/障碍不跑出视野。
- *   实测放大系数也从 0.94 提到 0.985（方形槽位本身就是给图用的，不必再留那么宽的护边）。 */
+ *   实测放大系数也从 0.94 提到 0.985（方形槽位本身就是给图用的，不必再留那么宽的护边）。
+ *
+ * 2026-10-02：指标/事件两个侧面板**默认打开**，它们是绝对定位浮层（各 304 px + 14 边距），
+ * 会盖住画布左右两侧。若仍按整个画布 W 来居中，地图中心正好落在两面板之间还好，
+ * 但**两侧内容会被压在面板底下**。故改成按「未被面板遮挡的有效区」适配并居中（见 panelInsets）。
+ * 面板全部收起时 insets 为 0，此时与旧行为逐像素一致，不引入回归。 */
 function fitView() {
   const b = S.init && S.init.content_bounds;
   const hasBounds = !!(b && b.length === 4);
@@ -1715,12 +1726,57 @@ function fitView() {
   }
   const w = Math.max(x1 - x0, 1);
   const h = Math.max(y1 - y0, 1);
+  const ins = panelInsets();
+  // 有效绘图区：左右各扣掉被侧面板盖住的那条（+8 留一点呼吸），并保证不为负
+  const ax = ins.l;
+  const ay = ins.t;
+  const aw = Math.max(W - ins.l - ins.r, 40);
+  const ah = Math.max(H - ins.t - ins.b, 40);
   const pad = S.squareView ? 0.985 : 0.94;
-  const z = Math.min(W / (w * S.scale), H / (h * S.scale)) * pad;
+  const z = Math.min(aw / (w * S.scale), ah / (h * S.scale)) * pad;
   S.view.zoom = z || 1;
   const sz = S.scale * S.view.zoom;
-  S.view.x = (W - w * sz) / 2 - x0 * sz;
-  S.view.y = (H - h * sz) / 2 - (S.mapH - y1) * sz;
+  S.view.x = ax + (aw - w * sz) / 2 - x0 * sz;
+  S.view.y = ay + (ah - h * sz) / 2 - (S.mapH - y1) * sz;
+}
+
+/* 侧边面板（指标 / 事件）遮挡掉的画布区域，单位 CSS px。
+ * 面板是 position:absolute 的浮层，不改变 W/H，只会**盖住**画布 —— 所以不能靠
+ * ResizeObserver 发现，必须显式测量。返回 {l, r, t, b}：
+ *   l = 左侧被盖住的宽度，r = 右侧被盖住的宽度，t/b 目前恒为 0（顶栏/操作栏不参与，
+ *   保持与改动前一致，避免非面板场景的回归）。
+ * 单侧最多吃掉画布的 40%，防止极端比例下把地图挤没。 */
+function panelInsets() {
+  const out = { l: 0, r: 0, t: 0, b: 0 };
+  const cap = W * 0.4;
+  if (panelMetrics && !panelMetrics.classList.contains('hidden')) {
+    const rc = panelMetrics.getBoundingClientRect();
+    if (rc.width > 0 && rc.right > 0) out.l = Math.min(rc.right + 8, cap);
+  }
+  if (panelEvents && !panelEvents.classList.contains('hidden')) {
+    const rc = panelEvents.getBoundingClientRect();
+    if (rc.width > 0 && rc.left < W) out.r = Math.min(W - rc.left + 8, cap);
+  }
+  return out;
+}
+
+/* 侧面板自动开合：默认打开指标 + 事件，但**只在画布够宽时**。
+ * 两个面板各 304 px + 14 边距 + 8 呼吸 ≈ 326 px，两侧就是 652 px。
+ * 若剩余绘图区不足 MIN_PLOT_W（360 px），地图会被挤成一条 —— 还不如不显示面板。
+ * 用户手动点过指标/事件后（S.panelsAuto=false）就不再自动干预。 */
+const PANEL_MIN_PLOT_W = 360;
+function autoSidePanels() {
+  if (!S.panelsAuto || W <= 0) return;
+  let need = 0;
+  for (const p of [panelMetrics, panelEvents]) {
+    if (!p) continue;
+    // 即便当前 hidden 也要能量到宽度：hidden 时 rect 全 0，故用一个下限常量兜底
+    const rc = p.getBoundingClientRect();
+    need += (rc.width > 0 ? rc.width : 304) + 14 + 8;
+  }
+  const open = (W - need) >= PANEL_MIN_PLOT_W;
+  setSidePanel(panelMetrics, btnMetrics, open && !!panelMetrics);
+  setSidePanel(panelEvents, btnEvents, open && !!panelEvents);
 }
 
 /* ================= 尾迹 ================= */
@@ -2664,6 +2720,7 @@ function updatePanels(force) {
 
 function setSidePanel(panel, btn, open) {
   if (!panel) return;
+  const was = !panel.classList.contains('hidden');
   panel.classList.toggle('hidden', !open);
   if (btn && btn.classList) btn.classList.toggle('active', open);
   if (open) updatePanels(true);   // 打开即刻出数，不等下个节流窗口
@@ -2672,6 +2729,10 @@ function setSidePanel(panel, btn, open) {
       try { window.ParkSimCharts.resize(); } catch (e) { console.warn('ParkSimCharts.resize failed:', e); }
     }
   });
+  // 面板开合会改变「未被遮挡的绘图区」，视图必须跟着重新适配，
+  // 否则地图要么被面板压住、要么在面板收起后空出一大条。
+  // 用户手动缩放/平移过就不抢（S.userAdjusted），重置视图会清掉该标记。
+  if (was !== open && S.init && !S.userAdjusted) fitView();
 }
 
 function toggleSidePanel(panel, btn) {
@@ -2681,10 +2742,12 @@ function toggleSidePanel(panel, btn) {
 
 if (btnMetrics) btnMetrics.addEventListener('click', (e) => {
   e.stopPropagation();
+  S.panelsAuto = false;   // 用户自己决定过，之后不再按宽度自动开合
   toggleSidePanel(panelMetrics, btnMetrics);
 });
 if (btnEvents) btnEvents.addEventListener('click', (e) => {
   e.stopPropagation();
+  S.panelsAuto = false;
   toggleSidePanel(panelEvents, btnEvents);
 });
 if (btnCloseMetrics) btnCloseMetrics.addEventListener('click', (e) => {
@@ -2752,7 +2815,7 @@ window.addEventListener('keydown', (e) => {
     S.layers.baseMap = !S.layers.baseMap;
     const cb = document.querySelector('#layers input[data-layer="baseMap"]');
     if (cb) cb.checked = S.layers.baseMap;
-    try { localStorage.setItem('parksim_layers_v6', JSON.stringify(S.layers)); } catch (e2) {}
+    try { localStorage.setItem('parksim_layers_v7', JSON.stringify(S.layers)); } catch (e2) {}
   }
   else if (e.key === 'Escape') {
     if (!schemeEl.classList.contains('hidden')) { schemeEl.classList.add('hidden'); }
@@ -2797,6 +2860,9 @@ resize();
 if (window.ParkSimCharts && typeof window.ParkSimCharts.init === 'function') {
   try { window.ParkSimCharts.init(); } catch (e) { console.warn('ParkSimCharts.init failed:', e); }
 }
+// 默认打开「指标」「事件」两个侧面板（画布够宽时；窄到会把地图挤没就自动收起）。
+// 必须在 resize() 之后调——它要读 W 与面板的实际宽度。
+autoSidePanels();
 connect();
 draw();
 })();
